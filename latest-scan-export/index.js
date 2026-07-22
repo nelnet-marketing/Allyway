@@ -9,28 +9,42 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ==== Config ====
 // Usage:
-//   node index.js "Source A, Source B" <API_KEY>
-//   node index.js "Source A" <API_KEY> --date-from=2025-01-01 --date-to=2025-01-31
+//   node index.js <API_KEY> "Source A, Source B"
+//   node index.js <API_KEY> "Source A" --date-from=2025-01-01 --date-to=2025-01-31
 //
 // Without date args: exports findings from the single most recent completed scan per source.
 // With date args:    exports findings from the most recent completed scan within that range.
 
-const SOURCES = (process.argv[2] ?? '')
+// True only when executed as a CLI (`node index.js ...`), false when imported by tests.
+const IS_CLI = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+
+const API_KEY = process.argv[2] ?? '<hard-code your API key here>';
+
+const SOURCES = (process.argv[3] ?? '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
-if (SOURCES.length === 0) {
-  console.error('❌ Please provide one or more source titles (comma-separated) as argv[2].');
+if (IS_CLI && SOURCES.length === 0) {
+  console.error('❌ Please provide one or more source titles (comma-separated) as argv[3].');
   process.exit(1);
 }
-
-const API_KEY = process.argv[3] ?? '<hard-code your API key here>';
 
 const extraArgs      = process.argv.slice(4);
 const DATE_FROM      = extraArgs.find(a => a.startsWith('--date-from='))?.split('=')[1];
 const DATE_TO        = extraArgs.find(a => a.startsWith('--date-to='))?.split('=')[1];
 const INCLUDE_DETAIL = extraArgs.includes('--include-details');
+const INCLUDE_TRIAGE = extraArgs.includes('--include-triage');
+
+// Findings-fetch tuning. --page-size sets the starting page size; on flaky scans
+// (repeated premature closes) the fetcher shrinks it automatically and stays there.
+const PAGE_SIZE = (() => {
+  const n = parseInt(extraArgs.find(a => a.startsWith('--page-size='))?.split('=')[1] ?? '', 10);
+  return Number.isFinite(n) && n >= 1 ? n : 100;
+})();
+const MIN_PAGE_SIZE        = 10;
+const MAX_SAME_SIZE_RETRIES = 2;
+const REQUEST_TIMEOUT_MS   = 45000;
 
 const BASE    = 'https://arc.tpgi.com/api';
 const HEADERS = { accept: 'application/json', 'api-key': API_KEY };
@@ -122,40 +136,63 @@ async function getLatestScanInRange(sourceId, dateFrom, dateTo) {
 
 async function fetchFindingsPage(scanId, offset, limit) {
   const url = `${BASE}/v1/scans/${scanId}/findings?offset=${offset}&limit=${limit}`;
-  const res = await fetch(url, { headers: HEADERS });
+  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return await res.json();
 }
 
-async function getScanFindings(scanId) {
+// A dropped/stalled connection (not an HTTP error) — worth retrying/shrinking.
+function isTransientError(err) {
+  return err.code === 'ERR_STREAM_PREMATURE_CLOSE'
+    || err.name === 'TimeoutError'   // AbortSignal.timeout fired
+    || err.name === 'AbortError'
+    || err.code === 'ECONNRESET'
+    || err.code === 'UND_ERR_SOCKET';
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+export async function getScanFindings(scanId, fetchPage = fetchFindingsPage) {
   let offset = 0;
+  let limit  = PAGE_SIZE;  // sticky: shrinks on trouble, never silently resets to 100
   const all  = [];
+  const stats = { requests: 0, retries: 0 };
+  const t0 = Date.now();
 
+  pages:
   while (true) {
-    let data         = null;
-    let limit        = 100;
-    let lastErr      = null;
+    let data = null;
+    let sameSizeTries = 0;
 
-    // Retry with a smaller limit if the server closes the connection early
-    while (limit >= 25) {
+    while (true) {
       try {
-        data = await fetchFindingsPage(scanId, offset, limit);
-        lastErr = null;
+        stats.requests++;
+        data = await fetchPage(scanId, offset, limit);
         break;
       } catch (err) {
-        lastErr = err;
-        if (err.code === 'ERR_STREAM_PREMATURE_CLOSE' && limit > 25) {
-          limit = Math.floor(limit / 2);
-          log(`  Premature close at offset ${offset} — retrying with limit=${limit}...`);
-        } else {
-          break;
+        if (!isTransientError(err)) {
+          console.warn(`⚠️  Error at offset ${offset}: ${err.message} — stopping with ${all.length} findings.`);
+          break pages;
         }
+        stats.retries++;
+        // First try the same page size a couple times with a short backoff —
+        // many drops are intermittent and clear on their own.
+        if (sameSizeTries < MAX_SAME_SIZE_RETRIES) {
+          sameSizeTries++;
+          await sleep(500 * sameSizeTries);
+          log(`  Connection dropped at offset ${offset} — retry ${sameSizeTries}/${MAX_SAME_SIZE_RETRIES} (page size ${limit})...`);
+          continue;
+        }
+        // Persistent trouble at this size: shrink and keep the smaller size going forward.
+        if (limit > MIN_PAGE_SIZE) {
+          limit = Math.max(MIN_PAGE_SIZE, Math.floor(limit / 2));
+          sameSizeTries = 0;
+          log(`  Reducing page size to ${limit} at offset ${offset}...`);
+          continue;
+        }
+        console.warn(`⚠️  Giving up at offset ${offset} (page size ${limit}) — returning ${all.length} findings.`);
+        break pages;
       }
-    }
-
-    if (lastErr) {
-      console.warn(`⚠️  Giving up at offset ${offset} after retries: ${lastErr.message}`);
-      break;
     }
 
     if (!Array.isArray(data) || data.length === 0) break;
@@ -164,6 +201,8 @@ async function getScanFindings(scanId) {
     offset += data.length;
   }
 
+  const secs = ((Date.now() - t0) / 1000).toFixed(1);
+  log(`  Fetched ${all.length} findings in ${secs}s — ${stats.requests} request(s), ${stats.retries} retr${stats.retries === 1 ? 'y' : 'ies'}, final page size ${limit}`);
   return all;
 }
 
@@ -291,12 +330,171 @@ function buildFindingsSummaryRows(perSourceRowsMap) {
 }
 
 
+// ==== Triage Report ====
+// Strips HTML tags and decodes entities so rule titles/descriptions read as plain
+// text (e.g. "Bad ARIA <code>role</code>" -> "Bad ARIA role"). Tags are stripped
+// BEFORE decoding so decoded "&lt;ul&gt;" survives as literal "<ul>".
+export function sanitizeText(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/<[^>]*>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Matches formatScanDate's UTC-of-local-parse behavior, output as YYYY-MM-DD.
+export function isoDateFromScan(isoString) {
+  const d = new Date(isoString);
+  if (isNaN(d)) return '';
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${mm}-${dd}`;
+}
+
+// Groups findings by rule (across all sources), with one child per URL beneath.
+// Sorted Severity -> Category -> total instances desc. Children sorted by URL.
+export function buildTriageGroups(perSourceRowsMap, scanInfoMap) {
+  const sourceDate = new Map();
+  for (const [src, info] of scanInfoMap.entries()) sourceDate.set(src, isoDateFromScan(info.date));
+
+  const groups = new Map();
+  for (const [source, rows] of perSourceRowsMap.entries()) {
+    const dateStr = sourceDate.get(source) ?? '';
+    for (const r of rows) {
+      const key = r.ruleKey || r.ruleTitle || '';
+      let g = groups.get(key);
+      if (!g) {
+        g = {
+          ruleTitle:      sanitizeText(r.ruleTitle),
+          severity:       r.ruleSeverity || '',
+          category:       r.ruleCategory || '',
+          engine:         r.instanceEngineKey || '',
+          description:    sanitizeText(r.ruleDescription),
+          totalInstances: 0,
+          firstSeen:      dateStr,
+          lastSeen:       dateStr,
+          urls:           new Map()
+        };
+        groups.set(key, g);
+      }
+      g.totalInstances++;
+      if (dateStr) {
+        if (!g.firstSeen || dateStr < g.firstSeen) g.firstSeen = dateStr;
+        if (!g.lastSeen  || dateStr > g.lastSeen)  g.lastSeen  = dateStr;
+      }
+
+      const url = r.componentUrl || '';
+      let u = g.urls.get(url);
+      if (!u) {
+        u = { componentTitle: r.componentTitle || '', html: r.instanceHTMLSource || '', instances: 0 };
+        g.urls.set(url, u);
+      }
+      u.instances++;
+      if (!u.html && r.instanceHTMLSource) u.html = r.instanceHTMLSource;
+    }
+  }
+
+  const SEV = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+  const CAT = { 'Error': 0, 'Alert': 1, 'Best Practice': 2 };
+  const sevRank = s => SEV[(s || '').toUpperCase()] ?? 99;
+  const catRank = c => CAT[c] ?? 98;
+
+  return Array.from(groups.values())
+    .map(g => ({
+      ...g,
+      pages: g.urls.size,
+      children: Array.from(g.urls.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([url, u]) => ({ url, ...u }))
+    }))
+    .sort((a, b) =>
+      sevRank(a.severity) - sevRank(b.severity) ||
+      catRank(a.category) - catRank(b.category) ||
+      b.totalInstances - a.totalInstances ||
+      a.ruleTitle.localeCompare(b.ruleTitle)
+    );
+}
+
+// Rule-first view with expandable per-URL child rows (collapsed by default),
+// matching the CampusGuard "Accessibility Triage" format so downstream tooling
+// picks it up by column name. Contrast findings are excluded, same as elsewhere.
+export function addTriageSheet(wb, perSourceRowsMap, scanInfoMap) {
+  const triageSheet = wb.addWorksheet('Triage Report');
+  triageSheet.properties.outlineLevelRow = 1;
+  triageSheet.properties.outlineProperties = { summaryBelow: false, summaryRight: false };
+  triageSheet.columns = [
+    { header: 'Rule Title',          key: 'ruleTitle',      width: 45 },
+    { header: 'Severity',            key: 'severity',       width: 12 },
+    { header: 'Category',            key: 'category',       width: 14 },
+    { header: 'Engine',              key: 'engine',         width: 10 },
+    { header: 'Status / Components', key: 'statusComp',     width: 40 },
+    { header: 'HTML Source Code',    key: 'html',           width: 40 },
+    { header: 'Ignored (mark Yes)',  key: 'ignored',        width: 16 },
+    { header: 'Pages / Instances',   key: 'pagesInstances', width: 16 },
+    { header: 'Total Instances',     key: 'totalInstances', width: 14 },
+    { header: 'Description',         key: 'description',     width: 50 },
+    { header: 'First Seen',          key: 'firstSeen',       width: 12 },
+    { header: 'Last Seen',           key: 'lastSeen',        width: 12 },
+    { header: 'Trend',               key: 'trend',           width: 20 }
+  ];
+
+  const triageGroups = buildTriageGroups(perSourceRowsMap, scanInfoMap);
+  const triageHtmlColIdx = triageSheet.columns.findIndex(c => c.key === 'html') + 1;
+
+  for (const g of triageGroups) {
+    triageSheet.addRow({
+      ruleTitle:      g.ruleTitle,
+      severity:       g.severity,
+      category:       g.category,
+      engine:         g.engine,
+      statusComp:     'New',
+      pagesInstances: g.pages,
+      totalInstances: g.totalInstances,
+      description:    g.description,
+      firstSeen:      g.firstSeen,
+      lastSeen:       g.lastSeen,
+      trend:          g.lastSeen ? `${g.lastSeen}: ${g.totalInstances}` : `${g.totalInstances}`
+    });
+
+    for (const c of g.children) {
+      const childRow = triageSheet.addRow({
+        ruleTitle:      `  ↳ ${c.url}`,
+        statusComp:     c.componentTitle,
+        html:           c.html,
+        pagesInstances: c.instances
+      });
+      childRow.outlineLevel = 1;
+      childRow.hidden = true;
+      childRow.getCell(triageHtmlColIdx).font = { name: 'Courier New', size: 10 };
+    }
+  }
+
+  applyHeaderStyles(triageSheet);
+  return triageSheet;
+}
+
 function formatScanDate(isoString) {
   const d = new Date(isoString);
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(d.getUTCDate()).padStart(2, '0');
   const yyyy = d.getUTCFullYear();
   return `${mm}_${dd}_${yyyy}`;
+}
+
+// Filename suffix reflecting which opt-in tabs were included, so test runs with
+// different flags don't overwrite each other. Empty (unchanged filename) when
+// neither flag is set, preserving the default output.
+export function tagSuffix(includeDetail, includeTriage) {
+  const parts = [];
+  if (includeDetail) parts.push('detailed');
+  if (includeTriage) parts.push('triage');
+  return parts.length ? ` - ${parts.join('-')}` : '';
 }
 
 function resolveOutputPath(scanInfoMap) {
@@ -307,17 +505,18 @@ function resolveOutputPath(scanInfoMap) {
     ? new Date(Math.max(...dates.map(d => d.getTime())))
     : new Date();
   const dateStr = formatScanDate(latestDate.toISOString());
+  const suffix = tagSuffix(INCLUDE_DETAIL, INCLUDE_TRIAGE);
 
   if (SOURCES.length === 1) {
     const source = SOURCES[0];
     const folder = join(__dirname, 'ARC Reports', source);
     mkdirSync(folder, { recursive: true });
-    return join(folder, `${source} - ${dateStr}.xlsx`);
+    return join(folder, `${source} - ${dateStr}${suffix}.xlsx`);
   } else {
     const label = SOURCES.join(', ');
     const folder = join(__dirname, 'ARC Reports', 'Multiple Sources');
     mkdirSync(folder, { recursive: true });
-    return join(folder, `${label} - ${dateStr}.xlsx`);
+    return join(folder, `${label} - ${dateStr}${suffix}.xlsx`);
   }
 }
 
@@ -330,7 +529,9 @@ async function writeWorkbook(perSourceRowsMap, scanInfoMap, contrastBySource) {
     { header: 'Source',              key: 'sourceName',         width: 30 },
     { header: 'Scan ID',             key: 'scanId',             width: 38 },
     { header: 'Scan Date',           key: 'date',               width: 22 },
-    { header: 'Findings Count',      key: 'findingsCount',      width: 16 },
+    // ARC's scan.findingsCount is the number of distinct rule types that fired, not instances.
+    { header: 'Rule Types',          key: 'findingsCount',      width: 12 },
+    { header: 'Total Instances',     key: 'instanceCount',      width: 16 },
     { header: 'Components Scanned',  key: 'componentsScanned',  width: 20 }
   ];
   for (const info of scanInfoMap.values()) infoSheet.addRow(info);
@@ -367,6 +568,9 @@ async function writeWorkbook(perSourceRowsMap, scanInfoMap, contrastBySource) {
   totalRow.font = { bold: true };
 
   applyHeaderStyles(findingsSummarySheet);
+
+  // --- Triage Report sheet (opt-in via --include-triage) ---
+  if (INCLUDE_TRIAGE) addTriageSheet(wb, perSourceRowsMap, scanInfoMap);
 
   // --- Detailed Findings sheet (opt-in via --include-details) ---
   if (INCLUDE_DETAIL) {
@@ -452,6 +656,7 @@ async function run() {
       log(`Fetching findings...`);
       const findings = await getScanFindings(scan.scanId);
       log(`  Raw: ${findings.length}`);
+      scanInfoMap.get(source).instanceCount = findings.length;
 
       const filtered  = findings.filter(f => !isContrastFinding(f));
       const contrast  = findings.filter(f =>  isContrastFinding(f));
@@ -489,4 +694,5 @@ async function run() {
   }
 }
 
-run();
+// Only run the CLI when invoked directly (not when imported by tests).
+if (IS_CLI) run();
