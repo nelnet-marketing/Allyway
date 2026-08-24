@@ -227,28 +227,74 @@ function normalizeUrl(raw) {
   }
 }
 
-function buildContrastSummaryRows(contrastBySource) {
-  const counts = new Map();
+// Collapse text nodes, blank out numbers, and squeeze whitespace so repeated
+// instances of the same templated element share one signature (e.g. a hero
+// heading on every age-based page). Keeps tag + class/attribute structure.
+function normalizeContrastHtml(html) {
+  return (html || '')
+    .replace(/>\s*[^<>]*\s*</g, '><') // strip text between tags
+    .replace(/\d+/g, '#')             // blank out ids/values/years
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Group contrast findings by "common finding" = source + rule + normalized element,
+// with expandable per-URL children. Deduped by locator: ARC reports each element once
+// per viewport with the attribution stripped, so the same URL + XPath + rule shows up
+// more than once — we count it once.
+export function buildContrastGroups(contrastBySource) {
+  const groups = new Map();
 
   for (const [source, findings] of contrastBySource.entries()) {
+    const seen = new Set();
     for (const f of findings) {
-      const normalized = normalizeUrl(f.componentUrl);
-      const key = `${source}|||${normalized}`;
-      const cur = counts.get(key) ?? {
-        sourceTitle:    source,
-        componentTitle: f.componentTitle,
-        componentUrl:   normalized,
-        contrastCount:  0
-      };
-      cur.contrastCount++;
-      counts.set(key, cur);
+      const url        = normalizeUrl(f.componentUrl ?? '');
+      const dedupeKey  = `${source}|||${url}|||${f.instanceLocatorType}|||${f.instanceLocator}|||${f.ruleKey}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
+      const rule = ruleMap[f.ruleKey] ?? {};
+      const sig  = `${source}|||${f.ruleKey}|||${normalizeContrastHtml(f.instanceHTMLSource)}`;
+      let g = groups.get(sig);
+      if (!g) {
+        g = {
+          sourceTitle:    source,
+          ruleTitle:      sanitizeText(f.ruleTitle) || rule.title || f.ruleKey || '',
+          severity:       f.severity || rule.severity || '',
+          sampleHtml:     f.instanceHTMLSource || '',
+          totalInstances: 0,
+          urls:           new Map()
+        };
+        groups.set(sig, g);
+      }
+      g.totalInstances++;
+
+      let u = g.urls.get(url);
+      if (!u) {
+        u = { componentTitle: f.componentTitle || '', html: f.instanceHTMLSource || '', instances: 0 };
+        g.urls.set(url, u);
+      }
+      u.instances++;
     }
   }
 
-  return Array.from(counts.values()).sort((a, b) => {
-    if (a.sourceTitle !== b.sourceTitle) return a.sourceTitle.localeCompare(b.sourceTitle);
-    return b.contrastCount - a.contrastCount;
-  });
+  const SEV = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+  const sevRank = s => SEV[(s || '').toUpperCase()] ?? 99;
+
+  return Array.from(groups.values())
+    .map(g => ({
+      ...g,
+      pages: g.urls.size,
+      children: Array.from(g.urls.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([url, u]) => ({ url, ...u }))
+    }))
+    .sort((a, b) =>
+      a.sourceTitle.localeCompare(b.sourceTitle) ||
+      sevRank(a.severity) - sevRank(b.severity) ||
+      b.totalInstances - a.totalInstances ||
+      a.ruleTitle.localeCompare(b.ruleTitle)
+    );
 }
 
 // ==== Excel helpers ====
@@ -295,7 +341,7 @@ function addRowsToSheet(sheet, rows, columns) {
   }
 }
 
-function buildFindingsSummaryRows(perSourceRowsMap) {
+export function buildFindingsSummaryRows(perSourceRowsMap) {
   const counts = new Map();
 
   for (const [source, rows] of perSourceRowsMap.entries()) {
@@ -327,6 +373,89 @@ function buildFindingsSummaryRows(perSourceRowsMap) {
     if (b.instances !== a.instances) return b.instances - a.instances;
     return (a.ruleKey || '').localeCompare(b.ruleKey || '');
   });
+}
+
+
+// Collapses the flat Findings Summary rows into an expandable outline: one parent
+// per component/URL (with a subtotal of instances), each holding its per-rule child
+// rows. Input rows are already sorted by source -> URL, so same-URL rows are
+// contiguous. Parent groupKey combines source + URL so the same path scanned by two
+// sources stays separate.
+export function buildFindingsSummaryGroups(summaryRows) {
+  const groups = [];
+  let cur = null;
+
+  for (const r of summaryRows) {
+    const key = `${r.sourceTitle}|||${r.componentUrl}`;
+    if (!cur || cur.key !== key) {
+      cur = {
+        key,
+        componentTitle: r.componentTitle,
+        componentUrl:   r.componentUrl,
+        instances:      0,
+        children:       []
+      };
+      groups.push(cur);
+    }
+    cur.instances += r.instances;
+    cur.children.push(r);
+  }
+
+  return groups;
+}
+
+
+// Writes the Findings Summary sheet: rows grouped into an expandable outline — a
+// parent row per component/URL (subtotal of instances) with the per-rule findings
+// as collapsed child rows — followed by a bold grand-total row.
+export function addFindingsSummarySheet(wb, perSourceRowsMap) {
+  const sheet = wb.addWorksheet('Findings Summary');
+  sheet.properties.outlineLevelRow = 1;
+  sheet.properties.outlineProperties = { summaryBelow: false, summaryRight: false };
+  sheet.columns = [
+    { header: 'Component',      key: 'componentTitle',    width: 30 },
+    { header: 'URL',            key: 'componentUrl',      width: 50 },
+    { header: 'Engine',         key: 'engine',            width: 10 },
+    { header: 'Rule Title',     key: 'ruleTitle',         width: 40 },
+    { header: 'Severity',       key: 'ruleSeverity',      width: 12 },
+    { header: 'Category',       key: 'ruleCategory',      width: 14 },
+    { header: 'Instances',      key: 'instances',         width: 12 },
+    { header: 'Description',    key: 'ruleDescription',   width: 40 },
+    { header: 'Complementary',  key: 'ruleComplementary', width: 40 }
+  ];
+
+  const summaryRows = buildFindingsSummaryRows(perSourceRowsMap);
+  const groups      = buildFindingsSummaryGroups(summaryRows);
+
+  for (const g of groups) {
+    const parentRow = sheet.addRow({
+      componentTitle: g.componentTitle,
+      componentUrl:   g.componentUrl,
+      instances:      g.instances
+    });
+    parentRow.font = { bold: true };
+
+    for (const c of g.children) {
+      const childRow = sheet.addRow({
+        engine:            c.engine,
+        ruleTitle:         c.ruleTitle,
+        ruleSeverity:      c.ruleSeverity,
+        ruleCategory:      c.ruleCategory,
+        instances:         c.instances,
+        ruleDescription:   c.ruleDescription,
+        ruleComplementary: c.ruleComplementary
+      });
+      childRow.outlineLevel = 1;
+      childRow.hidden = true;
+    }
+  }
+
+  const grandTotal = summaryRows.reduce((sum, r) => sum + r.instances, 0);
+  const totalRow = sheet.addRow({ componentTitle: 'TOTAL', instances: grandTotal });
+  totalRow.font = { bold: true };
+
+  applyHeaderStyles(sheet);
+  return sheet;
 }
 
 
@@ -479,6 +608,53 @@ export function addTriageSheet(wb, perSourceRowsMap, scanInfoMap) {
   return triageSheet;
 }
 
+// Common-finding view of contrast issues, mirroring the Triage layout: a parent row
+// per (rule + normalized element) with total/pages counts, expandable to per-URL child
+// rows (collapsed by default). "Ignored (mark Yes)" is a manual tracker for accepted /
+// false-positive patterns — it is NOT persisted across runs (workbook regenerates).
+export function addContrastSheet(wb, contrastBySource) {
+  const sheet = wb.addWorksheet('Contrast Summary');
+  sheet.properties.outlineLevelRow = 1;
+  sheet.properties.outlineProperties = { summaryBelow: false, summaryRight: false };
+  sheet.columns = [
+    { header: 'Rule Title',          key: 'ruleTitle',      width: 45 },
+    { header: 'Status / Components', key: 'statusComp',     width: 40 },
+    { header: 'HTML Source Code',    key: 'html',           width: 45 },
+    { header: 'Ignored (mark Yes)',  key: 'ignored',        width: 16 },
+    { header: 'Pages / Instances',   key: 'pagesInstances', width: 16 },
+    { header: 'Total Instances',     key: 'totalInstances', width: 14 }
+  ];
+
+  const groups     = buildContrastGroups(contrastBySource);
+  const htmlColIdx  = sheet.columns.findIndex(c => c.key === 'html') + 1;
+
+  for (const g of groups) {
+    const parentRow = sheet.addRow({
+      ruleTitle:      g.ruleTitle,
+      statusComp:     'New',
+      html:           g.sampleHtml,
+      pagesInstances: g.pages,
+      totalInstances: g.totalInstances
+    });
+    parentRow.getCell(htmlColIdx).font = { name: 'Courier New', size: 10 };
+
+    for (const c of g.children) {
+      const childRow = sheet.addRow({
+        ruleTitle:      `  ↳ ${c.url}`,
+        statusComp:     c.componentTitle,
+        html:           c.html,
+        pagesInstances: c.instances
+      });
+      childRow.outlineLevel = 1;
+      childRow.hidden = true;
+      childRow.getCell(htmlColIdx).font = { name: 'Courier New', size: 10 };
+    }
+  }
+
+  applyHeaderStyles(sheet);
+  return sheet;
+}
+
 function formatScanDate(isoString) {
   const d = new Date(isoString);
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
@@ -537,37 +713,11 @@ async function writeWorkbook(perSourceRowsMap, scanInfoMap, contrastBySource) {
   for (const info of scanInfoMap.values()) infoSheet.addRow(info);
   applyHeaderStyles(infoSheet);
 
-  // --- Contrast Summary sheet ---
-  const contrastSheet = wb.addWorksheet('Contrast Summary');
-  contrastSheet.columns = [
-    { header: 'Component',               key: 'componentTitle', width: 30 },
-    { header: 'URL',                     key: 'componentUrl',   width: 50 },
-    { header: 'Contrast Findings Count', key: 'contrastCount',  width: 22 }
-  ];
-  buildContrastSummaryRows(contrastBySource).forEach(r => contrastSheet.addRow(r));
-  applyHeaderStyles(contrastSheet);
+  // --- Contrast Summary sheet (common-finding view) ---
+  addContrastSheet(wb, contrastBySource);
 
   // --- Findings Summary sheet ---
-  const findingsSummarySheet = wb.addWorksheet('Findings Summary');
-  findingsSummarySheet.columns = [
-    { header: 'Component',      key: 'componentTitle',    width: 30 },
-    { header: 'URL',            key: 'componentUrl',      width: 50 },
-    { header: 'Engine',         key: 'engine',            width: 10 },
-    { header: 'Rule Title',     key: 'ruleTitle',         width: 40 },
-    { header: 'Severity',       key: 'ruleSeverity',      width: 12 },
-    { header: 'Category',       key: 'ruleCategory',      width: 14 },
-    { header: 'Instances',      key: 'instances',         width: 12 },
-    { header: 'Description',    key: 'ruleDescription',   width: 40 },
-    { header: 'Complementary',  key: 'ruleComplementary', width: 40 }
-  ];
-  const findingsSummaryRows = buildFindingsSummaryRows(perSourceRowsMap);
-  findingsSummaryRows.forEach(r => findingsSummarySheet.addRow(r));
-
-  const grandTotal = findingsSummaryRows.reduce((sum, r) => sum + r.instances, 0);
-  const totalRow = findingsSummarySheet.addRow({ componentTitle: 'TOTAL', instances: grandTotal });
-  totalRow.font = { bold: true };
-
-  applyHeaderStyles(findingsSummarySheet);
+  addFindingsSummarySheet(wb, perSourceRowsMap);
 
   // --- Triage Report sheet (opt-in via --include-triage) ---
   if (INCLUDE_TRIAGE) addTriageSheet(wb, perSourceRowsMap, scanInfoMap);

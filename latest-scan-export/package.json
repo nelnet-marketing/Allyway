@@ -20,6 +20,6 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node tests/triage.test.mjs && node tests/fetch.test.mjs"
+    "test": "node tests/triage.test.mjs && node tests/findings-summary.test.mjs && node tests/fetch.test.mjs"
   }
 }
