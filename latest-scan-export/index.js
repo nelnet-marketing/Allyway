@@ -12,6 +12,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 //   node index.js <API_KEY> "Source A, Source B"
 //   node index.js <API_KEY> "Source A" --date-from=2025-01-01 --date-to=2025-01-31
 //
+// Default output is the AccessibilityIQ-ready workbook: Detailed Findings + Contrast
+// Detail (flat, per-instance) alongside the summary sheets. Flags:
+//   --exclude-details   drop the Detailed Findings + Contrast Detail sheets (summaries only)
+//   --include-triage    add the CampusGuard-format Triage Report sheet (separate downstream)
 // Without date args: exports findings from the single most recent completed scan per source.
 // With date args:    exports findings from the most recent completed scan within that range.
 
@@ -33,7 +37,10 @@ if (IS_CLI && SOURCES.length === 0) {
 const extraArgs      = process.argv.slice(4);
 const DATE_FROM      = extraArgs.find(a => a.startsWith('--date-from='))?.split('=')[1];
 const DATE_TO        = extraArgs.find(a => a.startsWith('--date-to='))?.split('=')[1];
-const INCLUDE_DETAIL = extraArgs.includes('--include-details');
+// Detailed Findings + Contrast Detail are ON by default (AccessibilityIQ ingests them);
+// opt out with --exclude-details. (--include-details still accepted as a harmless no-op.)
+const INCLUDE_DETAIL = !extraArgs.includes('--exclude-details');
+// Triage Report stays opt-in — it's the separate CampusGuard-format downstream, not AccessibilityIQ.
 const INCLUDE_TRIAGE = extraArgs.includes('--include-triage');
 
 // Findings-fetch tuning. --page-size sets the starting page size; on flaky scans
@@ -663,13 +670,12 @@ function formatScanDate(isoString) {
   return `${mm}_${dd}_${yyyy}`;
 }
 
-// Filename suffix reflecting which opt-in tabs were included, so test runs with
-// different flags don't overwrite each other. Empty (unchanged filename) when
-// neither flag is set, preserving the default output.
+// Filename suffix marking DEVIATIONS from the default output (details on, triage off),
+// so a plain run stays clean and non-default runs don't overwrite it.
 export function tagSuffix(includeDetail, includeTriage) {
   const parts = [];
-  if (includeDetail) parts.push('detailed');
-  if (includeTriage) parts.push('triage');
+  if (!includeDetail) parts.push('summary-only');
+  if (includeTriage)  parts.push('triage');
   return parts.length ? ` - ${parts.join('-')}` : '';
 }
 
@@ -748,6 +754,45 @@ async function writeWorkbook(perSourceRowsMap, scanInfoMap, contrastBySource) {
     }
 
     applyHeaderStyles(detailSheet);
+
+    // Flat per-instance contrast rows for AccessibilityIQ ingest — the tool computes the
+    // coarse signature (tag+class+role) itself, so this just dumps raw rows. Deduped by
+    // locator like buildContrastGroups so per-viewport repeats don't inflate counts.
+    const contrastCols = [
+      { header: 'Component',        key: 'componentTitle',    width: 25 },
+      { header: 'URL',              key: 'componentUrl',       width: 30 },
+      { header: 'Engine',           key: 'engine',             width: 10 },
+      { header: 'Severity',         key: 'severity',           width: 10 },
+      { header: 'Category',         key: 'category',           width: 14 },
+      { header: 'Rule',             key: 'ruleTitle',          width: 25 },
+      { header: 'Rule Key',         key: 'ruleKey',            width: 22 },
+      { header: 'HTML Source Code', key: 'instanceHTMLSource', width: 40 }
+    ];
+    const cSheet = wb.addWorksheet('Contrast Detail');
+    cSheet.columns = contrastCols;
+    const seenContrast = new Set();
+    for (const src of SOURCES) {
+      for (const f of (contrastBySource.get(src) ?? [])) {
+        const url = normalizeUrl(f.componentUrl ?? '');
+        const dedupe = `${src}|||${url}|||${f.instanceLocatorType}|||${f.instanceLocator}|||${f.ruleKey}`;
+        if (seenContrast.has(dedupe)) continue;
+        seenContrast.add(dedupe);
+        const rule = ruleMap[f.ruleKey] ?? {};
+        cSheet.addRow({
+          componentTitle:     f.componentTitle,
+          componentUrl:       url,
+          engine:             f.engineKey || '',
+          severity:           (f.severity || rule.severity || '').toUpperCase(),
+          category:           f.category || rule.type?.title || '',
+          ruleTitle:          sanitizeText(f.ruleTitle) || rule.title || '',
+          ruleKey:            f.ruleKey || '',
+          instanceHTMLSource: f.instanceHTMLSource || ''
+        });
+      }
+    }
+    const cHtmlIdx = contrastCols.findIndex(c => c.key === 'instanceHTMLSource') + 1;
+    for (let i = 2; i <= cSheet.rowCount; i++) cSheet.getRow(i).getCell(cHtmlIdx).font = { name: 'Courier New', size: 10 };
+    applyHeaderStyles(cSheet);
   }
 
   const outputPath = resolveOutputPath(scanInfoMap);

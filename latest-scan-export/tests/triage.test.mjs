@@ -20,10 +20,10 @@ eq('sanitize amp last', sanitizeText('A &amp; B'), 'A & B');
 eq('sanitize empty', sanitizeText(''), '');
 
 // --- tagSuffix (filename suffix from opt-in flags) ---
-eq('tagSuffix none (unchanged default)', tagSuffix(false, false), '');
-eq('tagSuffix detail only', tagSuffix(true, false), ' - detailed');
-eq('tagSuffix triage only', tagSuffix(false, true), ' - triage');
-eq('tagSuffix both', tagSuffix(true, true), ' - detailed-triage');
+eq('tagSuffix default (details on, no triage) → clean', tagSuffix(true, false), '');
+eq('tagSuffix summary-only (details excluded)', tagSuffix(false, false), ' - summary-only');
+eq('tagSuffix triage', tagSuffix(true, true), ' - triage');
+eq('tagSuffix summary-only + triage', tagSuffix(false, true), ' - summary-only-triage');
 
 // --- isoDateFromScan (UTC-of-local-parse, matches ARC filename behavior) ---
 eq('isoDate matches filename behavior', isoDateFromScan('2026-05-20T23:38:11.6866667'), '2026-05-21');

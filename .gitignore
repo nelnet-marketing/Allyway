@@ -348,3 +348,7 @@ MigrationBackup/
 
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
+
+# AccessibilityIQ — generated data / analysis outputs (not source)
+latest-scan-export/calibration/
+a11y-iq-agent-reports/
