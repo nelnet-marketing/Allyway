@@ -272,6 +272,8 @@ async function saveNow(){
     await putAll(Object.entries(state.dispositions).map(([k,v])=>({kind:'disp',source:src,dkey:k,...v})), {kind:'disp',source:src});
     await putAll((state.manualFindings||[]).map(m=>({kind:'manual',source:src,mid:m.id,...m})), {kind:'manual',source:src});
     await NS().putRecords([{kind:'config',source:'_site',ckey:'xcats',list:state.xcats}], {replaceWhere:{kind:'config',source:'_site',ckey:'xcats'}});
+    const sm=computeSummary(state.defects, state.dispositions, state.manualFindings);
+    statsCache[src]=sm; writeSummary(src, sm);   // keep the dashboard summary current (fire-and-forget; a summary failure never fails the save)
     setSave('saved');
   }catch(e){ setSave('error'); toast('Save failed: '+(e.code||e.message),'error'); }
 }
@@ -302,7 +304,23 @@ async function loadSources(){
   for(const it of await queryAll({kind:'source'})){ const s=it.data.source; if(seen.has(s))continue; seen.add(s); out.push({source:s,scanDate:it.data.scanDate}); }
   return out.sort((a,b)=>a.source.localeCompare(b.source));
 }
-// Home dashboard: headline standard-stream triage numbers for one source, without disturbing global `state`.
+// Canonical dashboard-summary math (standard stream + active manual a11y). Shared by sourceStats + saveNow.
+function computeSummary(defects, dispositions, manual){
+  const excl=new Set(); for(const [k,v] of Object.entries(dispositions)){ if(v.status==='out_of_scope'&&k.includes('|||')) excl.add(k.split('|||')[1]); }
+  const res=(fp,url)=>{ if(excl.has(url))return 'out_of_scope'; const pg=dispositions[`${fp}|||${url}`]; if(pg&&pg.status)return pg.status; const rd=dispositions[fp]; if(rd&&rd.status)return rd.status; return 'untriaged'; };
+  let active=0,suppressed=0,verify=0,untriaged=0,total=0;
+  for(const d of Object.values(defects)){ for(const url of d.affected_pages){ const st=res(d.fingerprint,url), b=SMAP[st]?.bucket||'active';
+    total++; if(b==='active')active++; else if(b==='suppressed')suppressed++; else if(b==='verify')verify++; if(st==='untriaged')untriaged++; } }
+  active += (manual||[]).filter(m=>m.type==='a11y' && (SMAP[m.status||'untriaged']?.bucket||'active')==='active').length;
+  return {active, suppressed, verify, untriaged, total, triagedPct: total?Math.round(100*(total-untriaged)/total):0};
+}
+// Persist a source's summary so the dashboard reads ONE small record instead of the whole scan. Non-critical: swallow errors.
+async function writeSummary(src, s){
+  if(!NS()) return;
+  try{ await NS().putRecords([{kind:'summary',source:src,active:s.active,suppressed:s.suppressed,verify:s.verify,
+    untriaged:s.untriaged,total:s.total,triagedPct:s.triagedPct,updatedAt:Date.now()}], {replaceWhere:{kind:'summary',source:src}}); }catch{}
+}
+// Full recompute for one source — dashboard FALLBACK, used only when no summary record exists yet.
 async function sourceStats(src){
   const [scanRows,dispRows,manualRows]=await Promise.all([
     queryAll({kind:'scan',source:src}), queryAll({kind:'disp',source:src}), queryAll({kind:'manual',source:src})]);
@@ -312,13 +330,7 @@ async function sourceStats(src){
   for(const it of dispRows){ const k=it.data.dkey; if(dseen.has(k))continue; dseen.add(k); const {kind,source,dkey,...x}=it.data; disp[k]=x; }
   const manual=[], mseen=new Set();
   for(const it of manualRows){ const id=it.data.mid; if(mseen.has(id))continue; mseen.add(id); manual.push(it.data); }
-  const excl=new Set(); for(const [k,v] of Object.entries(disp)){ if(v.status==='out_of_scope'&&k.includes('|||')) excl.add(k.split('|||')[1]); }
-  const res=(fp,url)=>{ if(excl.has(url))return 'out_of_scope'; const pg=disp[`${fp}|||${url}`]; if(pg&&pg.status)return pg.status; const rd=disp[fp]; if(rd&&rd.status)return rd.status; return 'untriaged'; };
-  let active=0,suppressed=0,verify=0,untriaged=0,total=0;
-  for(const d of Object.values(defects)){ for(const url of d.affected_pages){ const st=res(d.fingerprint,url), b=SMAP[st]?.bucket||'active';
-    total++; if(b==='active')active++; else if(b==='suppressed')suppressed++; else if(b==='verify')verify++; if(st==='untriaged')untriaged++; } }
-  active += manual.filter(m=>m.type==='a11y' && (SMAP[m.status||'untriaged']?.bucket||'active')==='active').length;
-  return {src, active, suppressed, verify, untriaged, total, triagedPct: total?Math.round(100*(total-untriaged)/total):0};
+  return {src, ...computeSummary(defects, disp, manual)};
 }
 function metricsHtml(s){
   if(s.err) return `<div class="src-card__foot"><span style="color:var(--gray)">Open to view →</span></div>`;
@@ -412,7 +424,8 @@ async function adminLoadScan(file){
     showLoading(`Saving ${scan.source}…`);
     await ingestScanToStorage(scan);
     hideLoading();
-    delete statsCache[scan.source];   // scan changed — force a fresh recompute for this card
+    const st=await sourceStats(scan.source).catch(()=>null);   // scan changed — recompute + overwrite any stale summary
+    if(st){ statsCache[scan.source]=st; await writeSummary(scan.source, st); } else delete statsCache[scan.source];
     toast(`${scan.source}: ${scan.standard.length} rules + ${(scan.contrast||[]).length} contrast saved. Added to the dashboard.`);
     await showPicker(true);   // stay on the dashboard so you can load more sources; click the card to open one
   }catch(e){ hideLoading(); toast('Load failed: '+(e.code||e.message),'error'); }
@@ -863,15 +876,21 @@ async function showPicker(forcePick){
     // No overlay: cards carry their own loading state. Keep any existing cards visible while we refresh;
     // only show a placeholder on a truly empty first load (grid has no cards yet).
     if(!grid.querySelector('.src-card')) grid.innerHTML='<p class="grid-msg">Loading sources…</p>';
-    let sources=[];
-    try{ sources=await loadSources(); }
-    catch(e){ grid.innerHTML=`<p class="grid-msg" style="color:var(--error-red)">Could not read storage: ${esc(e.message||e.code||e)}</p>`; return; }
+    let sources=[], summ={};
+    try{
+      const [srcList, summaryRows]=await Promise.all([loadSources(), queryAll({kind:'summary'})]);   // ONE query gets every source's cached summary
+      sources=srcList;
+      for(const it of summaryRows){ const d=it.data, cur=summ[d.source]; if(!cur||(d.updatedAt||0)>(cur.updatedAt||0)) summ[d.source]=d; }   // keep newest per source
+    }catch(e){ grid.innerHTML=`<p class="grid-msg" style="color:var(--error-red)">Could not read storage: ${esc(e.message||e.code||e)}</p>`; return; }
     if(!sources.length){ grid.innerHTML=`<p class="grid-msg">${admin?'No scans yet — load a scan.json to seed the site.':'No scans loaded yet — an admin needs to add one.'}</p>`; return; }
-    // Render with cached numbers if we have them (instant on re-entry), else a skeleton; then refresh each in place.
-    renderSourceCards(grid, sources.map(s=>({src:s.source, scanDate:s.scanDate, ...(statsCache[s.source]||{loading:true})})));
-    sources.forEach(s=> sourceStats(s.source)
-      .then(st=>{ statsCache[s.source]=st; fillSourceCard({...st, scanDate:s.scanDate}); })
-      .catch(()=>fillSourceCard({src:s.source, scanDate:s.scanDate, err:true})));
+    // Prefer this session's cache, then the persisted summary (kept current on every save), else a skeleton.
+    renderSourceCards(grid, sources.map(s=>({src:s.source, scanDate:s.scanDate, ...(statsCache[s.source]||summ[s.source]||{loading:true})})));
+    sources.forEach(s=>{
+      if(statsCache[s.source]) return;                                    // fresh numbers already this session
+      if(summ[s.source]){ statsCache[s.source]=summ[s.source]; return; }  // persisted summary is authoritative — no scan load
+      sourceStats(s.source).then(st=>{ statsCache[s.source]=st; fillSourceCard({...st, scanDate:s.scanDate}); writeSummary(s.source, st); })
+        .catch(()=>fillSourceCard({src:s.source, scanDate:s.scanDate, err:true}));   // first time only: compute the full scan, then persist a summary
+    });
     return;
   } else {
     help.innerHTML='Local preview — load a <code>&lt;source&gt; - scan.json</code> from <code>node index.js</code>. Nothing is saved; use Rideshare for real triage.';
