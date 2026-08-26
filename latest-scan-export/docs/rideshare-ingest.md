@@ -5,9 +5,18 @@ Refresh Allyway's data on Rideshare without opening the site on VPN and uploadin
 
 ## Flow
 ```
-node index.js                    # off VPN — generates ARC Reports/<source>/<source> - scan.json
-node build-rideshare-records.mjs # -> rideshare-payload/<source>.json + manifest.json
+node index.js <API_KEY> "SOURCE"  # off VPN — generates ARC Reports/<source>/<source> - scan.json (unchanged)
+node build-rideshare-records.mjs  # -> rideshare-payload/<source>.json + manifest.json
 # then push (below)
+```
+
+Generation (`node index.js`) is unchanged — same API key + source args as before; the
+automation only replaces the manual on-VPN "Load scan.json" upload.
+
+Build only some sources (payloads are the only thing that gets pushed, so this scopes the push too):
+```
+node build-rideshare-records.mjs --only="Bloomwell"     # just this source
+node build-rideshare-records.mjs --skip="ScholarNet"    # everything except an already-triaged source
 ```
 
 `build-rideshare-records.mjs` produces the exact records the tool reads — the same shapes
