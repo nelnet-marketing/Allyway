@@ -27,6 +27,13 @@ function recordsFor(scan) {
   return recs;
 }
 
+// Optional source filters: --only="A, B" builds just those; --skip="C" builds all but those.
+// Match on the scan's source name (case-insensitive). --only wins if both name a source.
+const argv = process.argv.slice(2);
+const listArg = pfx => { const a = argv.find(x => x.startsWith(pfx)); return a ? a.slice(pfx.length).split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : null; };
+const ONLY = listArg('--only=');
+const SKIP = listArg('--skip=') || [];
+
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
 
@@ -42,6 +49,10 @@ for (const dir of readdirSync(REPORTS, { withFileTypes: true })) {
   catch (e) { console.warn(`  ⚠ skipped ${dir.name}: ${e.message}`); continue; }
   if (!scan.source || !Array.isArray(scan.standard)) { console.warn(`  ⚠ skipped ${dir.name}: not an Allyway scan.json`); continue; }
 
+  const key = scan.source.toLowerCase();
+  if (ONLY && !ONLY.includes(key)) continue;
+  if (SKIP.includes(key)) { console.log(`  ↷ skipped ${scan.source} (--skip)`); continue; }
+
   const records = recordsFor(scan);
   const file = `${scan.source}.json`;
   writeFileSync(join(OUT, file), JSON.stringify({
@@ -55,5 +66,7 @@ for (const dir of readdirSync(REPORTS, { withFileTypes: true })) {
 sources.sort((a, b) => a.source.localeCompare(b.source));
 writeFileSync(join(OUT, 'manifest.json'), JSON.stringify({ generatedAt: new Date().toISOString(), sources }, null, 2));
 
-console.log(`✅ rideshare-payload ready — ${sources.length} source(s), ${sources.reduce((n, s) => n + s.recordCount, 0)} records total`);
+const scope = ONLY ? ` (--only)` : SKIP.length ? ` (--skip ${SKIP.length})` : '';
+console.log(`✅ rideshare-payload ready${scope} — ${sources.length} source(s), ${sources.reduce((n, s) => n + s.recordCount, 0)} records total`);
 console.log('   Push: see docs/rideshare-ingest.md (remove kind:scan/source/summary per source, then add_site_data).');
+console.log('   Filter: --only="Bloomwell" builds one source; --skip="ScholarNet" leaves an already-triaged source untouched.');
