@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Allyway — Nelnet accessibility triage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --hero-green:#AED136;--medium-green:#70BA44;--dark-green:#11891C;--gray:#A3AAAD;
+  --dark-gray:#565B64;--gold:#FDB913;--white:#FFFFFF;--off-white:#F7F8F4;
+  --hairline:#E6E8E3;--soft-fill:#F0F4E8;--error-red:#A80C59;
+  --r:10px;--rl:16px;--shadow-md:0 4px 18px rgba(17,137,28,0.11);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Open Sans',Arial,sans-serif;background:var(--off-white);color:var(--dark-gray);min-height:100vh;-webkit-font-smoothing:antialiased;}
+header{background:var(--white);position:sticky;top:0;z-index:100;border-bottom:1px solid var(--hairline);box-shadow:0 1px 5px rgba(0,0,0,0.05);}
+.hdr{max-width:1280px;margin:0 auto;padding:16px 32px;display:flex;align-items:center;flex-wrap:wrap;gap:14px;}
+.nelnet-logo{height:38px;width:auto;}
+.product-tag{margin-left:14px;padding-left:14px;border-left:1px solid var(--hairline);display:flex;align-items:center;gap:10px;}
+.product-tag strong{font-family:'Red Hat Display',sans-serif;font-size:15px;font-weight:600;letter-spacing:-0.01em;color:var(--dark-gray);}
+.badge{font-family:'Red Hat Display',sans-serif;font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:5px;letter-spacing:.02em;background:var(--soft-fill);border:1px solid #d6e3b8;color:var(--dark-green);}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--gray);}
+.main{max-width:1280px;margin:0 auto;padding:28px 32px 80px;}
+.card{background:var(--white);border-radius:var(--rl);box-shadow:var(--shadow-md);overflow:hidden;margin-bottom:22px;border:1px solid var(--hairline);}
+.card-body{padding:22px 26px;}
+.btn-primary{padding:11px 22px;background:var(--dark-green);color:var(--white);border:none;border-radius:8px;font-family:'Red Hat Display',sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 4px 14px rgba(17,137,28,.22);transition:all .15s;}
+.btn-primary:hover{background:var(--medium-green);transform:translateY(-1px);}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--dark-green);outline-offset:2px;}
+.empty-state{text-align:center;padding:50px 20px;color:var(--gray);}
+.empty-state h2{font-family:'Red Hat Display',sans-serif;font-size:18px;color:var(--dark-gray);margin-bottom:8px;}
+.empty-state p{font-size:13px;line-height:1.6;max-width:520px;margin:0 auto 18px;}
+.proto-note{background:#fffbf0;border:1px solid #f0d880;border-left:4px solid var(--gold);border-radius:var(--r);padding:12px 15px;font-size:12px;color:#6a4e00;margin-bottom:18px;line-height:1.5;}
+.tabs{display:flex;gap:8px;border-bottom:2px solid var(--hairline);margin-bottom:18px;}
+.tab{padding:10px 22px;font-family:'Red Hat Display',sans-serif;font-size:13.5px;font-weight:600;color:var(--dark-gray);background:var(--off-white);border:1px solid var(--hairline);border-bottom:none;border-radius:9px 9px 0 0;margin-bottom:-2px;cursor:pointer;transition:all .12s;}
+.tab:hover:not(:disabled){color:var(--dark-green);background:var(--soft-fill);}
+.tab[aria-selected=true]{color:var(--white);background:var(--dark-green);border-color:var(--dark-green);box-shadow:0 -2px 8px rgba(17,137,28,.15);}
+.tab:disabled{opacity:.4;cursor:not-allowed;}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px;}
+.stat{background:var(--off-white);border:1px solid var(--hairline);border-radius:var(--r);padding:13px;text-align:center;}
+.stat.headline{background:var(--soft-fill);border-color:#d6e3b8;}
+.stat-n{font-family:'Red Hat Display',sans-serif;font-size:1.7rem;font-weight:700;color:var(--dark-green);line-height:1;margin-bottom:3px;}
+.stat-l{font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:.06em;}
+.stat-sub{font-size:9.5px;color:var(--gray);margin-top:4px;line-height:1.35;}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
+.toolbar label{font-family:'Red Hat Display',sans-serif;font-size:11.5px;font-weight:600;color:var(--dark-gray);display:flex;align-items:center;gap:6px;}
+.toolbar select,.toolbar input[type=search]{padding:8px 11px;border:1.5px solid var(--hairline);border-radius:7px;font-size:12.5px;font-family:'Open Sans',sans-serif;color:var(--dark-gray);background:var(--white);}
+.toolbar input[type=search]{min-width:200px;}
+.toolbar .chk{display:flex;align-items:center;gap:6px;font-weight:500;font-size:12px;}
+.toolbar .spacer{margin-left:auto;font-size:11.5px;color:var(--gray);}
+.tbl-wrap{overflow-x:auto;border-radius:var(--r);border:1px solid var(--hairline);}
+table.defects{width:100%;border-collapse:collapse;font-size:12.5px;}
+table.defects th{background:var(--soft-fill);color:var(--dark-green);font-family:'Red Hat Display',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:9px 10px;text-align:left;border-bottom:1px solid #d6e3b8;white-space:nowrap;}
+table.defects th.sortable{cursor:pointer;user-select:none;}
+table.defects th.sortable:hover{color:var(--medium-green);}
+th .arr{opacity:.4;font-size:9px;}
+th[aria-sort=ascending] .arr,th[aria-sort=descending] .arr{opacity:1;}
+table.defects td{padding:8px 10px;border-bottom:1px solid var(--hairline);vertical-align:top;color:var(--dark-gray);line-height:1.4;}
+tr.rule-row td.clickable{cursor:pointer;}
+tr.rule-row:hover td.clickable{background:#fbfdf6;}
+table.defects tr.detail-row td{background:var(--off-white);}
+table.defects tr.detail-row.hidden{display:none;}
+.rule-desc{font-size:10.5px;color:var(--gray);margin-top:2px;}
+.pill{display:inline-block;font-family:'Red Hat Display',sans-serif;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em;}
+.sev-critical{background:#FDEDEC;color:#C0392B;}.sev-high{background:#FEF0E7;color:#854000;}
+.sev-medium{background:#FEF9E7;color:#7a5000;}.sev-low{background:#EAF7FB;color:#1A5A6B;}
+.sev-best-practice,.sev-other{background:var(--off-white);color:var(--gray);}
+.cat-error{background:#FDEDEC;color:#C0392B;}.cat-alert{background:#FEF9E7;color:#7a5000;}.cat-bp,.cat-other{background:var(--off-white);color:var(--gray);}
+.lowvol{background:var(--off-white);color:var(--gray);border:1px dashed var(--gray);margin-left:5px;}
+.roll{font-size:11px;color:var(--dark-gray);}
+.roll .mix{font-weight:600;color:var(--gold);filter:brightness(.7);}
+.caret{display:inline-block;width:0;height:0;border-left:5px solid var(--dark-green);border-top:4px solid transparent;border-bottom:4px solid transparent;margin-right:6px;transition:transform .15s;vertical-align:middle;}
+.caret.open{transform:rotate(90deg);}
+.status-sel{padding:5px 7px;border:1.5px solid var(--hairline);border-radius:6px;font-size:11.5px;font-family:'Red Hat Display',sans-serif;font-weight:600;background:var(--white);cursor:pointer;max-width:170px;}
+.status-sel.b-untriaged{border-color:#f0c94a;color:#935A00;background:#fffaf0;}
+.status-sel.b-active{border-color:#bcd98f;color:var(--dark-green);background:#f3f9ea;}
+.status-sel.b-deferred{border-color:#b3bfd6;color:#3a4a6b;background:#eef1f8;}
+.status-sel.b-suppressed{border-color:#e6c9d5;color:var(--error-red);background:#fdf3f7;}
+.status-sel.b-verify{border-color:#8fd0a5;color:#1A6B3A;background:#eefaf1;}
+.bulk-sel{margin-top:5px;font-size:10.5px;max-width:170px;padding:4px 6px;border:1px dashed var(--hairline);border-radius:6px;color:var(--dark-gray);background:var(--white);cursor:pointer;font-family:'Red Hat Display',sans-serif;}
+.subfield{margin-top:5px;width:100%;max-width:170px;padding:4px 6px;border:1.5px solid var(--hairline);border-radius:6px;font-size:11px;font-family:'Open Sans',sans-serif;}
+.notes-input{width:100%;min-width:120px;padding:6px 8px;border:1.5px solid var(--hairline);border-radius:6px;font-size:12px;font-family:'Open Sans',sans-serif;}
+.notes-input:focus,.subfield:focus{border-color:var(--dark-green);outline:none;box-shadow:0 0 0 3px rgba(17,137,28,.09);}
+.detail-tbl{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px;}
+.detail-tbl th{text-align:left;font-size:9.5px;color:var(--gray);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;background:none;border:none;}
+.detail-tbl td{padding:6px 8px;border-top:1px solid var(--hairline);word-break:break-all;vertical-align:top;}
+.detail-tbl code{font-family:Consolas,'SF Mono',monospace;font-size:10.5px;color:var(--dark-gray);white-space:pre-wrap;word-break:break-all;}
+.pg-excluded td{opacity:.55;text-decoration:line-through;}
+details.suppressed-sec{margin-top:20px;border:1px solid var(--hairline);border-radius:var(--r);background:var(--white);}
+details.suppressed-sec summary{padding:12px 16px;font-family:'Red Hat Display',sans-serif;font-weight:600;font-size:13px;color:var(--dark-gray);cursor:pointer;}
+details.suppressed-sec .card-body{padding:0 16px 16px;}
+.toast{position:fixed;bottom:22px;right:22px;padding:13px 18px;border-radius:var(--r);font-size:12.5px;font-weight:500;box-shadow:0 12px 40px rgba(17,137,28,0.15);transform:translateY(80px);opacity:0;transition:all .28s;z-index:999;max-width:340px;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.error{background:#2d0a14;color:#f5b8d1;}.toast.ok{background:#0a2d12;color:#c8e8a8;}
+.footer{text-align:center;font-size:11px;color:var(--gray);margin-top:26px;}
+</style>
+</head>
+<body>
+<header>
+  <div class="hdr">
+    <svg class="nelnet-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" aria-label="Nelnet" role="img">
+      <defs><linearGradient id="nlg" x1="54" y1="108" x2="54" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#70ba44"/><stop offset="1" stop-color="#afd136"/></linearGradient></defs>
+      <path fill="#899396" d="m57.34,26.9c-5.89,0-10.04,2.64-13.56,5.77l-.2-3.64c-.02-.45-.38-.8-.83-.81h-11.23c-.47,0-.84.38-.84.85v51.01c0,.46.37.84.84.84h12.5c.46,0,.84-.38.84-.84v-35.17c4.56-5.26,6.59-6.11,9.6-6.11,4.2,0,8.68,2.9,8.68,11.03v30.26c0,.46.37.84.83.84h12.51c.46,0,.84-.38.83-.84v-32.86c0-13.34-10.05-20.33-19.98-20.33"/>
+      <path fill="url(#nlg)" d="m11.12,54c0-23.64,19.23-42.87,42.88-42.87s42.87,19.23,42.87,42.87-19.23,42.88-42.87,42.88S11.12,77.64,11.12,54M54,0C24.22,0,0,24.22,0,54s24.22,54,54,54,54-24.22,54-54S83.77,0,54,0Z"/>
+    </svg>
+    <div class="product-tag"><strong>Allyway</strong><span class="badge">a Nelway tool</span></div>
+    <div class="hdr-right" id="hdr-right"></div>
+    <span class="save-indicator" id="save-indicator" style="margin-left:12px;font-size:11px;color:var(--gray)"></span>
+  </div>
+</header>
+
+<div class="main">
+  <div class="proto-note" id="mode-note"></div>
+
+  <div class="card"><div class="card-body">
+    <div id="picker-area">
+      <div class="empty-state">
+        <h2 id="picker-title">Choose a source</h2>
+        <p id="picker-help"></p>
+        <div id="picker-controls"></div>
+      </div>
+    </div>
+
+    <div id="tracker-area" hidden>
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" aria-selected="true" id="tab-standard" data-stream="standard">Standard rules</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-contrast" data-stream="contrast" disabled title="Load an export with a Contrast Detail sheet">Contrast</button>
+      </div>
+      <div id="contrast-groupby" style="display:none;align-items:center;gap:8px;margin-bottom:14px;font-family:'Red Hat Display',sans-serif;font-size:12px;font-weight:600;color:var(--dark-gray)">
+        <span>Group by:</span>
+        <button class="tab" type="button" data-groupby="page" aria-selected="true" style="padding:6px 14px;border-radius:8px;font-size:12px;border:1px solid var(--hairline)">Page</button>
+        <button class="tab" type="button" data-groupby="signature" aria-selected="false" style="padding:6px 14px;border-radius:8px;font-size:12px;border:1px solid var(--hairline)">Signature</button>
+      </div>
+      <div class="stat-row" id="stat-row"></div>
+      <div class="toolbar">
+        <label for="filter-search">Search <input type="search" id="filter-search" placeholder="Filter by rule title…"></label>
+        <label for="filter-sev"><span id="filter-grade-label">Severity</span>
+          <select id="filter-sev"><option value="">All</option><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option><option>BEST PRACTICE</option></select>
+        </label>
+        <label class="chk"><input type="checkbox" id="filter-lowvol"> Hide low-volume (≤2 pages)</label>
+        <button class="bulk-sel" id="btn-worklist" type="button" style="margin-top:0">⬇ Export work list (CSV)</button>
+        <button class="bulk-sel" id="btn-switch" type="button" style="margin-top:0">↺ Switch source</button>
+        <span class="spacer" id="result-count"></span>
+      </div>
+      <div class="tbl-wrap">
+        <table class="defects">
+          <thead><tr id="head-row">
+            <th class="sortable" data-sort="rule" aria-sort="none">Rule <span class="arr">▲▼</span></th>
+            <th class="sortable" data-sort="sev" aria-sort="none">Severity <span class="arr">▲▼</span></th>
+            <th class="sortable" data-sort="pages" aria-sort="none" style="text-align:center">Pages (active/total) <span class="arr">▲▼</span></th>
+            <th class="sortable" data-sort="inst" aria-sort="none" style="text-align:center">Instances <span class="arr">▲▼</span></th>
+            <th class="sortable" data-sort="status" aria-sort="none">Status (rollup / set all)</th>
+          </tr></thead>
+          <tbody id="defects-tbody"></tbody>
+        </table>
+      </div>
+      <details class="suppressed-sec" id="manual-sec" open>
+        <summary id="manual-summary">Manual findings &amp; observations (0)</summary>
+        <div class="card-body">
+          <button class="btn-primary" id="btn-add-manual" type="button" style="margin-bottom:12px">＋ Add finding</button>
+          <div id="manual-form" hidden></div>
+          <div class="tbl-wrap"><table class="defects"><thead><tr>
+            <th>Title</th><th>Page</th><th>Type</th><th>Severity</th><th>Status</th><th>Note</th><th></th>
+          </tr></thead><tbody id="manual-tbody"></tbody></table></div>
+        </div>
+      </details>
+
+      <details class="suppressed-sec" id="suppressed-sec">
+        <summary id="suppressed-summary">Suppressed (0)</summary>
+        <div class="card-body"><div class="tbl-wrap">
+          <table class="defects"><thead><tr><th>Rule</th><th>Page / scope</th><th>Why suppressed</th></tr></thead>
+          <tbody id="suppressed-tbody"></tbody></table>
+        </div></div>
+      </details>
+    </div>
+  </div></div>
+  <p class="footer"><strong>Allyway</strong> · a Nelway tool · Nelnet Marketing &amp; Communications</p>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ── Status model (spec §4) ─────────────────────────────────── */
+const STATUSES = [
+  {v:'untriaged',      label:'Untriaged',               bucket:'active'},
+  {v:'need_fix',       label:'I need to fix',           bucket:'active'},
+  {v:'in_progress',    label:'In progress',             bucket:'active', field:'assignee'},
+  {v:'needs_approval', label:'Needs approval',          bucket:'active'},
+  {v:'deferred',       label:'Deferred / backlog',      bucket:'active'},
+  {v:'fixed',          label:'Fixed',                   bucket:'verify'},
+  {v:'ok_ignore',      label:'OK to ignore',            bucket:'suppressed', field:'reason'},
+  {v:'not_issue',      label:'Not really an issue',     bucket:'suppressed'},
+  {v:'out_of_scope',   label:'Out of scope — redirect/removed', bucket:'suppressed', pageOnly:true},
+  {v:'cant_fix',       label:"Can't fix — third party", bucket:'suppressed', field:'xcat'},
+];
+const SMAP = Object.fromEntries(STATUSES.map(s=>[s.v,s]));
+const REASONS = ['Best Practice','Low value / low risk'];
+const DEFAULT_XCATS = ['YouTube Video Player','Gravity Forms','HubSpot Form'];
+const XCAT_RENAME = {'HubSpot':'HubSpot Form'};   // one-time normalization of saved data
+const SEV_RANK = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3,'BEST PRACTICE':4};
+
+let state = null;
+let sortKey = 'sev', sortDir = 1;
+let activeStream = 'standard';                    // 'standard' | 'contrast'
+let contrastGroupBy = 'page';                     // contrast tab: 'page' | 'signature'
+const orders = { standard: [], contrast: [], contrastPage: [] };   // frozen display order per view
+const currentDefects = () => activeStream==='contrast' ? (state.contrast||{}) : state.defects;
+const pageView = () => activeStream==='contrast' && contrastGroupBy==='page';
+const orderKey = () => pageView() ? 'contrastPage' : activeStream;
+
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const cssId = s => String(s).replace(/[^a-zA-Z0-9_-]/g,'_');
+function toast(m,t='ok'){const el=document.getElementById('toast');el.textContent=m;el.className=`toast ${t} show`;setTimeout(()=>el.classList.remove('show'),3200);}
+
+/* ── Persistence + loading — dual-mode: NelnetStorage on Rideshare, local file off-VPN ── */
+const NS = () => window.NelnetStorage;                    // null in local preview
+const dkey = (fp,url) => url ? `${fp}|||${url}` : fp;
+
+const LKEY = src => `allyway::${src}`;
+function localLoad(src){ try{return JSON.parse(localStorage.getItem(LKEY(src))||'{}');}catch{return{};} }
+function localSaveNow(){ if(!state)return; try{localStorage.setItem(LKEY(state.source),JSON.stringify({dispositions:state.dispositions,manualFindings:state.manualFindings,xcats:state.xcats}));}catch{} }
+function cachedLocalScan(){ try{return JSON.parse(localStorage.getItem('allyway::_scan')||'null');}catch{return null;} }
+function rememberSource(src){ try{localStorage.setItem('allyway::_last',src);}catch{} }
+
+let _saveT=null;
+function persist(){ if(_saveT)clearTimeout(_saveT); _saveT=setTimeout(saveNow,600); setSave('dirty'); }
+async function saveNow(){
+  if(!state) return;
+  if(!NS()){ localSaveNow(); setSave('saved'); return; }
+  try{
+    const src=state.source;
+    await putAll(Object.entries(state.dispositions).map(([k,v])=>({kind:'disp',source:src,dkey:k,...v})), {kind:'disp',source:src});
+    await putAll((state.manualFindings||[]).map(m=>({kind:'manual',source:src,mid:m.id,...m})), {kind:'manual',source:src});
+    await NS().putRecords([{kind:'config',source:'_site',ckey:'xcats',list:state.xcats}], {replaceWhere:{kind:'config',source:'_site',ckey:'xcats'}});
+    setSave('saved');
+  }catch(e){ setSave('error'); toast('Save failed: '+(e.code||e.message),'error'); }
+}
+// Replace a source's slice in chunks so we stay under per-call caps (first chunk clears the old slice).
+async function putAll(rows, where){
+  const CH=150;
+  if(!rows.length){ await NS().putRecords([],{replaceWhere:where}); return; }
+  for(let i=0;i<rows.length;i+=CH) await NS().putRecords(rows.slice(i,i+CH), i===0?{replaceWhere:where}:undefined);
+}
+function setSave(m){ const el=document.getElementById('save-indicator'); if(!el)return;
+  el.textContent = m==='dirty'?'Saving…' : m==='error'?'Save failed' : (NS()?'Saved to Rideshare':'Saved locally');
+  el.style.color = m==='error'?'var(--error-red)':'var(--gray)'; }
+async function queryAll(filter){ const out=[]; let cursor;
+  for(let i=0;i<50;i++){ const r=await NS().queryData({limit:100,filter,cursor}); out.push(...(r.items||[])); cursor=r.cursor; if(!cursor)break; }
+  return out; }
+
+// scan.json defect → the tool's internal shape.
+function defectFromScan(sd){
+  const d={fingerprint:sd.fingerprint, rule_title:sd.title, severity:sd.severity||'', category:sd.category||'',
+    description:sd.description||'', instance_count:sd.instances||0, affected_pages:[], page_instances:{}, page_components:{}, page_html:{}};
+  for(const p of (sd.pages||[])){ d.affected_pages.push(p.url); d.page_instances[p.url]=p.instances||0; if(p.html) d.page_html[p.url]=[p.html]; }
+  return d;
+}
+async function loadSources(){
+  if(!NS()) return [];
+  const seen=new Set(), out=[];
+  for(const it of await queryAll({kind:'source'})){ const s=it.data.source; if(seen.has(s))continue; seen.add(s); out.push({source:s,scanDate:it.data.scanDate}); }
+  return out.sort((a,b)=>a.source.localeCompare(b.source));
+}
+async function loadSource(src, localScan){
+  let scan;
+  if(NS()){
+    scan={source:src,standard:[],contrast:[]};
+    for(const it of await queryAll({kind:'scan',source:src})){ const d=it.data; (d.stream==='contrast'?scan.contrast:scan.standard).push(d); if(d.scanDate)scan.scanDate=d.scanDate; }
+  } else scan=localScan;
+  const defects={}, contrast={};
+  for(const sd of (scan.standard||[])) defects[sd.fingerprint]=defectFromScan(sd);
+  for(const sd of (scan.contrast||[])) contrast[sd.fingerprint]=defectFromScan(sd);
+
+  let dispositions={}, manualFindings=[], xcats=DEFAULT_XCATS.slice();
+  if(NS()){
+    const dseen=new Set();
+    for(const it of await queryAll({kind:'disp',source:src})){ const k=it.data.dkey; if(dseen.has(k))continue; dseen.add(k); const {kind,source,dkey,...disp}=it.data; dispositions[k]=disp; }
+    const mseen=new Set();
+    for(const it of await queryAll({kind:'manual',source:src})){ const id=it.data.mid; if(mseen.has(id))continue; mseen.add(id); const {kind,source,mid,...m}=it.data; manualFindings.push({id,...m}); }
+    const cfg=(await queryAll({kind:'config',source:'_site'}))[0];
+    if(cfg&&Array.isArray(cfg.data.list)&&cfg.data.list.length) xcats=cfg.data.list;
+  } else { const l=localLoad(src); dispositions=l.dispositions||{}; manualFindings=l.manualFindings||[]; if(l.xcats&&l.xcats.length)xcats=l.xcats; }
+
+  state={source:src, scanDate:scan.scanDate||'', defects, contrast, dispositions, xcats, manualFindings};
+  migrateXcats();
+  activateSource();
+}
+function activateSource(){
+  const {source:src, scanDate, defects, contrast}=state;
+  rememberSource(src);
+  activeStream='standard'; contrastGroupBy='page'; sortKey='sev'; sortDir=1;
+  orders.standard=[]; orders.contrast=[]; orders.contrastPage=[];
+  const ct=document.getElementById('tab-contrast'); const cCount=Object.keys(contrast).length;
+  document.querySelector('.tab[data-stream=standard]').setAttribute('aria-selected','true');
+  ct.setAttribute('aria-selected','false');
+  ct.disabled=!cCount; ct.textContent=cCount?`Contrast (${cCount})`:'Contrast (none)';
+  document.getElementById('picker-area').hidden=true;
+  document.getElementById('tracker-area').hidden=false;
+  document.getElementById('hdr-right').textContent=`${src}${scanDate?' · '+scanDate:''} · ${Object.keys(defects).length} rules · ${cCount} contrast`;
+  setSave('saved');
+  updateFilterOptions(); recomputeOrder(); render();
+}
+// Admin: write a scan.json into shared storage as records (replaces that source's prior scan).
+async function ingestScanToStorage(scan){
+  const src=scan.source, when=scan.scanDate||'';
+  const recs=[];
+  for(const sd of (scan.standard||[])) recs.push({kind:'scan',source:src,scanDate:when,stream:'standard',...sd});
+  for(const sd of (scan.contrast||[])) recs.push({kind:'scan',source:src,scanDate:when,stream:'contrast',...sd});
+  await NS().putRecords([], {replaceWhere:{kind:'scan',source:src}});         // clear the source's old scan
+  const CH=120; for(let i=0;i<recs.length;i+=CH) await NS().putRecords(recs.slice(i,i+CH));
+  await NS().putRecords([{kind:'source',source:src,scanDate:when}], {replaceWhere:{kind:'source',source:src}});
+}
+async function adminLoadScan(file){
+  try{ const scan=JSON.parse(await file.text());
+    if(!scan.source||!Array.isArray(scan.standard)) throw new Error('Not an Allyway scan.json.');
+    toast(`Saving ${scan.source} to shared storage…`);
+    await ingestScanToStorage(scan);
+    await loadSource(scan.source);
+    toast(`${scan.source}: ${scan.standard.length} rules + ${(scan.contrast||[]).length} contrast saved to Rideshare.`);
+  }catch(e){ toast('Load failed: '+(e.code||e.message),'error'); }
+}
+async function loadLocalFile(file){
+  try{ const scan=JSON.parse(await file.text());
+    if(!scan.source||!Array.isArray(scan.standard)) throw new Error('Not an Allyway scan.json.');
+    try{ localStorage.setItem('allyway::_scan', JSON.stringify(scan)); }catch{}   // cache so it resumes next open
+    await loadSource(scan.source, scan);
+    toast(`Loaded ${scan.standard.length} rules + ${(scan.contrast||[]).length} contrast (local preview).`);
+  }catch(e){ toast('Could not read that file: '+e.message,'error'); }
+}
+
+/* One-time normalization of saved X-category names (e.g. HubSpot → HubSpot Form). */
+function migrateXcats(){
+  state.xcats=[...new Set(state.xcats.map(c=>XCAT_RENAME[c]||c))];
+  for(const d of Object.values(state.dispositions)){ if(d.xcat&&XCAT_RENAME[d.xcat]) d.xcat=XCAT_RENAME[d.xcat]; }
+  persist();
+}
+
+/* ── Disposition resolution (per-page, with rule default + page exclusion) ── */
+function excludedUrls(){ const s=new Set(); for(const [k,v] of Object.entries(state.dispositions)){ if(v.status==='out_of_scope'&&k.includes('|||')) s.add(k.split('|||')[1]); } return s; }
+function resolvePage(fp,url,excl){
+  if(excl.has(url)) return {status:'out_of_scope',_viaPage:true};
+  const pg=state.dispositions[`${fp}|||${url}`];
+  if(pg && pg.status) return pg;                 // explicit per-page status
+  const rd=state.dispositions[fp];
+  if(rd && rd.status) return rd;                 // rule default
+  return {status:'untriaged'};
+}
+function pageNotes(fp,url){ return (state.dispositions[`${fp}|||${url}`]||{}).notes||''; }
+const bucket = st => SMAP[st]?.bucket || 'active';
+const statusClass = st => st==='untriaged' ? 'b-untriaged' : st==='deferred' ? 'b-deferred' : 'b-'+bucket(st);
+// "Grade" = severity for standard rules, category (Error/Alert) for contrast (severity is flat there).
+const CAT_RANK = {ERROR:0,ALERT:1,'BEST PRACTICE':2};
+const gradeOf = d => activeStream==='contrast' ? (d.category||'') : (d.severity||'');
+const gradeRank = g => activeStream==='contrast' ? (CAT_RANK[(g||'').toUpperCase()]??99) : (SEV_RANK[(g||'').toUpperCase()]??99);
+const gradeLabel = () => activeStream==='contrast' ? 'Category' : 'Severity';
+const gradePill = g => { const k=(g||'').toUpperCase(); return activeStream==='contrast'
+  ? 'cat-'+(k==='ERROR'?'error':k==='ALERT'?'alert':'bp')
+  : 'sev-'+((g||'other').toLowerCase().replace(/\s+/g,'-')); };
+
+/* Rollup of a rule across its pages → {counts by bucket, label} */
+function ruleRollup(d,excl){
+  const c={active:0,suppressed:0,verify:0}; const byStatus={};
+  for(const url of d.affected_pages){ const st=resolvePage(d.fingerprint,url,excl).status; c[bucket(st)]++; byStatus[st]=(byStatus[st]||0)+1; }
+  const parts=Object.entries(byStatus).sort((a,b)=>b[1]-a[1]).map(([s,n])=>`${n} ${SMAP[s].label.split(' —')[0].toLowerCase()}`);
+  const label = parts.length<=1 ? (parts[0]||'untriaged') : `<span class="mix">Mixed:</span> ${parts.join(' · ')}`;
+  return {c,label,activePages:c.active,totalPages:d.affected_pages.length};
+}
+
+/* ── Render ─────────────────────────────────────────────────── */
+const filters = () => ({search:document.getElementById('filter-search').value.trim().toLowerCase(),
+  sev:document.getElementById('filter-sev').value, hideLow:document.getElementById('filter-lowvol').checked});
+
+function render(){
+  if(!state) return;
+  const openIds=[...document.querySelectorAll('#defects-tbody .detail-row:not(.hidden)')].map(r=>r.id);
+  const excl=excludedUrls();
+  const all=Object.values(currentDefects());
+  renderStats(all,excl);
+  if(pageView()) renderByPage(excl); else renderTable(all,excl);
+  renderSuppressed(all,excl);
+  renderManual();
+  document.getElementById('contrast-groupby').style.display = activeStream==='contrast' ? 'flex' : 'none';
+  openIds.forEach(id=>{ if(document.getElementById(id)) toggleDetail(id); });   // preserve expanded rows
+}
+
+function renderStats(all,excl){
+  let activeFindings=0,supprFindings=0,verifyFindings=0,activeRules=0,lowvol=0;
+  const supp={ok_ignore:0,not_issue:0,cant_fix:0,out_of_scope:0};
+  for(const d of all){ const r=ruleRollup(d,excl); if(r.c.active>0)activeRules++;
+    activeFindings+=r.c.active; supprFindings+=r.c.suppressed; verifyFindings+=r.c.verify;
+    if(d.affected_pages.length<=2)lowvol++;
+    for(const url of d.affected_pages){const st=resolvePage(d.fingerprint,url,excl).status; if(supp[st]!==undefined)supp[st]++;} }
+  const manual=state.manualFindings||[];
+  const mA11y=manual.filter(m=>m.type==='a11y'), mObs=manual.filter(m=>m.type==='other');
+  const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active').length;
+  const manualAdd = activeStream==='standard' ? mA11yActive : 0;   // manual findings live on the standard tab
+  activeFindings+=manualAdd;
+  const unit = activeStream==='contrast' ? 'signatures' : 'rules';
+  document.getElementById('stat-row').innerHTML=`
+    <div class="stat headline"><div class="stat-n">${activeFindings}</div><div class="stat-l">Active ${activeStream==='contrast'?'contrast ':''}findings</div><div class="stat-sub">${activeStream==='standard'?`scan + ${manualAdd} manual a11y · `:''}counts against the site</div></div>
+    <div class="stat"><div class="stat-n">${supprFindings}</div><div class="stat-l">Suppressed findings</div><div class="stat-sub">${supp.ok_ignore} ignore · ${supp.not_issue} not-issue · ${supp.cant_fix} can't-fix · ${supp.out_of_scope} out-of-scope</div></div>
+    <div class="stat"><div class="stat-n">${verifyFindings}</div><div class="stat-l">Fixed (verify next scan)</div></div>
+    <div class="stat"><div class="stat-n">${mA11y.length}<span style="font-size:.9rem">·${mObs.length}</span></div><div class="stat-l">Manual a11y · observations</div><div class="stat-sub">observations don't count</div></div>
+    <div class="stat"><div class="stat-n">${lowvol}</div><div class="stat-l">Low-volume ${unit} (≤2 pages)</div></div>`;
+}
+
+function sortRules(list,excl){
+  const val=d=>{ if(sortKey==='rule')return d.rule_title.toLowerCase();
+    if(sortKey==='sev')return gradeRank(gradeOf(d));
+    if(sortKey==='pages')return d.affected_pages.length;
+    if(sortKey==='inst')return d.instance_count;
+    if(sortKey==='status')return ruleRollup(d,excl).c.active; return 0; };
+  return list.sort((a,b)=>{const va=val(a),vb=val(b); if(va<vb)return -1*sortDir; if(va>vb)return 1*sortDir;
+    return gradeRank(gradeOf(a))-gradeRank(gradeOf(b));});
+}
+// Recompute the frozen display order — only on load or a header click, so status
+// edits never reshuffle rows out from under you.
+const sigCols=()=>[['rule','Rule',''],['sev',gradeLabel(),''],['pages','Pages (active/total)','center'],['inst','Instances','center'],['status','Status (rollup / set all)','']];
+const pageCols=()=>[['url','Page URL',''],['elements','Elements (active/total)','center'],['sev','Worst '+gradeLabel().toLowerCase(),''],['status','Status (rollup / set all)','']];
+function setHead(cols){ document.getElementById('head-row').innerHTML=cols.map(c=>`<th class="sortable" data-sort="${c[0]}" aria-sort="${sortKey===c[0]?(sortDir===1?'ascending':'descending'):'none'}"${c[2]==='center'?' style="text-align:center"':''}>${c[1]} <span class="arr">▲▼</span></th>`).join(''); }
+
+// Contrast pages: url -> { url, elements:[{fp,label,description,severity,instances,html}] }
+function contrastPages(){
+  const pages=new Map();
+  for(const d of Object.values(state.contrast||{})){ for(const url of d.affected_pages){
+    let p=pages.get(url); if(!p){ p={url,elements:[]}; pages.set(url,p); }
+    p.elements.push({fp:d.fingerprint,label:d.rule_title,description:d.description,severity:d.severity,category:d.category,
+      instances:d.page_instances[url]||0,html:(d.page_html[url]||[])[0]||''}); } }
+  return pages;
+}
+function pageRollup(p,excl){ const c={active:0,suppressed:0,verify:0}; const by={};
+  for(const e of p.elements){ const st=resolvePage(e.fp,p.url,excl).status; c[bucket(st)]++; by[st]=(by[st]||0)+1; }
+  const parts=Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([s,n])=>`${n} ${SMAP[s].label.split(' —')[0].toLowerCase()}`);
+  c.label=parts.length<=1?(parts[0]||'untriaged'):`<span class="mix">Mixed:</span> ${parts.join(' · ')}`;
+  let worst=null,wr=99; for(const e of p.elements){ const g=gradeOf(e),r=gradeRank(g); if(r<wr){wr=r;worst=g;} } c.worst=worst||'—'; return c; }
+function sortPages(list,excl){ const val=p=>{ if(sortKey==='url')return p.url.toLowerCase();
+    if(sortKey==='elements')return p.elements.length; if(sortKey==='status')return pageRollup(p,excl).active;
+    return gradeRank(pageRollup(p,excl).worst); };
+  return list.sort((a,b)=>{const va=val(a),vb=val(b); if(va<vb)return -1*sortDir; if(va>vb)return 1*sortDir; return a.url.localeCompare(b.url);}); }
+
+function recomputeOrder(){
+  const excl=excludedUrls();
+  if(pageView()) orders.contrastPage=sortPages([...contrastPages().values()],excl).map(p=>p.url);
+  else orders[activeStream]=sortRules(Object.values(currentDefects()),excl).map(d=>d.fingerprint);
+}
+function updateFilterOptions(){
+  const sel=document.getElementById('filter-sev'); const cur=sel.value;
+  document.getElementById('filter-grade-label').textContent=gradeLabel();
+  const opts = activeStream==='contrast' ? ['Error','Alert','Best Practice'] : ['CRITICAL','HIGH','MEDIUM','LOW','BEST PRACTICE'];
+  sel.innerHTML='<option value="">All</option>'+opts.map(o=>`<option${o.toUpperCase()===(cur||'').toUpperCase()?' selected':''}>${o}</option>`).join('');
+}
+function switchStream(s){
+  if(s===activeStream || !state) return;
+  if(s==='contrast' && Object.keys(state.contrast||{}).length===0) return;
+  activeStream=s; sortKey='sev'; sortDir=1;
+  document.querySelectorAll('.tab[data-stream]').forEach(t=>t.setAttribute('aria-selected',String(t.dataset.stream===s)));
+  updateFilterOptions();
+  if(!orders[orderKey()].length) recomputeOrder();
+  render();
+}
+function setGroupBy(g){
+  if(g===contrastGroupBy) return; contrastGroupBy=g; sortKey='sev'; sortDir=1;
+  document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.groupby===g)));
+  if(!orders[orderKey()].length) recomputeOrder();
+  render();
+}
+
+function statusSelect(fp,url,cur){
+  const opts=STATUSES.filter(s=>url||!s.pageOnly).map(s=>`<option value="${s.v}" ${s.v===cur?'selected':''}>${esc(s.label)}</option>`).join('');
+  return `<select class="status-sel ${statusClass(cur)}" data-role="status" data-fp="${esc(fp)}" data-url="${esc(url||'')}" aria-label="Status">${opts}</select>`;
+}
+function subField(fp,url,d){
+  const st=SMAP[d.status]; if(!st||!st.field) return '';
+  const attrs=`data-role="sub" data-sub="${st.field}" data-fp="${esc(fp)}" data-url="${esc(url||'')}"`;
+  if(st.field==='assignee') return `<input class="subfield" type="text" placeholder="Assignee…" value="${esc(d.assignee||'')}" ${attrs} aria-label="Assignee">`;
+  if(st.field==='reason') return `<select class="subfield" ${attrs} aria-label="Reason">${REASONS.map(r=>`<option ${d.reason===r?'selected':''}>${esc(r)}</option>`).join('')}</select>`;
+  if(st.field==='xcat') return `<select class="subfield" ${attrs} aria-label="Blocked by">${state.xcats.map(c=>`<option ${d.xcat===c?'selected':''}>${esc(c)}</option>`).join('')}<option value="__add">➕ Add…</option></select>`;
+  return '';
+}
+
+function renderTable(all,excl){
+  setHead(sigCols());
+  const f=filters();
+  const byFp=Object.fromEntries(all.map(d=>[d.fingerprint,d]));
+  const order=orders[activeStream];
+  const ordered=order.map(fp=>byFp[fp]).filter(Boolean);
+  for(const d of all) if(!order.includes(d.fingerprint)) ordered.push(d);   // safety: include any new rule
+  const list=ordered.filter(d=>{ if(f.search&&!d.rule_title.toLowerCase().includes(f.search))return false;
+    if(f.sev&&(gradeOf(d)||'').toUpperCase()!==f.sev.toUpperCase())return false; if(f.hideLow&&d.affected_pages.length<=2)return false; return true; });
+  document.getElementById('result-count').textContent=`${list.length} of ${all.length} rules`;
+  const tb=document.getElementById('defects-tbody');
+  tb.innerHTML=list.map(d=>{
+    const fp=d.fingerprint, g=gradeOf(d), low=d.affected_pages.length<=2;
+    const r=ruleRollup(d,excl), did=`det-${cssId(fp)}`;
+    const ruleDef=state.dispositions[fp];
+    return `<tr class="rule-row" data-fp="${esc(fp)}">
+      <td class="clickable" data-toggle="${did}" style="max-width:280px"><span class="caret" id="c-${cssId(fp)}"></span><strong>${esc(d.rule_title)}</strong>${(state.dispositions[fp]||{}).notes?'<span title="Has a rule note" aria-label="Has a rule note" style="margin-left:6px">📝</span>':''}
+        ${d.description?`<div class="rule-desc">${esc(d.description.slice(0,110))}${d.description.length>110?'…':''}</div>`:''}</td>
+      <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(g)}">${esc(g||'—')}</span>${low?'<span class="pill lowvol">low-vol</span>':''}</td>
+      <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.activePages}</strong> / ${r.totalPages}</td>
+      <td class="clickable" data-toggle="${did}" style="text-align:center;font-weight:600">${d.instance_count}</td>
+      <td><div class="roll">${r.label}</div>
+        <select class="bulk-sel" data-role="bulk" data-fp="${esc(fp)}" aria-label="Set all pages for ${esc(d.rule_title)}">
+          <option value="">↳ Set all pages…</option>${STATUSES.filter(s=>!s.pageOnly).map(s=>`<option value="${s.v}">${esc(s.label)}</option>`).join('')}</select>
+        ${ruleDef?subField(fp,'',ruleDef):''}</td>
+    </tr>
+    <tr class="detail-row hidden" id="${did}" data-built="0"><td colspan="5"></td></tr>`;
+  }).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--gray);padding:24px">No rules match the filters.</td></tr>`;
+}
+
+function buildDetail(fp){
+  const d=currentDefects()[fp]; const excl=excludedUrls();
+  const rows=d.affected_pages.slice().sort((a,b)=>(d.page_instances[b]-d.page_instances[a])).map(url=>{
+    const rp=resolvePage(fp,url,excl); const via=rp._viaPage&&!state.dispositions[`${fp}|||${url}`];
+    const html=(d.page_html[url]||[])[0]||''; const comps=(d.page_components[url]||[]).join('; ');
+    return `<tr class="${bucket(rp.status)==='suppressed'?'pg-excluded':''}">
+      <td><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a></td>
+      <td style="text-align:center">${d.page_instances[url]}</td>
+      <td>${esc(comps)}</td>
+      <td>${html?`<code>${esc(html.slice(0,180))}${html.length>180?'…':''}</code>`:''}</td>
+      <td>${statusSelect(fp,url,rp.status)}${subField(fp,url,rp)}${via?'<div class="stat-sub">(via page out-of-scope)</div>':''}</td>
+      <td><input class="notes-input" type="text" value="${esc(pageNotes(fp,url))}" data-role="notes" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Notes for ${esc(url)}">
+        <button class="pages-btn" type="button" data-add-url="${esc(url)}" style="margin-top:5px" aria-label="Add a manual finding on ${esc(url)}">＋ finding</button></td></tr>`;
+  }).join('');
+  const ruleNote=(state.dispositions[fp]||{}).notes||'';
+  const noteBar=`<div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <label style="font-family:'Red Hat Display',sans-serif;font-size:11px;font-weight:600;color:var(--dark-gray)" for="rn-${cssId(fp)}">📝 Rule note (applies to all pages)</label>
+    <input id="rn-${cssId(fp)}" class="notes-input" type="text" value="${esc(ruleNote)}" data-role="notes" data-fp="${esc(fp)}" data-url="" placeholder="e.g. content redo Q4 will clear these" style="max-width:440px" aria-label="Rule-level note"></div>`;
+  return noteBar+`<table class="detail-tbl"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+/* ── Contrast PAGE view — one row per page, expand to the contrast elements on it ── */
+function renderByPage(excl){
+  setHead(pageCols());
+  const f=filters(); const pagesMap=contrastPages(); const order=orders.contrastPage;
+  const ordered=order.map(u=>pagesMap.get(u)).filter(Boolean);
+  for(const p of pagesMap.values()) if(!order.includes(p.url)) ordered.push(p);
+  const list=ordered.filter(p=>{
+    if(f.search && !p.url.toLowerCase().includes(f.search) && !p.elements.some(e=>e.label.toLowerCase().includes(f.search))) return false;
+    if(f.sev && !p.elements.some(e=>(gradeOf(e)||'').toUpperCase()===f.sev.toUpperCase())) return false;
+    if(f.hideLow && p.elements.length<=2) return false;
+    return true; });
+  document.getElementById('result-count').textContent=`${list.length} of ${pagesMap.size} pages`;
+  const tb=document.getElementById('defects-tbody');
+  tb.innerHTML=list.map(p=>{ const did=`detp-${cssId(p.url)}`; const r=pageRollup(p,excl);
+    return `<tr class="rule-row">
+      <td class="clickable" data-toggle="${did}" style="max-width:380px"><span class="caret" id="c-${cssId(p.url)}"></span><a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${esc(p.url)}</a></td>
+      <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.active}</strong> / ${p.elements.length}</td>
+      <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(r.worst)}">${esc(r.worst)}</span></td>
+      <td><div class="roll">${r.label}</div>
+        <select class="bulk-sel" data-role="bulkpage" data-url="${esc(p.url)}" aria-label="Set all contrast elements on ${esc(p.url)}"><option value="">↳ Set all elements…</option>${STATUSES.map(s=>`<option value="${s.v}">${esc(s.label)}</option>`).join('')}</select></td>
+    </tr>
+    <tr class="detail-row hidden" id="${did}" data-built="0"><td colspan="4"></td></tr>`;
+  }).join('')||`<tr><td colspan="4" style="text-align:center;color:var(--gray);padding:24px">No contrast pages match the filters.</td></tr>`;
+}
+function buildPageDetail(url){
+  const p=contrastPages().get(url); if(!p) return ''; const excl=excludedUrls();
+  const rows=p.elements.slice().sort((a,b)=>b.instances-a.instances).map(e=>{
+    const rp=resolvePage(e.fp,url,excl); const via=rp._viaPage&&!state.dispositions[`${e.fp}|||${url}`];
+    return `<tr class="${bucket(rp.status)==='suppressed'?'pg-excluded':''}">
+      <td style="max-width:280px"><strong>${esc(e.label)}</strong>${e.description?`<div class="rule-desc">${esc(e.description)}</div>`:''}</td>
+      <td><span class="pill ${gradePill(e.category)}">${esc(e.category||'—')}</span></td>
+      <td style="text-align:center">${e.instances}</td>
+      <td>${e.html?`<code>${esc(e.html.slice(0,180))}${e.html.length>180?'…':''}</code>`:''}</td>
+      <td>${statusSelect(e.fp,url,rp.status)}${subField(e.fp,url,rp)}${via?'<div class="stat-sub">(via page out-of-scope)</div>':''}</td>
+      <td><input class="notes-input" type="text" value="${esc(pageNotes(e.fp,url))}" data-role="notes" data-fp="${esc(e.fp)}" data-url="${esc(url)}" aria-label="Note"></td></tr>`;
+  }).join('');
+  return `<table class="detail-tbl"><thead><tr><th>Element (signature)</th><th>Category</th><th>Inst</th><th>Sample HTML</th><th>Status (this element)</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function toggleDetail(id){
+  const row=document.getElementById(id); if(!row)return;
+  const isPage=id.startsWith('detp-');
+  const cid=id.slice(isPage?5:4);
+  const hidden=row.classList.toggle('hidden');
+  const caret=document.getElementById('c-'+cid); if(caret)caret.classList.toggle('open',!hidden);
+  if(!hidden && row.dataset.built==='0'){
+    if(isPage){ const url=[...contrastPages().keys()].find(u=>cssId(u)===cid); row.firstElementChild.innerHTML=buildPageDetail(url); }
+    else { const realFp=Object.keys(currentDefects()).find(k=>cssId(k)===cid); row.firstElementChild.innerHTML=buildDetail(realFp); }
+    row.dataset.built='1';
+  }
+}
+
+function renderSuppressed(all,excl){
+  const rows=[];
+  for(const d of all){ for(const url of d.affected_pages){ const rp=resolvePage(d.fingerprint,url,excl);
+    if(bucket(rp.status)!=='suppressed')continue;
+    const st=SMAP[rp.status]; const why=st.label+(rp.reason?` — ${rp.reason}`:'')+(rp.xcat?` — ${rp.xcat}`:'');
+    rows.push(`<tr><td><strong>${esc(d.rule_title)}</strong></td><td>${esc(url||'(rule-wide)')}</td><td>${esc(why)}</td></tr>`); } }
+  document.getElementById('suppressed-summary').textContent=`Suppressed (${rows.length}) — not counted, data retained`;
+  document.getElementById('suppressed-tbody').innerHTML=rows.join('')||`<tr><td colspan="3" style="text-align:center;color:var(--gray);padding:18px">Nothing suppressed yet.</td></tr>`;
+}
+
+/* ── Manual findings & observations ─────────────────────────── */
+const genId=()=>'m_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+function renderManual(){
+  const list=state.manualFindings||[];
+  document.getElementById('manual-summary').textContent=`Manual findings & observations (${list.length})`;
+  const tb=document.getElementById('manual-tbody');
+  tb.innerHTML=list.map(m=>{
+    const sev=(m.severity||'OTHER').toLowerCase().replace(/\s+/g,'-'), st=m.status||'untriaged';
+    const opts=STATUSES.filter(s=>!s.pageOnly).map(s=>`<option value="${s.v}" ${s.v===st?'selected':''}>${esc(s.label)}</option>`).join('');
+    return `<tr>
+      <td><strong>${esc(m.title)}</strong></td>
+      <td>${m.url?`<a href="${esc(m.url)}" target="_blank" rel="noopener noreferrer">${esc(m.url)}</a>`:'—'}</td>
+      <td><span class="pill ${m.type==='a11y'?'sev-high':'lowvol'}">${m.type==='a11y'?'A11y · counts':'Observation'}</span></td>
+      <td><span class="pill sev-${sev}">${esc(m.severity||'—')}</span></td>
+      <td><select class="status-sel ${statusClass(st)}" data-role="mstatus" data-id="${esc(m.id)}" aria-label="Status">${opts}</select></td>
+      <td><input class="notes-input" type="text" value="${esc(m.note||'')}" data-role="mnote" data-id="${esc(m.id)}" aria-label="Note"></td>
+      <td><button class="pages-btn" type="button" data-role="mremove" data-id="${esc(m.id)}" aria-label="Remove finding">✕</button></td></tr>`;
+  }).join('')||`<tr><td colspan="7" style="text-align:center;color:var(--gray);padding:16px">No manual findings yet — use “＋ Add finding”, or “＋ finding” on a page in any drill-down.</td></tr>`;
+}
+function openManualForm(url=''){
+  const wrap=document.getElementById('manual-form'); wrap.hidden=false;
+  const stackLbl='class="chk" style="flex-direction:column;align-items:flex-start"';
+  const selSty='class="subfield" style="margin-top:0;max-width:none;width:100%"';
+  wrap.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;background:var(--off-white);border:1px solid var(--hairline);border-radius:var(--r);padding:14px;margin-bottom:12px">
+    <label ${stackLbl} style="grid-column:1/3">Page URL <input id="mf-url" class="notes-input" type="text" value="${esc(url)}" placeholder="https://…"></label>
+    <label ${stackLbl} style="grid-column:1/3">Title / what you found <input id="mf-title" class="notes-input" type="text" placeholder="e.g. Keyboard trap in date picker"></label>
+    <label ${stackLbl}>Type <select id="mf-type" ${selSty}><option value="a11y">Accessibility (scanner missed) — counts</option><option value="other">Other observation — not counted</option></select></label>
+    <label ${stackLbl}>Severity <select id="mf-sev" ${selSty}><option>CRITICAL</option><option>HIGH</option><option selected>MEDIUM</option><option>LOW</option><option>BEST PRACTICE</option></select></label>
+    <label ${stackLbl}>Status <select id="mf-status" ${selSty}>${STATUSES.filter(s=>!s.pageOnly).map(s=>`<option value="${s.v}">${esc(s.label)}</option>`).join('')}</select></label>
+    <label ${stackLbl}>Note <input id="mf-note" class="notes-input" type="text" placeholder="optional (e.g. redirects to our other site)"></label>
+    <div style="grid-column:1/3;display:flex;gap:8px">
+      <button class="btn-primary" id="mf-save" type="button">Save finding</button>
+      <button class="bulk-sel" id="mf-cancel" type="button" style="margin-top:0">Cancel</button></div></div>`;
+  document.getElementById('mf-save').addEventListener('click',saveManual);
+  document.getElementById('mf-cancel').addEventListener('click',()=>{wrap.hidden=true;wrap.innerHTML='';});
+  document.getElementById(url?'mf-title':'mf-url').focus();
+}
+function saveManual(){
+  const title=document.getElementById('mf-title').value.trim();
+  if(!title){ toast('Give the finding a title.','error'); return; }
+  (state.manualFindings||(state.manualFindings=[])).push({id:genId(),url:document.getElementById('mf-url').value.trim(),title,
+    type:document.getElementById('mf-type').value,severity:document.getElementById('mf-sev').value,
+    status:document.getElementById('mf-status').value,note:document.getElementById('mf-note').value.trim()});
+  const wrap=document.getElementById('manual-form'); wrap.hidden=true; wrap.innerHTML='';
+  persist(); render(); toast('Finding added.');
+}
+
+/* ── Mutations ──────────────────────────────────────────────── */
+function ensureField(d,status){ const st=SMAP[status]; if(!st||!st.field) return;
+  if(st.field==='xcat' && !d.xcat) d.xcat=state.xcats[0];
+  if(st.field==='reason' && !d.reason) d.reason=REASONS[0];
+  // assignee intentionally left blank
+}
+function clearStatus(d){ delete d.status; delete d.assignee; delete d.reason; delete d.xcat; }  // keep .notes
+function setStatus(fp,url,val){
+  const key=url?`${fp}|||${url}`:fp; const cur=state.dispositions[key];
+  if(val==='untriaged'){ if(cur){ clearStatus(cur); if(Object.keys(cur).length===0) delete state.dispositions[key]; } }
+  else { const d={...(cur||{}),status:val}; ensureField(d,val); state.dispositions[key]=d; }
+  persist();
+}
+function setBulk(fp,val){ // apply to whole rule: set rule default, clear per-page status overrides (notes survive)
+  for(const k of Object.keys(state.dispositions)){ if(k.startsWith(fp+'|||')){ const d=state.dispositions[k]; clearStatus(d); if(Object.keys(d).length===0) delete state.dispositions[k]; } }
+  const rd=state.dispositions[fp];
+  if(val==='untriaged'){ if(rd){ clearStatus(rd); if(Object.keys(rd).length===0) delete state.dispositions[fp]; } }
+  else { const d={...(rd||{}),status:val}; ensureField(d,val); state.dispositions[fp]=d; }
+  persist();
+}
+function setNotes(fp,url,val){
+  const key=url?`${fp}|||${url}`:fp; let d=state.dispositions[key];
+  if(val){ if(!d) d=state.dispositions[key]={}; d.notes=val; }
+  else if(d){ delete d.notes; if(Object.keys(d).length===0) delete state.dispositions[key]; }
+  persist();
+}
+
+document.addEventListener('change', e=>{
+  const el=e.target, fp=el.dataset.fp, url=el.dataset.url||'';
+  if(el.dataset.role==='mstatus'){ const m=state.manualFindings.find(x=>x.id===el.dataset.id); if(m){m.status=el.value;persist();render();} return; }
+  if(el.dataset.role==='status'){ setStatus(fp,url,el.value); render(); }
+  else if(el.dataset.role==='bulk'){ if(el.value){ setBulk(fp,el.value); render(); } }
+  else if(el.dataset.role==='bulkpage'){ if(el.value){ const p=contrastPages().get(el.dataset.url); if(p){ for(const e of p.elements) setStatus(e.fp,el.dataset.url,el.value); render(); } } }
+  else if(el.dataset.role==='sub'){
+    const key=url?`${fp}|||${url}`:fp; const d=state.dispositions[key]; if(!d)return;
+    if(el.dataset.sub==='xcat'&&el.value==='__add'){ const v=(prompt('Add a “Can’t fix — third party” reason:')||'').trim();
+      if(v&&!state.xcats.includes(v))state.xcats.push(v); d.xcat=v||state.xcats[0]; persist(); render(); return; }
+    d[el.dataset.sub]=el.value; persist(); render();
+  }
+});
+document.addEventListener('blur', e=>{
+  if(e.target.dataset.role==='notes'){ setNotes(e.target.dataset.fp,e.target.dataset.url||'',e.target.value); }
+  else if(e.target.dataset.role==='mnote'){ const m=state.manualFindings.find(x=>x.id===e.target.dataset.id); if(m){m.note=e.target.value;persist();} }
+}, true);
+document.addEventListener('click', e=>{
+  const tog=e.target.closest('[data-toggle]'); if(tog){ toggleDetail(tog.dataset.toggle); return; }
+  const add=e.target.closest('[data-add-url]'); if(add){ document.getElementById('manual-sec').open=true; openManualForm(add.dataset.addUrl);
+    document.getElementById('manual-form').scrollIntoView({behavior:'smooth',block:'center'}); return; }
+  const rm=e.target.closest('[data-role=mremove]'); if(rm){ state.manualFindings=state.manualFindings.filter(x=>x.id!==rm.dataset.id); persist(); render(); }
+});
+
+/* ── Export work list (CSV) — actionable items, page-level, shareable.
+   Two sections via a Section column: "Work List" (to-do) and "Deferred" (backlog). ── */
+const WORKLIST_STATUSES=['need_fix','in_progress','needs_approval','deferred'];
+const ACTIVE_TODO=new Set(['need_fix','in_progress','needs_approval']);
+function collectWorkList(){
+  const rows=[], excl=excludedUrls();
+  for(const [stream,defs] of [['standard',state.defects],['contrast',state.contrast||{}]]){
+    for(const d of Object.values(defs)){ for(const url of d.affected_pages){
+      const rp=resolvePage(d.fingerprint,url,excl); if(!WORKLIST_STATUSES.includes(rp.status)) continue;
+      rows.push({ _s:rp.status, item:d.rule_title, stream, url,
+        grade: stream==='contrast' ? (d.page_category?.[url]||d.category||'') : (d.severity||''),
+        instances:d.page_instances[url]||'', status:SMAP[rp.status].label, assignee:rp.assignee||'',
+        note:pageNotes(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).notes||'',
+        html:(d.page_html[url]||[])[0]||'' }); } }
+  }
+  for(const m of (state.manualFindings||[])){ if(!WORKLIST_STATUSES.includes(m.status)) continue;
+    rows.push({ _s:m.status, item:m.title, stream:'manual ('+(m.type==='a11y'?'a11y':'obs')+')', url:m.url||'',
+      grade:m.severity||'', instances:'', status:SMAP[m.status].label, assignee:'', note:m.note||'', html:'' }); }
+  return rows;
+}
+function exportWorkList(){
+  if(!state) return;
+  const rows=collectWorkList();
+  if(!rows.length){ toast('No items in a work-list status (I need to fix / In progress / Needs approval / Deferred).','error'); return; }
+  const cols=['Section','Rule / Element','Stream','Page URL','Category / Severity','Instances','Status','Assignee','Note','Sample HTML'];
+  const flat=rows.map(r=>({ 'Section': ACTIVE_TODO.has(r._s)?'Work List':'Deferred', 'Rule / Element':r.item, 'Stream':r.stream,
+    'Page URL':r.url, 'Category / Severity':r.grade, 'Instances':r.instances, 'Status':r.status, 'Assignee':r.assignee, 'Note':r.note, 'Sample HTML':r.html }));
+  const name=`${state.source} - work list.csv`;
+  if(NS() && NS().downloadCSV){ NS().downloadCSV(flat, name); }
+  else {   // local preview — build + download the CSV ourselves
+    const cell=v=>{ const s=String(v??''); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+    const csv='﻿'+cols.map(cell).join(',')+'\n'+flat.map(r=>cols.map(c=>cell(r[c])).join(',')).join('\n');
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    a.download=name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+  }
+  const nDef=rows.filter(r=>r._s==='deferred').length;
+  toast(`Exported ${rows.length-nDef} to-do + ${nDef} deferred (Section column).`);
+}
+
+/* ── Sorting ────────────────────────────────────────────────── */
+document.getElementById('head-row').addEventListener('click', e=>{
+  const th=e.target.closest('th.sortable'); if(!th)return; const k=th.dataset.sort;
+  if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=1;}
+  document.querySelectorAll('#head-row th').forEach(h=>h.setAttribute('aria-sort','none'));
+  th.setAttribute('aria-sort',sortDir===1?'ascending':'descending');
+  recomputeOrder(); render();
+});
+
+document.addEventListener('DOMContentLoaded', init);
+async function init(){
+  ['filter-search','filter-sev','filter-lowvol'].forEach(id=>document.getElementById(id).addEventListener('input',render));
+  document.querySelectorAll('.tab[data-stream]').forEach(t=>t.addEventListener('click',()=>{ if(!t.disabled) switchStream(t.dataset.stream); }));
+  document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.addEventListener('click',()=>setGroupBy(b.dataset.groupby)));
+  document.getElementById('btn-add-manual').addEventListener('click',()=>openManualForm(''));
+  document.getElementById('btn-worklist').addEventListener('click',exportWorkList);
+  document.getElementById('btn-switch').addEventListener('click',()=>showPicker(true));
+  await showPicker();
+}
+async function showPicker(forcePick){
+  document.getElementById('tracker-area').hidden=true;
+  document.getElementById('picker-area').hidden=false;
+  const note=document.getElementById('mode-note'), ctr=document.getElementById('picker-controls'), help=document.getElementById('picker-help');
+  let last=''; try{ last=localStorage.getItem('allyway::_last')||''; }catch{}
+  if(NS()){
+    const admin = !!(NS().viewer && NS().viewer.isAdmin);
+    note.innerHTML='<strong>Allyway · a Nelway tool.</strong> Triage is saved to shared Rideshare storage — visible to your whole team.';
+    help.textContent = admin ? 'Pick a source to triage, or load a new scan.json (admin).' : 'Pick a source to triage.';
+    let sources=[];
+    try{ sources=await loadSources(); }catch(e){ ctr.innerHTML=`<p style="color:var(--error-red)">Could not read storage: ${esc(e.message||e.code||e)}</p>`; return; }
+    const adminCtl = admin ? `<div style="margin-top:14px"><label class="bulk-sel" for="scan-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">＋ Load scan.json (admin)</label><input id="scan-input" type="file" accept=".json" hidden></div>` : '';
+    if(!sources.length){
+      ctr.innerHTML = (admin?'<p style="color:var(--gray)">No scans yet — load one to seed the site.</p>':'<p style="color:var(--gray)">No scans loaded yet — an admin needs to add one.</p>') + adminCtl;
+    } else {
+      if(!forcePick && last && sources.some(s=>s.source===last)){ loadSource(last); return; }   // auto-resume last source
+      ctr.innerHTML=`<select id="src-select" class="status-sel" style="max-width:340px;font-size:13px"><option value="">Choose a source…</option>${sources.map(s=>`<option value="${esc(s.source)}"${s.source===last?' selected':''}>${esc(s.source)}${s.scanDate?' · '+esc(s.scanDate):''}</option>`).join('')}</select>` + adminCtl;
+      document.getElementById('src-select').addEventListener('change',e=>{ if(e.target.value) loadSource(e.target.value); });
+    }
+    if(admin){ const si=document.getElementById('scan-input'); si.addEventListener('change',e=>{ if(e.target.files[0]) adminLoadScan(e.target.files[0]); });
+      document.querySelector('label[for=scan-input]').addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();si.click();}}); }
+    return;
+  } else {
+    note.innerHTML='<strong>Allyway · local preview.</strong> NelnetStorage isn’t present, so this loads a <code>scan.json</code> from disk and saves triage in this browser only. On Rideshare it uses shared storage.';
+    help.innerHTML='Load a <code>&lt;source&gt; - scan.json</code> produced by <code>node index.js</code>.';
+    const cached=cachedLocalScan();
+    if(!forcePick && cached){ loadSource(cached.source, cached); return; }   // auto-resume cached scan — no re-upload
+    ctr.innerHTML = (cached?`<button class="btn-primary" id="btn-resume" type="button" style="margin-right:10px">Resume ${esc(cached.source)}${cached.scanDate?' · '+esc(cached.scanDate):''}</button>`:'')
+      + `<label class="bulk-sel" for="file-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">${cached?'Load a different scan.json…':'Load scan.json…'}</label><input id="file-input" type="file" accept=".json" hidden>`;
+    if(cached) document.getElementById('btn-resume').addEventListener('click',()=>loadSource(cached.source,cached));
+    const fi=document.getElementById('file-input');
+    fi.addEventListener('change',e=>{ if(e.target.files[0]) loadLocalFile(e.target.files[0]); });
+    document.querySelector('label[for=file-input]').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fi.click();}});
+  }
+}
+</script>
+</body>
+</html>

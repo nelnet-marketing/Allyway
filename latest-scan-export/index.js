@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import ExcelJS from 'exceljs';
-import { mkdirSync } from 'fs';
+import { mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { WCAG_REFERENCE, WCAG_TESTS } from './data.js';
@@ -662,6 +662,77 @@ export function addContrastSheet(wb, contrastBySource) {
   return sheet;
 }
 
+// ==== Allyway (Rideshare) grouped-scan JSON ====
+// The tool ingests this (pushed into NelnetStorage), so grouping + fingerprints live
+// here, not in the browser. Standard defects group by rule title; contrast defects by
+// coarse element signature (ruleKey + tag + sorted class + role).
+const CAT_RANK = { ERROR: 0, ALERT: 1, 'BEST PRACTICE': 2 };
+const catRankOf = c => CAT_RANK[(c || '').toUpperCase()] ?? 9;
+const catOfFinding = f => f.category || ruleMap[f.ruleKey]?.type?.title || '';
+const worseCat = (a, b) => !a ? b : !b ? a : (catRankOf(a) <= catRankOf(b) ? a : b);
+
+export function coarseContrastSig(html, ruleKey) {
+  const h = html || '';
+  const tag  = (h.match(/^\s*<\s*([a-zA-Z][\w-]*)/) || [])[1] || '?';
+  const cls  = (h.match(/class\s*=\s*"([^"]*)"/i) || [])[1] || '';
+  const role = (h.match(/role\s*=\s*"([^"]*)"/i) || [])[1] || '';
+  const classes = cls.replace(/\d+/g, '#').split(/\s+/).filter(Boolean).sort().join('.');
+  return `${ruleKey}|${tag}${classes ? '.' + classes : ''}${role ? '[role=' + role + ']' : ''}`;
+}
+
+export function buildScanJson(source, rows, contrast, scanInfo) {
+  const addPage = (d, url, html) => {
+    if (!url) return;
+    let p = d.pages[url];
+    if (!p) p = d.pages[url] = { url, instances: 0, html: '' };
+    p.instances++;
+    // Keep every page's URL + count, but sample HTML only for the first 15 pages of a
+    // defect so one huge defect can't exceed the 64 KB per-record storage cap.
+    if (!p.html && html && Object.keys(d.pages).length <= 15) p.html = String(html).slice(0, 400);
+  };
+
+  const std = {};
+  for (const r of rows) {
+    const fp = sanitizeText(r.ruleTitle);
+    if (!fp) continue;
+    let d = std[fp];
+    if (!d) d = std[fp] = { fingerprint: fp, title: fp, severity: (r.ruleSeverity || '').toUpperCase(),
+      description: sanitizeText(r.ruleDescription || ''), instances: 0, pages: {} };
+    d.instances++;
+    addPage(d, normalizeUrl(r.componentUrl ?? ''), r.instanceHTMLSource);
+  }
+
+  const con = {};
+  const seen = new Set();
+  for (const f of contrast) {
+    const url = normalizeUrl(f.componentUrl ?? '');
+    const dedupe = `${url}|||${f.instanceLocatorType}|||${f.instanceLocator}|||${f.ruleKey}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    const fp = coarseContrastSig(f.instanceHTMLSource, f.ruleKey);
+    let d = con[fp];
+    if (!d) d = con[fp] = { fingerprint: fp, title: fp.split('|').slice(1).join('|') || '(element)',
+      severity: (f.severity || ruleMap[f.ruleKey]?.severity || '').toUpperCase(), category: '', instances: 0, pages: {} };
+    d.category = worseCat(d.category, catOfFinding(f));
+    d.instances++;
+    addPage(d, url, f.instanceHTMLSource);
+  }
+
+  const toArr = o => Object.values(o).map(d => ({ ...d, pages: Object.values(d.pages) }));
+  return { source, scanDate: isoDateFromScan(scanInfo.date), generatedFrom: 'index.js',
+    standard: toArr(std), contrast: toArr(con) };
+}
+
+function writeScanJson(source, rows, contrast, scanInfo) {
+  const json = buildScanJson(source, rows, contrast, scanInfo);
+  const folder = join(__dirname, 'ARC Reports', source);
+  mkdirSync(folder, { recursive: true });
+  const path = join(folder, `${source} - scan.json`);
+  writeFileSync(path, JSON.stringify(json));
+  log(`✅ Allyway JSON: "${path}" — ${json.standard.length} standard + ${json.contrast.length} contrast defects`);
+  return path;
+}
+
 function formatScanDate(isoString) {
   const d = new Date(isoString);
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
@@ -882,6 +953,12 @@ async function run() {
     }
 
     await writeWorkbook(perSourceRowsMap, scanInfoMap, contrastBySource);
+
+    // Allyway ingest: one grouped-scan JSON per source (pushed into NelnetStorage).
+    for (const source of SOURCES) {
+      const info = scanInfoMap.get(source);
+      if (info) writeScanJson(source, perSourceRowsMap.get(source) ?? [], contrastBySource.get(source) ?? [], info);
+    }
 
   } catch (err) {
     console.error('❌ Error:', err);
