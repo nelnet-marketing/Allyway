@@ -241,8 +241,9 @@ async function saveNow(){
 // Replace a source's slice in chunks so we stay under per-call caps (first chunk clears the old slice).
 async function putAll(rows, where){
   const CH=150;
-  if(!rows.length){ await NS().putRecords([],{replaceWhere:where}); return; }
-  for(let i=0;i<rows.length;i+=CH) await NS().putRecords(rows.slice(i,i+CH), i===0?{replaceWhere:where}:undefined);
+  if(!rows.length) return;   // empty putRecords is rejected; nothing to write (rare all-cleared case leaves stale rows until next write)
+  await NS().putRecords(rows.slice(0,CH), {replaceWhere:where});
+  for(let i=CH;i<rows.length;i+=CH) await NS().putRecords(rows.slice(i,i+CH));
 }
 function setSave(m){ const el=document.getElementById('save-indicator'); if(!el)return;
   el.textContent = m==='dirty'?'Saving…' : m==='error'?'Save failed' : (NS()?'Saved to Rideshare':'Saved locally');
@@ -309,8 +310,11 @@ async function ingestScanToStorage(scan){
   const recs=[];
   for(const sd of (scan.standard||[])) recs.push({kind:'scan',source:src,scanDate:when,stream:'standard',...sd});
   for(const sd of (scan.contrast||[])) recs.push({kind:'scan',source:src,scanDate:when,stream:'contrast',...sd});
-  await NS().putRecords([], {replaceWhere:{kind:'scan',source:src}});         // clear the source's old scan
-  const CH=120; for(let i=0;i<recs.length;i+=CH) await NS().putRecords(recs.slice(i,i+CH));
+  const CH=120;
+  if(recs.length){
+    await NS().putRecords(recs.slice(0,CH), {replaceWhere:{kind:'scan',source:src}});   // 1st chunk replaces the source's old scan
+    for(let i=CH;i<recs.length;i+=CH) await NS().putRecords(recs.slice(i,i+CH));         // rest append
+  }
   await NS().putRecords([{kind:'source',source:src,scanDate:when}], {replaceWhere:{kind:'source',source:src}});
 }
 async function adminLoadScan(file){
