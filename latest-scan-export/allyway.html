@@ -243,6 +243,7 @@ const XCAT_RENAME = {'HubSpot':'HubSpot Form'};   // one-time normalization of s
 const SEV_RANK = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3,'BEST PRACTICE':4};
 
 let state = null;
+let statsCache = {};                              // src -> last computed dashboard stats, so re-entry shows numbers instantly
 let sortKey = 'sev', sortDir = 1;
 let activeStream = 'standard';                    // 'standard' | 'contrast'
 let contrastGroupBy = 'page';                     // contrast tab: 'page' | 'signature'
@@ -411,6 +412,7 @@ async function adminLoadScan(file){
     showLoading(`Saving ${scan.source}…`);
     await ingestScanToStorage(scan);
     hideLoading();
+    delete statsCache[scan.source];   // scan changed — force a fresh recompute for this card
     toast(`${scan.source}: ${scan.standard.length} rules + ${(scan.contrast||[]).length} contrast saved. Added to the dashboard.`);
     await showPicker(true);   // stay on the dashboard so you can load more sources; click the card to open one
   }catch(e){ hideLoading(); toast('Load failed: '+(e.code||e.message),'error'); }
@@ -858,17 +860,18 @@ async function showPicker(forcePick){
     actions.innerHTML = admin ? `<label class="bulk-sel" for="scan-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">＋ Load scan.json</label><input id="scan-input" type="file" accept=".json" hidden>` : '';
     if(admin){ const si=document.getElementById('scan-input'); si.addEventListener('change',e=>{ if(e.target.files[0]) adminLoadScan(e.target.files[0]); e.target.value=''; });
       document.querySelector('label[for=scan-input]').addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();si.click();}}); }
-    showLoading('Loading sources…');
+    // No overlay: cards carry their own loading state. Keep any existing cards visible while we refresh;
+    // only show a placeholder on a truly empty first load (grid has no cards yet).
+    if(!grid.querySelector('.src-card')) grid.innerHTML='<p class="grid-msg">Loading sources…</p>';
     let sources=[];
     try{ sources=await loadSources(); }
-    catch(e){ hideLoading(); grid.innerHTML=`<p class="grid-msg" style="color:var(--error-red)">Could not read storage: ${esc(e.message||e.code||e)}</p>`; return; }
-    if(!sources.length){ hideLoading();
-      grid.innerHTML=`<p class="grid-msg">${admin?'No scans yet — load a scan.json to seed the site.':'No scans loaded yet — an admin needs to add one.'}</p>`; return; }
-    hideLoading();
-    renderSourceCards(grid, sources.map(s=>({src:s.source, scanDate:s.scanDate, loading:true})));   // instant, clickable
+    catch(e){ grid.innerHTML=`<p class="grid-msg" style="color:var(--error-red)">Could not read storage: ${esc(e.message||e.code||e)}</p>`; return; }
+    if(!sources.length){ grid.innerHTML=`<p class="grid-msg">${admin?'No scans yet — load a scan.json to seed the site.':'No scans loaded yet — an admin needs to add one.'}</p>`; return; }
+    // Render with cached numbers if we have them (instant on re-entry), else a skeleton; then refresh each in place.
+    renderSourceCards(grid, sources.map(s=>({src:s.source, scanDate:s.scanDate, ...(statsCache[s.source]||{loading:true})})));
     sources.forEach(s=> sourceStats(s.source)
-      .then(st=>fillSourceCard({...st, scanDate:s.scanDate}))
-      .catch(()=>fillSourceCard({src:s.source, scanDate:s.scanDate, err:true})));                    // numbers stream in per card
+      .then(st=>{ statsCache[s.source]=st; fillSourceCard({...st, scanDate:s.scanDate}); })
+      .catch(()=>fillSourceCard({src:s.source, scanDate:s.scanDate, err:true})));
     return;
   } else {
     help.innerHTML='Local preview — load a <code>&lt;source&gt; - scan.json</code> from <code>node index.js</code>. Nothing is saved; use Rideshare for real triage.';
