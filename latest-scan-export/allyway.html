@@ -100,14 +100,20 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 <body>
 <header>
   <div class="hdr">
+    <a href="#" id="home-link" aria-label="Allyway home" style="display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit;cursor:pointer">
     <svg class="nelnet-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" aria-label="Nelnet" role="img">
       <defs><linearGradient id="nlg" x1="54" y1="108" x2="54" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#70ba44"/><stop offset="1" stop-color="#afd136"/></linearGradient></defs>
       <path fill="#899396" d="m57.34,26.9c-5.89,0-10.04,2.64-13.56,5.77l-.2-3.64c-.02-.45-.38-.8-.83-.81h-11.23c-.47,0-.84.38-.84.85v51.01c0,.46.37.84.84.84h12.5c.46,0,.84-.38.84-.84v-35.17c4.56-5.26,6.59-6.11,9.6-6.11,4.2,0,8.68,2.9,8.68,11.03v30.26c0,.46.37.84.83.84h12.51c.46,0,.84-.38.83-.84v-32.86c0-13.34-10.05-20.33-19.98-20.33"/>
       <path fill="url(#nlg)" d="m11.12,54c0-23.64,19.23-42.87,42.88-42.87s42.87,19.23,42.87,42.87-19.23,42.88-42.87,42.88S11.12,77.64,11.12,54M54,0C24.22,0,0,24.22,0,54s24.22,54,54,54,54-24.22,54-54S83.77,0,54,0Z"/>
     </svg>
-    <div class="product-tag"><strong>Allyway</strong><span class="badge">a Nelway tool</span></div>
-    <div class="hdr-right" id="hdr-right"></div>
-    <span class="save-indicator" id="save-indicator" style="margin-left:12px;font-size:11px;color:var(--gray)"></span>
+    <span class="product-tag"><strong>Allyway</strong><span class="badge">a Nelway tool</span></span>
+    </a>
+    <div class="hdr-right" id="hdr-right">
+      <label id="hdr-src-wrap" style="display:none;align-items:center;gap:6px;font-family:'Red Hat Display',sans-serif;font-size:12px;font-weight:600;color:var(--dark-gray)">Source
+        <select id="hdr-src" class="status-sel" style="max-width:260px;font-size:12.5px;font-weight:600"></select>
+      </label>
+      <span class="save-indicator" id="save-indicator" style="margin-left:4px;font-size:11px;color:var(--gray)"></span>
+    </div>
   </div>
 </header>
 
@@ -141,7 +147,6 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         </label>
         <label class="chk"><input type="checkbox" id="filter-lowvol"> Hide low-volume (≤2 pages)</label>
         <button class="bulk-sel" id="btn-worklist" type="button" style="margin-top:0">⬇ Export work list (CSV)</button>
-        <button class="bulk-sel" id="btn-switch" type="button" style="margin-top:0">↺ Switch source</button>
         <span class="spacer" id="result-count"></span>
       </div>
       <div class="tbl-wrap">
@@ -300,9 +305,17 @@ function activateSource(){
   ct.disabled=!cCount; ct.textContent=cCount?`Contrast (${cCount})`:'Contrast (none)';
   document.getElementById('picker-area').hidden=true;
   document.getElementById('tracker-area').hidden=false;
-  document.getElementById('hdr-right').textContent=`${src}${scanDate?' · '+scanDate:''} · ${Object.keys(defects).length} rules · ${cCount} contrast`;
+  populateHeaderSource();
   setSave('saved');
   updateFilterOptions(); recomputeOrder(); render();
+}
+// Header source dropdown — quick-switch between sources without going home.
+async function populateHeaderSource(){
+  const wrap=document.getElementById('hdr-src-wrap'), sel=document.getElementById('hdr-src');
+  let sources = NS() ? await loadSources() : [{source:state.source, scanDate:state.scanDate}];
+  if(!sources.some(s=>s.source===state.source)) sources.unshift({source:state.source, scanDate:state.scanDate});
+  sel.innerHTML=sources.map(s=>`<option value="${esc(s.source)}"${s.source===state.source?' selected':''}>${esc(s.source)}${s.scanDate?' · '+esc(s.scanDate):''}</option>`).join('');
+  wrap.style.display='flex';
 }
 // Admin: write a scan.json into shared storage as records (replaces that source's prior scan).
 async function ingestScanToStorage(scan){
@@ -750,12 +763,14 @@ async function init(){
   document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.addEventListener('click',()=>setGroupBy(b.dataset.groupby)));
   document.getElementById('btn-add-manual').addEventListener('click',()=>openManualForm(''));
   document.getElementById('btn-worklist').addEventListener('click',exportWorkList);
-  document.getElementById('btn-switch').addEventListener('click',()=>showPicker(true));
+  document.getElementById('home-link').addEventListener('click',e=>{ e.preventDefault(); showPicker(true); });
+  document.getElementById('hdr-src').addEventListener('change',e=>{ if(e.target.value && (!state || e.target.value!==state.source)) loadSource(e.target.value); });
   await showPicker();
 }
 async function showPicker(forcePick){
   document.getElementById('tracker-area').hidden=true;
   document.getElementById('picker-area').hidden=false;
+  document.getElementById('hdr-src-wrap').style.display='none';   // no active-source dropdown on the home/picker
   const note=document.getElementById('mode-note'), ctr=document.getElementById('picker-controls'), help=document.getElementById('picker-help');
   let last=''; try{ last=localStorage.getItem('allyway::_last')||''; }catch{}
   if(NS()){
