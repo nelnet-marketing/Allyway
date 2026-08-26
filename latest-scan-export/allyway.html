@@ -116,6 +116,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .source-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:14px;}
 .src-card{text-align:left;background:var(--white);border:1px solid var(--hairline);border-radius:var(--rl);padding:16px 18px;cursor:pointer;font-family:inherit;box-shadow:var(--shadow-md);transition:transform .12s,box-shadow .12s,border-color .12s;display:flex;flex-direction:column;gap:13px;}
 .src-card:hover{transform:translateY(-2px);border-color:#d6e3b8;box-shadow:0 8px 24px rgba(17,137,28,.14);}
+.src-card__metrics{display:contents;}   /* wrapper for progressive fill; keeps stats+foot as card flex children */
 .src-card__name{font-family:'Red Hat Display',sans-serif;font-size:15px;font-weight:600;color:var(--dark-gray);word-break:break-word;}
 .src-card__date{font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:.05em;margin-top:3px;}
 .src-card__stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
@@ -302,12 +303,14 @@ async function loadSources(){
 }
 // Home dashboard: headline standard-stream triage numbers for one source, without disturbing global `state`.
 async function sourceStats(src){
+  const [scanRows,dispRows,manualRows]=await Promise.all([
+    queryAll({kind:'scan',source:src}), queryAll({kind:'disp',source:src}), queryAll({kind:'manual',source:src})]);
   const defects={};
-  for(const it of await queryAll({kind:'scan',source:src})){ const d=it.data; if(d.stream==='contrast')continue; defects[d.fingerprint]=defectFromScan(d); }
+  for(const it of scanRows){ const d=it.data; if(d.stream==='contrast')continue; defects[d.fingerprint]=defectFromScan(d); }
   const disp={}, dseen=new Set();
-  for(const it of await queryAll({kind:'disp',source:src})){ const k=it.data.dkey; if(dseen.has(k))continue; dseen.add(k); const {kind,source,dkey,...x}=it.data; disp[k]=x; }
+  for(const it of dispRows){ const k=it.data.dkey; if(dseen.has(k))continue; dseen.add(k); const {kind,source,dkey,...x}=it.data; disp[k]=x; }
   const manual=[], mseen=new Set();
-  for(const it of await queryAll({kind:'manual',source:src})){ const id=it.data.mid; if(mseen.has(id))continue; mseen.add(id); manual.push(it.data); }
+  for(const it of manualRows){ const id=it.data.mid; if(mseen.has(id))continue; mseen.add(id); manual.push(it.data); }
   const excl=new Set(); for(const [k,v] of Object.entries(disp)){ if(v.status==='out_of_scope'&&k.includes('|||')) excl.add(k.split('|||')[1]); }
   const res=(fp,url)=>{ if(excl.has(url))return 'out_of_scope'; const pg=disp[`${fp}|||${url}`]; if(pg&&pg.status)return pg.status; const rd=disp[fp]; if(rd&&rd.status)return rd.status; return 'untriaged'; };
   let active=0,suppressed=0,verify=0,untriaged=0,total=0;
@@ -316,44 +319,50 @@ async function sourceStats(src){
   active += manual.filter(m=>m.type==='a11y' && (SMAP[m.status||'untriaged']?.bucket||'active')==='active').length;
   return {src, active, suppressed, verify, untriaged, total, triagedPct: total?Math.round(100*(total-untriaged)/total):0};
 }
+function metricsHtml(s){
+  if(s.err) return `<div class="src-card__foot"><span style="color:var(--gray)">Open to view →</span></div>`;
+  if(s.loading) return `<div class="src-card__stats">${['Active','Fixed','Suppressed'].map(l=>`<div class="src-card__stat"><div class="src-card__n" style="color:var(--gray)">·</div><div class="src-card__l">${l}</div></div>`).join('')}</div><div class="src-card__foot"><span style="color:var(--gray)">Loading…</span></div>`;
+  return `<div class="src-card__stats">
+      <div class="src-card__stat"><div class="src-card__n ${s.active?'warn':''}">${s.active}</div><div class="src-card__l">Active</div></div>
+      <div class="src-card__stat"><div class="src-card__n">${s.verify}</div><div class="src-card__l">Fixed</div></div>
+      <div class="src-card__stat"><div class="src-card__n">${s.suppressed}</div><div class="src-card__l">Suppressed</div></div>
+    </div>
+    <div class="src-card__foot"><span>${s.triagedPct}% triaged</span><span class="src-card__bar"><span style="width:${s.triagedPct}%"></span></span></div>`;
+}
+const cardAria = s => (s.err||s.loading) ? `Open ${s.src}` : `Open ${s.src}: ${s.active} active findings, ${s.triagedPct} percent triaged`;
 function renderSourceCards(grid, cards){
-  grid.innerHTML = cards.map(s=>{
-    const date = s.scanDate ? esc(s.scanDate) : 'no scan date';
-    if(s.err) return `<button class="src-card" data-src="${esc(s.src)}"><div><div class="src-card__name">${esc(s.src)}</div><div class="src-card__date">${date}</div></div><div class="grid-msg" style="padding:6px 0;font-size:12px">Open to view →</div></button>`;
-    return `<button class="src-card" data-src="${esc(s.src)}" aria-label="Open ${esc(s.src)}: ${s.active} active findings, ${s.triagedPct} percent triaged">
-      <div><div class="src-card__name">${esc(s.src)}</div><div class="src-card__date">${date}</div></div>
-      <div class="src-card__stats">
-        <div class="src-card__stat"><div class="src-card__n ${s.active?'warn':''}">${s.active}</div><div class="src-card__l">Active</div></div>
-        <div class="src-card__stat"><div class="src-card__n">${s.verify}</div><div class="src-card__l">Fixed</div></div>
-        <div class="src-card__stat"><div class="src-card__n">${s.suppressed}</div><div class="src-card__l">Suppressed</div></div>
-      </div>
-      <div class="src-card__foot"><span>${s.triagedPct}% triaged</span><span class="src-card__bar"><span style="width:${s.triagedPct}%"></span></span></div>
-    </button>`;
-  }).join('');
+  grid.innerHTML = cards.map(s=>`<button class="src-card" data-src="${esc(s.src)}" aria-label="${esc(cardAria(s))}"><div><div class="src-card__name">${esc(s.src)}</div><div class="src-card__date">${s.scanDate?esc(s.scanDate):'no scan date'}</div></div><div class="src-card__metrics">${metricsHtml(s)}</div></button>`).join('');
   grid.querySelectorAll('.src-card').forEach(b=>b.addEventListener('click',()=>loadSource(b.dataset.src)));
+}
+// Progressive: update one card's numbers once its stats resolve (card may be gone if we've navigated away).
+function fillSourceCard(s){
+  const sel=(window.CSS&&CSS.escape)?CSS.escape(s.src):s.src.replace(/["\\]/g,'\\$&');
+  const card=document.querySelector(`.src-card[data-src="${sel}"]`); if(!card)return;
+  const m=card.querySelector('.src-card__metrics'); if(m)m.innerHTML=metricsHtml(s);
+  card.setAttribute('aria-label',cardAria(s));
 }
 async function loadSource(src, localScan){
   const _spin = !!NS();                              // only Rideshare's multi-query load lags; skip flash in local preview
   if(_spin) showLoading('Loading '+src+'…');
   try{
-  let scan;
+  let scan, dispositions={}, manualFindings=[], xcats=DEFAULT_XCATS.slice();
   if(NS()){
+    // scan / disp / manual / config are independent — fetch concurrently instead of one-after-another
+    const [scanRows,dispRows,manualRows,cfgRows]=await Promise.all([
+      queryAll({kind:'scan',source:src}), queryAll({kind:'disp',source:src}),
+      queryAll({kind:'manual',source:src}), queryAll({kind:'config',source:'_site'})]);
     scan={source:src,standard:[],contrast:[]};
-    for(const it of await queryAll({kind:'scan',source:src})){ const d=it.data; (d.stream==='contrast'?scan.contrast:scan.standard).push(d); if(d.scanDate)scan.scanDate=d.scanDate; }
-  } else scan=localScan;
+    for(const it of scanRows){ const d=it.data; (d.stream==='contrast'?scan.contrast:scan.standard).push(d); if(d.scanDate)scan.scanDate=d.scanDate; }
+    const dseen=new Set();
+    for(const it of dispRows){ const k=it.data.dkey; if(dseen.has(k))continue; dseen.add(k); const {kind,source,dkey,...disp}=it.data; dispositions[k]=disp; }
+    const mseen=new Set();
+    for(const it of manualRows){ const id=it.data.mid; if(mseen.has(id))continue; mseen.add(id); const {kind,source,mid,...m}=it.data; manualFindings.push({id,...m}); }
+    const cfg=cfgRows[0];
+    if(cfg&&Array.isArray(cfg.data.list)&&cfg.data.list.length) xcats=cfg.data.list;
+  } else scan=localScan;   // local preview: no stored dispositions — start empty
   const defects={}, contrast={};
   for(const sd of (scan.standard||[])) defects[sd.fingerprint]=defectFromScan(sd);
   for(const sd of (scan.contrast||[])) contrast[sd.fingerprint]=defectFromScan(sd);
-
-  let dispositions={}, manualFindings=[], xcats=DEFAULT_XCATS.slice();
-  if(NS()){
-    const dseen=new Set();
-    for(const it of await queryAll({kind:'disp',source:src})){ const k=it.data.dkey; if(dseen.has(k))continue; dseen.add(k); const {kind,source,dkey,...disp}=it.data; dispositions[k]=disp; }
-    const mseen=new Set();
-    for(const it of await queryAll({kind:'manual',source:src})){ const id=it.data.mid; if(mseen.has(id))continue; mseen.add(id); const {kind,source,mid,...m}=it.data; manualFindings.push({id,...m}); }
-    const cfg=(await queryAll({kind:'config',source:'_site'}))[0];
-    if(cfg&&Array.isArray(cfg.data.list)&&cfg.data.list.length) xcats=cfg.data.list;
-  }   // local preview: no stored dispositions — start empty
 
   state={source:src, scanDate:scan.scanDate||'', defects, contrast, dispositions, xcats, manualFindings};
   migrateXcats();
@@ -855,10 +864,11 @@ async function showPicker(forcePick){
     catch(e){ hideLoading(); grid.innerHTML=`<p class="grid-msg" style="color:var(--error-red)">Could not read storage: ${esc(e.message||e.code||e)}</p>`; return; }
     if(!sources.length){ hideLoading();
       grid.innerHTML=`<p class="grid-msg">${admin?'No scans yet — load a scan.json to seed the site.':'No scans loaded yet — an admin needs to add one.'}</p>`; return; }
-    let cards;
-    try{ cards=await Promise.all(sources.map(s=>sourceStats(s.source).then(x=>({...x,scanDate:s.scanDate})).catch(()=>({src:s.source,scanDate:s.scanDate,err:true})))); }
-    finally{ hideLoading(); }
-    renderSourceCards(grid, cards);
+    hideLoading();
+    renderSourceCards(grid, sources.map(s=>({src:s.source, scanDate:s.scanDate, loading:true})));   // instant, clickable
+    sources.forEach(s=> sourceStats(s.source)
+      .then(st=>fillSourceCard({...st, scanDate:s.scanDate}))
+      .catch(()=>fillSourceCard({src:s.source, scanDate:s.scanDate, err:true})));                    // numbers stream in per card
     return;
   } else {
     help.innerHTML='Local preview — load a <code>&lt;source&gt; - scan.json</code> from <code>node index.js</code>. Nothing is saved; use Rideshare for real triage.';
