@@ -1432,31 +1432,47 @@ async function showPicker(forcePick){
   var icon=btn.querySelector('.theme-toggle__icon'), txt=btn.querySelector('.theme-toggle__txt');
   var MOON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>';
   var SUN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>';
+  var root=document.documentElement;
+  // Durable per-viewer theme via NelnetStorage (localStorage is in-memory only in the sandbox).
+  // Same opaque email-hash scoping as the app's other per-viewer rows; works in Shared mode.
+  var NS=function(){return window.NelnetStorage;};
+  function vkey(){ var e=((NS()&&NS().viewer&&NS().viewer.email)||'').toLowerCase(); var h=5381; for(var i=0;i<e.length;i++) h=((h<<5)+h+e.charCodeAt(i))>>>0; return 'u'+h.toString(36); }
+  var themeExplicit=false;
+  try{ var ls=localStorage.getItem('allyway-theme'); if(ls==='dark'||ls==='light') themeExplicit=true; }catch(e){}
   function render(){
-    var dark=document.documentElement.getAttribute('data-theme')==='dark';
+    var dark=root.getAttribute('data-theme')==='dark';
     btn.setAttribute('aria-label', dark?'Switch to light theme':'Switch to dark theme');
     icon.innerHTML= dark?SUN:MOON;
     if(txt) txt.textContent= dark?'Light':'Dark';
   }
+  function saveTheme(mode){
+    try{localStorage.setItem('allyway-theme',mode);}catch(e){}
+    if(NS()){ try{ NS().putRecords([{kind:'pref',u:vkey(),pkey:'theme',theme:mode}], {replaceWhere:{kind:'pref',u:vkey(),pkey:'theme'}}).catch(function(){}); }catch(e){} }
+  }
   btn.addEventListener('click',function(){
-    var next=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
-    document.documentElement.setAttribute('data-theme',next);
-    try{localStorage.setItem('allyway-theme',next);}catch(e){}
+    var next=root.getAttribute('data-theme')==='dark'?'light':'dark';
+    root.setAttribute('data-theme',next);
+    themeExplicit=true;
+    saveTheme(next);
     render();
   });
-  // Follow OS changes live, but only until the visitor makes an explicit choice
+  // Follow OS changes live, but only until the visitor makes an explicit choice (session or durable)
   if(window.matchMedia){
     var mq=window.matchMedia('(prefers-color-scheme:dark)');
     var onOS=function(e){
-      var saved; try{saved=localStorage.getItem('allyway-theme');}catch(err){}
-      if(saved==='dark'||saved==='light') return;   // explicit pick wins
-      document.documentElement.setAttribute('data-theme', e.matches?'dark':'light');
+      if(themeExplicit) return;
+      root.setAttribute('data-theme', e.matches?'dark':'light');
       render();
     };
     if(mq.addEventListener) mq.addEventListener('change',onOS);
     else if(mq.addListener) mq.addListener(onOS);   // older Safari
   }
   render();
+  // Restore the durable per-viewer choice (async; overrides the OS-resolved default on reload)
+  if(NS()){ try{ NS().queryData({limit:1,filter:{kind:'pref',u:vkey(),pkey:'theme'}}).then(function(r){
+    var v=r&&r.items&&r.items[0]&&r.items[0].data;
+    if(v&&(v.theme==='dark'||v.theme==='light')&&!themeExplicit){ themeExplicit=true; root.setAttribute('data-theme',v.theme); render(); }
+  }).catch(function(){}); }catch(e){} }
 })();
 </script>
 </body>
