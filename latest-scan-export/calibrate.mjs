@@ -33,7 +33,7 @@ if (!API_KEY || !SOURCE) {
   process.exit(1);
 }
 
-const BASE    = 'https://arc.tpgi.com/api';
+const BASE    = 'https://arc.vispero.com/api';
 const HEADERS = { accept: 'application/json', 'api-key': API_KEY };
 const CONTRAST_CRITERIA = new Set(['1.4.3', '1.4.11']);   // matches index.js
 const REQUEST_TIMEOUT_MS = 45000;

@@ -53,7 +53,7 @@ const MIN_PAGE_SIZE        = 10;
 const MAX_SAME_SIZE_RETRIES = 2;
 const REQUEST_TIMEOUT_MS   = 45000;
 
-const BASE    = 'https://arc.tpgi.com/api';
+const BASE    = 'https://arc.vispero.com/api';
 const HEADERS = { accept: 'application/json', 'api-key': API_KEY };
 
 const CONTRAST_CRITERIA = new Set(['1.4.3', '1.4.11']);

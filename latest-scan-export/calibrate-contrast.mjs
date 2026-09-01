@@ -26,7 +26,7 @@ const SCANS = (()=>{ const n=parseInt(args.find(a=>a.startsWith('--scans='))?.sp
 const SAMPLES = (()=>{ const n=parseInt(args.find(a=>a.startsWith('--samples='))?.split('=')[1]??'',10); return Number.isFinite(n)&&n>=0?n:12; })();
 if(!API_KEY||!SOURCE){ console.error("Usage: node calibrate-contrast.mjs 'API_KEY' 'Source Title' [--scans=4] [--samples=12]"); process.exit(1); }
 
-const BASE='https://arc.tpgi.com/api';
+const BASE='https://arc.vispero.com/api';
 const HEADERS={accept:'application/json','api-key':API_KEY};
 const CONTRAST_CRITERIA=new Set(['1.4.3','1.4.11']);
 const CAT_RANK={ERROR:0,ALERT:1,'BEST PRACTICE':2};
