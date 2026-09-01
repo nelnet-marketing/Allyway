@@ -1444,6 +1444,18 @@ async function showPicker(forcePick){
     try{localStorage.setItem('allyway-theme',next);}catch(e){}
     render();
   });
+  // Follow OS changes live, but only until the visitor makes an explicit choice
+  if(window.matchMedia){
+    var mq=window.matchMedia('(prefers-color-scheme:dark)');
+    var onOS=function(e){
+      var saved; try{saved=localStorage.getItem('allyway-theme');}catch(err){}
+      if(saved==='dark'||saved==='light') return;   // explicit pick wins
+      document.documentElement.setAttribute('data-theme', e.matches?'dark':'light');
+      render();
+    };
+    if(mq.addEventListener) mq.addEventListener('change',onOS);
+    else if(mq.addListener) mq.addListener(onOS);   // older Safari
+  }
   render();
 })();
 </script>
