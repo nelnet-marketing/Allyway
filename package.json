@@ -1,17 +1,17 @@
 {
-  "name": "latest-scan-export",
+  "name": "allyway",
   "version": "1.0.0",
   "license": "MIT",
-  "description": "Exports accessibility findings from the most recent (or date-range-scoped) ARC automated scan per source",
+  "description": "Allyway — Nelnet accessibility triage app (Rideshare), plus the ARC scan export + ingest pipeline that feeds it",
   "keywords": [
     "accessibility",
-    "automation",
+    "a11y",
     "arc",
-    "tpgi",
-    "scan",
-    "findings"
+    "rideshare",
+    "triage",
+    "nelnet"
   ],
-  "author": "TPGi",
+  "author": "Nelnet Marketing & Communications",
   "type": "module",
   "main": "index.js",
   "dependencies": {
