@@ -66,6 +66,17 @@ published until you press **Create** there. Two things to know:
 - The repo is public, so **the reporter's email is deliberately left out of the issue body** — it stays
   in Rideshare. Screenshots do not carry over either: download from the queue and drag them in.
 
+Promote, decline, and reopen are two-step: the first click stages the action and offers an optional
+**note**, so nothing changes status until you confirm. Notes are stored on the mutable `fbstatus`
+record and can be re-edited any time; the reporter's original text is never rewritten, since the
+submission store is append-only. Notes stay in Rideshare and are not published to GitHub.
+
+Declined reports can be **deleted permanently** (report + note + screenshot, behind a confirm step),
+and are swept automatically `RETENTION_DAYS` after the decline — 14 by default, `0` disables it. The
+sweep is opportunistic: there is no server-side cron for submissions, so it runs when an admin opens
+the queue, and reports what it cleared. A swept or deleted report leaves a bare `status:"deleted"`
+tombstone so the note cannot outlive the report it describes.
+
 Read the raw queue outside the app with the Rideshare MCP (`list_site_submissions allyway`), or
 **Export CSV** from the queue dialog.
 

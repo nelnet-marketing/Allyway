@@ -292,6 +292,16 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .fbq-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
 .fbq-issue{width:210px;padding:5px 8px;border:1.5px solid var(--field-border);border-radius:6px;font-size:12.5px;font-family:'Red Hat Display',sans-serif;color:var(--dark-gray);background:var(--white);}
 .fbq-empty{padding:24px 20px;font-size:13.5px;color:var(--gray);text-align:center;}
+.fbq-noted{margin:6px 0 8px;padding:8px 11px;border-left:3px solid var(--hairline);background:var(--off-white);border-radius:0 6px 6px 0;font-size:12.5px;line-height:1.5;color:var(--dark-gray);white-space:pre-wrap;word-break:break-word;}
+.fbq-noted-lbl{font-family:'Red Hat Display',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gray);margin-right:6px;}
+.fbq-pend{margin:9px 0 2px;padding:12px;border:1.5px solid var(--dark-green);border-radius:8px;background:var(--off-white);}
+.fbq-pend.is-danger{border-color:var(--error-red);}
+.fbq-pend-head{font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;color:var(--dark-gray);margin-bottom:7px;}
+.fbq-pend-warn{font-size:12.5px;line-height:1.5;color:var(--error-red);margin-bottom:10px;}
+.fbq-pend-lbl{display:block;font-size:12px;color:var(--gray);margin-bottom:5px;}
+.fbq-note{width:100%;padding:9px;margin-bottom:10px;border:1.5px solid var(--field-border);border-radius:6px;font-family:'Open Sans',Arial,sans-serif;font-size:13px;line-height:1.5;color:var(--dark-gray);background:var(--white);resize:vertical;}
+.fbq-danger{padding:7px 14px;background:var(--error-red);color:var(--white);border:none;border-radius:8px;font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;cursor:pointer;}
+:root[data-theme="dark"] .fbq-danger{color:#2E1622;}
 .fbq-acts a{color:var(--secondary);font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;text-decoration:underline;}
 :root[data-theme="dark"] .fb-chip input:checked+span{color:#10230F;}
 :root[data-theme="dark"] .fb-chip input:hover+span{border-color:#3f5a2a;}
@@ -480,7 +490,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
       <h2 id="fbq-title">Feedback queue</h2>
       <button type="button" class="fix-x" data-fbq-close aria-label="Close the feedback queue">&#10005;</button>
     </div>
-    <p class="fix-sub">Promote a report to a GitHub issue or decline it. Promoting opens a pre-filled issue on <span id="fbq-repo"></span> &mdash; nothing is published until you press &ldquo;Create&rdquo; there.</p>
+    <p class="fix-sub">Promote a report to a GitHub issue or decline it, with an optional note either way. Promoting opens a pre-filled issue on <span id="fbq-repo"></span> &mdash; nothing is published until you press &ldquo;Create&rdquo; there. Notes stay in Allyway. <span id="fbq-retention"></span></p>
     <div class="fbq-filters" role="group" aria-label="Filter feedback by status">
       <button class="tab" type="button" data-fbq-filter="new" aria-pressed="true" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">New</button>
       <button class="tab" type="button" data-fbq-filter="promoted" aria-pressed="false" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Promoted</button>
@@ -1606,6 +1616,7 @@ async function showPicker(forcePick){
   var REPO = 'wegnertm/Allyway';
   var MAX_SHOT = 5*1024*1024;
   var GH_BODY_MAX = 5500;                 // keeps the pre-filled issue URL under GitHub's request-line cap
+  var RETENTION_DAYS = 14;                // declined reports are cleared this many days after the decline; 0 disables
   var TYPES = {
     bug:       {label:"Something's broken", short:'Bug',       gh:'bug'},
     confusing: {label:'Confusing',          short:'Confusing', gh:'question'},
@@ -1623,7 +1634,7 @@ async function showPicker(forcePick){
   var thumb=el('fb-thumb'), clearBtn=el('fb-shot-clear'), openBtn=el('fb-open'), qBtn=el('fb-review');
   if(!dlg || !form) return;
 
-  var shotFile=null, shotUrl=null, qFilter='new', qRows=[], qStatus={};
+  var shotFile=null, shotUrl=null, qFilter='new', qRows=[], qStatus={}, qPending={};
 
   function open(d){ if(typeof d.showModal==='function') d.showModal(); else d.setAttribute('open',''); }
   function close(d){ if(typeof d.close==='function') d.close(); else d.removeAttribute('open'); }
@@ -1731,13 +1742,46 @@ async function showPicker(forcePick){
     (await queryAll({kind:'fbstatus'})).forEach(function(it){ var d=it.data||{}; if(d.fid) map[d.fid]=d; });
     return map;
   }
+  /* putRecords REPLACES the row, so carry forward what this call isn't changing — otherwise
+     editing a note would drop the linked issue number. `at` only moves when the status does,
+     so re-wording a note can't restart the retention clock on a declined report. */
   async function setStatus(fid, status, extra){
-    var row={kind:'fbstatus', fid:fid, status:status, at:new Date().toISOString()};
+    var prev=qStatus[fid]||{};
+    var row={kind:'fbstatus', fid:fid, status:status};
+    row.at = (prev.status===status && prev.at) ? prev.at : new Date().toISOString();
+    if(prev.issue) row.issue=prev.issue;
+    if(prev.note) row.note=prev.note;
     if(extra) for(var k in extra) row[k]=extra[k];
+    if(!row.note) delete row.note;
     await S().putRecords([row], {replaceWhere:{kind:'fbstatus', fid:fid}});
     qStatus[fid]=row;
   }
   var statusOf = function(id){ return (qStatus[id] && qStatus[id].status) || 'new'; };
+  var noteOf = function(id){ return (qStatus[id] && qStatus[id].note) || ''; };
+  var daysLeft = function(id){
+    var s=qStatus[id];
+    if(!RETENTION_DAYS || !s || s.status!=='declined' || !s.at) return null;
+    return RETENTION_DAYS - Math.floor((Date.now()-Date.parse(s.at))/864e5);
+  };
+
+  /* Permanent delete: the screenshot goes first, then the submission, then the verdict row is
+     rewritten to a bare tombstone — otherwise the note would outlive the report it describes. */
+  async function hardDelete(row){
+    var d=row.data||{};
+    if(d.shot){ try{ await S().removeFile(d.shot); }catch(e){} }   // an already-gone file must not block the delete
+    await S().remove(row.id);
+    try{ await S().putRecords([{kind:'fbstatus', fid:row.id, status:'deleted', at:new Date().toISOString()}], {replaceWhere:{kind:'fbstatus', fid:row.id}}); }catch(e){}
+    qRows=qRows.filter(function(r){ return r.id!==row.id; });
+    qStatus[row.id]={kind:'fbstatus', fid:row.id, status:'deleted'};
+  }
+  /* Opportunistic retention sweep: there is no server-side cron for submissions, so expired
+     declines are cleared whenever an admin opens the queue. */
+  async function purgeExpired(){
+    if(!RETENTION_DAYS) return 0;
+    var doomed=qRows.filter(function(r){ var n=daysLeft(r.id); return n!==null && n<=0; }), n=0;
+    for(var i=0;i<doomed.length;i++){ try{ await hardDelete(doomed[i]); n++; }catch(e){} }
+    return n;
+  }
   var issueNo = function(v){ var m=String(v||'').match(/(\d+)\s*$/); return m?m[1]:''; };
 
   function ghUrl(d, id){
@@ -1779,10 +1823,18 @@ async function showPicker(forcePick){
         + '<span class="fbq-tag">'+esc(SEVS[d.sev]||'—')+'</span>'
         + '<span>'+esc(r.createdBy||'unknown')+'</span><span>'+esc(when)+'</span>'
         + '<span>'+esc((d.source||'')+' · '+(d.view||''))+'</span>';
-      var acts=[];
-      if(st!=='promoted') acts.push('<button type="button" class="btn-primary" style="padding:7px 14px;font-size:13px" data-fbq-promote="'+esc(r.id)+'">Promote to GitHub issue</button>');
-      if(st!=='declined') acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-decline="'+esc(r.id)+'">Decline</button>');
-      if(st!=='new') acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-reopen="'+esc(r.id)+'">Move back to New</button>');
+      var left=daysLeft(r.id);
+      if(left!==null) meta+='<span class="fbq-tag">Deletes in '+esc(Math.max(left,0))+'d</span>';
+      var acts=[], staged=qPending.id===r.id, b=function(a,label,cls){
+        return '<button type="button" class="'+(cls||'bulk-sel')+'" style="margin-top:0'+(cls?';padding:7px 14px;font-size:13px':'')+'" data-fbq-act="'+a+'" data-fbq-id="'+esc(r.id)+'">'+label+'</button>';
+      };
+      if(!staged){                              // a staged panel owns the row; a stray click here would discard the note
+        if(st!=='promoted') acts.push(b('promote','Promote to GitHub issue','btn-primary'));
+        if(st!=='declined') acts.push(b('decline','Decline'));
+        if(st!=='new') acts.push(b('reopen','Move back to New'));
+        acts.push(b('note', noteOf(r.id) ? 'Edit note' : 'Add note'));
+        if(st==='declined') acts.push(b('delete','Delete permanently'));
+      }
       if(d.shot){
         acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-nelnet-view="'+esc(d.shot)+'">View screenshot</button>');
         acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-dl="'+esc(d.shot)+'">Download screenshot</button>');
@@ -1793,9 +1845,31 @@ async function showPicker(forcePick){
           : '<label class="sr-only" for="iss-'+esc(r.id)+'">GitHub issue number for this report</label>'
             + '<input class="fbq-issue" id="iss-'+esc(r.id)+'" data-fbq-issue="'+esc(r.id)+'" placeholder="Paste the issue number or URL">');
       }
+      var pend='';
+      if(qPending.id===r.id){
+        var a=qPending.act, isDel=a==='delete';
+        var heads={promote:'Promote to a GitHub issue', decline:'Decline this report', reopen:'Move back to New', note:'Note', delete:'Delete this report permanently'};
+        var confirms={promote:'Promote', decline:'Decline', reopen:'Move back to New', note:'Save note', delete:'Delete permanently'};
+        pend='<div class="fbq-pend'+(isDel?' is-danger':'')+'">'
+          + '<p class="fbq-pend-head">'+esc(heads[a])+'</p>'
+          + (isDel
+              ? '<p class="fbq-pend-warn">The report, its note, and any screenshot are deleted for good. This cannot be undone.</p>'
+              : '<label class="fbq-pend-lbl" for="pn-'+esc(r.id)+'">Note (optional) — stays in Allyway, never published to GitHub</label>'
+                + '<textarea class="fbq-note" id="pn-'+esc(r.id)+'" rows="2" placeholder="e.g. duplicate of #12, but the contrast half is still worth fixing">'+esc(noteOf(r.id))+'</textarea>')
+          + '<div class="fbq-acts">'
+          + '<button type="button" class="'+(isDel?'fbq-danger':'btn-primary')+'" style="margin-top:0;padding:7px 14px;font-size:13px" data-fbq-confirm="'+esc(r.id)+'">'+esc(confirms[a])+'</button>'
+          + '<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-cancel="1">Cancel</button>'
+          + '</div></div>';
+      }
+      /* Hidden only while editing the note itself — the textarea already holds it. Kept visible for
+         promote/decline/delete, where you want to read it before deciding. */
+      var note = ((staged && qPending.act==='note') || !noteOf(r.id)) ? ''
+        : '<p class="fbq-noted"><span class="fbq-noted-lbl">Note</span> '+esc(noteOf(r.id))+'</p>';
       return '<li class="fbq-row"><div class="fbq-meta">'+meta+'</div>'
         + '<p class="fbq-body">'+esc(d.text||'')+'</p>'
-        + '<div class="fbq-acts">'+acts.join('')+'</div></li>';
+        + note
+        + '<div class="fbq-acts">'+acts.join('')+'</div>'
+        + pend + '</li>';
     }).join('');
   }
 
@@ -1812,7 +1886,9 @@ async function showPicker(forcePick){
     try{
       qStatus=await loadStatuses();
       qRows=await loadFeedback();
+      var purged=await purgeExpired();
       renderQueue(); setBadge();
+      if(purged) toast('Cleared '+purged+' declined report'+(purged===1?'':'s')+' past the '+RETENTION_DAYS+'-day window.');
     }catch(e){ list.innerHTML='<li class="fbq-empty">Could not load feedback: '+esc(e.code||e.message)+'</li>'; }
     finally{ list.setAttribute('aria-busy','false'); }
   }
@@ -1822,6 +1898,9 @@ async function showPicker(forcePick){
 
   if(qBtn){
     el('fbq-repo').textContent=REPO;
+    el('fbq-retention').textContent = RETENTION_DAYS
+      ? 'Declined reports are cleared '+RETENTION_DAYS+' days after the decline, and you can delete one for good at any time.'
+      : 'Declined reports are kept until you delete them.';
     qBtn.addEventListener('click', function(){ open(qdlg); refresh(); });
     Array.prototype.forEach.call(document.querySelectorAll('[data-fbq-close]'), function(b){
       b.addEventListener('click', function(){ close(qdlg); });
@@ -1829,7 +1908,7 @@ async function showPicker(forcePick){
     qdlg.addEventListener('close', setBadge);   // covers Esc as well as the Close buttons
     Array.prototype.forEach.call(qdlg.querySelectorAll('[data-fbq-filter]'), function(b){
       b.addEventListener('click', function(){
-        qFilter=b.getAttribute('data-fbq-filter');
+        qFilter=b.getAttribute('data-fbq-filter'); qPending={};
         Array.prototype.forEach.call(qdlg.querySelectorAll('[data-fbq-filter]'), function(o){
           o.setAttribute('aria-pressed', String(o===b));
         });
@@ -1840,24 +1919,36 @@ async function showPicker(forcePick){
       S().downloadCSV(qRows.map(function(r){
         var d=r.data||{}, sr=qStatus[r.id]||{};
         return {id:r.id, reportedBy:r.createdBy||'', at:d.at||r.createdAt||'', type:d.type||'', severity:d.sev||'',
-                status:sr.status||'new', issue:sr.issue||'', source:d.source||'', view:d.view||'',
+                status:sr.status||'new', issue:sr.issue||'', note:sr.note||'', source:d.source||'', view:d.view||'',
                 theme:d.theme||'', viewport:d.viewport||'', screenshot:d.shot?'yes':'no', text:d.text||''};
       }), 'allyway-feedback.csv');
     });
     qdlg.addEventListener('click', async function(e){
       var b=e.target.closest && e.target.closest('button'); if(!b) return;
-      var promote=b.getAttribute('data-fbq-promote'), decline=b.getAttribute('data-fbq-decline'),
-          reopen=b.getAttribute('data-fbq-reopen'), dl=b.getAttribute('data-fbq-dl');
+      var act=b.getAttribute('data-fbq-act'), confirm=b.getAttribute('data-fbq-confirm'),
+          dl=b.getAttribute('data-fbq-dl');
+      if(dl){ try{ S().downloadFile(dl); }catch(err){ toast('Could not download that: '+(err.code||err.message),'error'); } return; }
+      if(b.getAttribute('data-fbq-cancel')){ qPending={}; renderQueue(); return; }
+      if(act){                                   // stage the action so a note can ride along with it
+        qPending={id:b.getAttribute('data-fbq-id'), act:act};
+        renderQueue();
+        var f=el('pn-'+qPending.id); if(f) f.focus();
+        return;
+      }
+      if(!confirm) return;
+      var a=qPending.act, fid=confirm, f=el('pn-'+fid), note=f?f.value.trim():'';
+      var row=qRows.filter(function(r){ return r.id===fid; })[0] || {};
       try{
-        if(dl){ S().downloadFile(dl); }
-        else if(promote){
-          var row=qRows.filter(function(r){ return r.id===promote; })[0] || {};
-          openExternal(ghUrl(row.data||{}, promote));
-          await setStatus(promote,'promoted'); renderQueue(); setBadge();
+        if(a==='delete'){ await hardDelete(row); toast('Deleted for good.'); }
+        else if(a==='promote'){
+          openExternal(ghUrl(row.data||{}, fid));
+          await setStatus(fid,'promoted',{note:note});
           toast('GitHub is open with the issue pre-filled — press Create there to publish it.');
         }
-        else if(decline){ await setStatus(decline,'declined'); renderQueue(); setBadge(); toast('Declined.'); }
-        else if(reopen){ await setStatus(reopen,'new'); renderQueue(); setBadge(); toast('Moved back to New.'); }
+        else if(a==='decline'){ await setStatus(fid,'declined',{note:note}); toast('Declined.'); }
+        else if(a==='reopen'){ await setStatus(fid,'new',{note:note}); toast('Moved back to New.'); }
+        else if(a==='note'){ await setStatus(fid, statusOf(fid), {note:note}); toast(note?'Note saved.':'Note cleared.'); }
+        qPending={}; renderQueue(); setBadge();
       }catch(err){ toast('Could not save that: '+(err.code||err.message),'error'); }
     });
     qdlg.addEventListener('change', async function(e){
