@@ -46,7 +46,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .proto-note{background:#fffbf0;border:1px solid #f0d880;border-left:4px solid var(--gold);border-radius:var(--r);padding:12px 15px;font-size:13px;color:#6a4e00;margin-bottom:18px;line-height:1.5;}
 .tabs{display:flex;gap:8px;border-bottom:2px solid var(--hairline);margin-bottom:18px;}
 .tab{padding:10px 22px;font-family:'Red Hat Display',sans-serif;font-size:14px;font-weight:600;color:var(--dark-gray);background:var(--off-white);border:1px solid var(--hairline);border-bottom:none;border-radius:9px 9px 0 0;margin-bottom:-2px;cursor:pointer;transition:all .12s;}
-.tab:hover:not(:disabled){color:var(--green-ink);background:var(--soft-fill);}
+.tab:hover:not(:disabled):not([aria-selected=true]):not([aria-pressed=true]){color:var(--green-ink);background:var(--soft-fill);}
+.tab[aria-selected=true]:hover:not(:disabled),.tab[aria-pressed=true]:hover:not(:disabled){background:var(--green-ink);border-color:var(--green-ink);}
 .tab[aria-selected=true],.tab[aria-pressed=true]{color:var(--white);background:var(--dark-green);border-color:var(--dark-green);box-shadow:0 -2px 8px rgba(17,137,28,.15);}
 .tab:disabled{opacity:.4;cursor:not-allowed;}
 .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px;}
@@ -279,18 +280,18 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .fb-ctx dt{font-weight:600;}
 .fb-ctx dd{word-break:break-word;}
 /* ---- Admin queue ---- */
-.fbq-filters{display:flex;flex-wrap:wrap;gap:8px;padding:14px 20px 0;}
-.fbq-list{margin:0;padding:14px 20px;list-style:none;overflow-y:auto;}
 .fbq-row{padding:13px 0;border-top:1px solid var(--hairline);}
 .fbq-row:first-child{border-top:none;}
 .fbq-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:11.5px;color:var(--gray);}
 .fbq-tag{padding:2px 8px;border-radius:20px;border:1px solid var(--hairline);background:var(--off-white);font-family:'Red Hat Display',sans-serif;font-size:11px;font-weight:600;color:var(--dark-gray);}
 .fbq-tag.s-new{border-color:#f0c94a;color:var(--amber-ink);background:#fffaf0;}
+.fbq-tag.s-accepted{border-color:#a9c6e8;color:#1a4f8a;background:#eef4fb;}
+.fbq-tag.s-doing{border-color:#cdb2e4;color:#6a3a9a;background:#f5eefb;}
+.fbq-tag.s-done{border-color:#b9c2cb;color:#3c4a57;background:#eef1f4;}
 .fbq-tag.s-promoted{border-color:#8fd0a5;color:var(--green-ink);background:#eefaf1;}
 .fbq-tag.s-declined{border-color:#e6c9d5;color:var(--error-red);background:#fdf3f7;}
 .fbq-body{margin:7px 0;font-size:13.5px;line-height:1.55;color:var(--dark-gray);white-space:pre-wrap;word-break:break-word;}
 .fbq-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
-.fbq-issue{width:210px;padding:5px 8px;border:1.5px solid var(--field-border);border-radius:6px;font-size:12.5px;font-family:'Red Hat Display',sans-serif;color:var(--dark-gray);background:var(--white);}
 .fbq-empty{padding:24px 20px;font-size:13.5px;color:var(--gray);text-align:center;}
 .fbq-noted{margin:6px 0 8px;padding:8px 11px;border-left:3px solid var(--hairline);background:var(--off-white);border-radius:0 6px 6px 0;font-size:12.5px;line-height:1.5;color:var(--dark-gray);white-space:pre-wrap;word-break:break-word;}
 .fbq-noted-lbl{font-family:'Red Hat Display',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gray);margin-right:6px;}
@@ -303,9 +304,49 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .fbq-danger{padding:7px 14px;background:var(--error-red);color:var(--white);border:none;border-radius:8px;font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;cursor:pointer;}
 :root[data-theme="dark"] .fbq-danger{color:#2E1622;}
 .fbq-acts a{color:var(--secondary);font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;text-decoration:underline;}
+/* ---- Feedback board (swimlane view of the queue) ---- */
+/* The dialog element itself is a UA scroll container; let it scroll and the header rides away, so
+   cap the height here and leave .fbb as the only thing that scrolls. */
+.fbq-wide{width:min(1680px,96vw);height:92vh;overflow:hidden;}
+.fbq-wide .fix-form{max-height:none;height:100%;}
+.fbb-bar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;padding:12px 20px 0;}
+.fbb-ctl{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--gray);font-family:'Red Hat Display',sans-serif;}
+.fbb-ctl select{padding:6px 9px;border:1.5px solid var(--field-border);border-radius:8px;background:var(--white);color:var(--dark-gray);font-family:'Red Hat Display',sans-serif;font-size:13px;}
+.fbb{flex:1 1 auto;min-height:0;padding:14px 20px;overflow:auto;}   /* flex child must be allowed to shrink, or the dialog head scrolls off */
+.fbb-cols{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:start;}
+.fbb-col{min-width:0;border:1px solid var(--hairline);border-radius:var(--r);background:var(--off-white);}
+.fbb-col-head{padding:10px 12px;border-bottom:1px solid var(--hairline);}
+.fbb-col-title{margin:0;font-family:'Red Hat Display',sans-serif;font-size:12.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--dark-gray);display:flex;align-items:center;gap:7px;}
+.fbb-cards{list-style:none;margin:0;padding:10px;display:flex;flex-direction:column;gap:10px;}
+.fbb-card{padding:11px;border:1px solid var(--hairline);border-radius:var(--r);background:var(--white);cursor:grab;}
+.fbb-card:active{cursor:grabbing;}
+.fbb-card.is-dragging{opacity:.45;}
+.fbb-card:focus-visible{outline:2px solid var(--dark-green);outline-offset:2px;}
+.fbb:focus-visible{outline:2px solid var(--dark-green);outline-offset:-2px;}
+.fbb-col.is-over{border-color:var(--dark-green);background:var(--soft-fill);}
+.fbb-stage select{padding:6px 9px;border:1.5px solid var(--field-border);border-radius:8px;background:var(--white);color:var(--dark-gray);font-family:'Red Hat Display',sans-serif;font-size:13px;}
+.fbb-card .fbq-body{margin:7px 0;}
+.fbb-card .fbq-acts{margin-top:9px;}
+.fbb-tags{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.fbb-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11.5px;color:var(--gray);margin:0 0 2px;}
+.fbb-none{padding:10px 2px;font-size:12.5px;color:var(--gray);}
+.fbb-lane{margin:20px 0 9px;font-family:'Red Hat Display',sans-serif;font-size:13.5px;font-weight:700;color:var(--dark-gray);display:flex;align-items:center;gap:8px;}
+.fbb-lane:first-child{margin-top:0;}
+.fbb-lane-n{padding:1px 8px;border-radius:20px;border:1px solid var(--hairline);background:var(--off-white);font-size:11px;color:var(--gray);}
+.fbb-declined{margin-top:20px;border-top:1px solid var(--hairline);padding-top:12px;}
+.fbb-declined-sum:focus-visible{outline:2px solid var(--dark-green);outline-offset:3px;}
+.fbb-declined-sum{cursor:pointer;font-family:'Red Hat Display',sans-serif;font-size:13.5px;font-weight:700;color:var(--dark-gray);display:flex;align-items:center;gap:8px;}
+.fbb-declined-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));padding:12px 0 0;}
+.fbb-gh{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:20px;border:1px solid #8fd0a5;background:#eefaf1;color:var(--green-ink);font-family:'Red Hat Display',sans-serif;font-size:11px;font-weight:600;text-decoration:none;}
+:root[data-theme="dark"] .fbb-gh{border-color:#4E9E6E;background:#14281C;color:#7FD3A0;}
+@media (max-width:1100px){ .fbb-cols{grid-template-columns:repeat(2,minmax(0,1fr));} }
+@media (max-width:680px){ .fbb-cols{grid-template-columns:minmax(0,1fr);} }
 :root[data-theme="dark"] .fb-chip input:checked+span{color:#10230F;}
 :root[data-theme="dark"] .fb-chip input:hover+span{border-color:#3f5a2a;}
 :root[data-theme="dark"] .fbq-tag.s-new{border-color:#C9A23A;color:#E8B84D;background:#2B2410;}
+:root[data-theme="dark"] .fbq-tag.s-accepted{border-color:#4A7FB5;color:#79B8F0;background:#10202E;}
+:root[data-theme="dark"] .fbq-tag.s-doing{border-color:#8B62B8;color:#C79BEC;background:#241833;}
+:root[data-theme="dark"] .fbq-tag.s-done{border-color:#6E7C8A;color:#AEBECD;background:#1A2229;}
 :root[data-theme="dark"] .fbq-tag.s-promoted{border-color:#4E9E6E;color:#7FD3A0;background:#14281C;}
 :root[data-theme="dark"] .fbq-tag.s-declined{border-color:#A85C7A;color:#F06BA0;background:#2E1622;}
 </style>
@@ -356,8 +397,8 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
       </div>
       <div id="contrast-groupby" role="group" aria-label="Group contrast findings by" style="display:none;align-items:center;gap:8px;margin-bottom:14px;font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;color:var(--dark-gray)">
         <span aria-hidden="true">Group by:</span>
-        <button class="tab" type="button" data-groupby="page" aria-pressed="true" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Page</button>
-        <button class="tab" type="button" data-groupby="signature" aria-pressed="false" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Signature</button>
+        <button class="tab" type="button" data-groupby="page" aria-pressed="false" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Page</button>
+        <button class="tab" type="button" data-groupby="signature" aria-pressed="true" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Signature</button>
         <a id="colorway-link" class="colorway-link" href="https://rideshare-internal.nelnettools.com/colorway/" target="_blank" rel="noopener noreferrer">Open in Colorway<span class="ext" aria-hidden="true">↗</span><span class="sr-only">(opens in new tab)</span></a>
       </div>
       <div class="stat-row" id="stat-row"></div>
@@ -413,7 +454,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 <div class="load-overlay" id="load-overlay" role="status" aria-live="polite">
   <div class="load-box"><div class="spinner" aria-hidden="true"></div><span id="load-msg">Loading…</span></div>
 </div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status"></div>
 <div id="ai-live" class="sr-only" aria-live="polite"></div>
 <dialog id="fix-dialog" class="fix-dialog" aria-labelledby="fix-title">
   <form method="dialog" class="fix-form">
@@ -484,20 +525,30 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
   </form>
 </dialog>
 
-<dialog id="fbq-dialog" class="fix-dialog" aria-labelledby="fbq-title">
+<dialog id="fbq-dialog" class="fix-dialog fbq-wide" aria-labelledby="fbq-title">
   <div class="fix-form">
     <div class="fix-head">
       <h2 id="fbq-title">Feedback queue</h2>
       <button type="button" class="fix-x" data-fbq-close aria-label="Close the feedback queue">&#10005;</button>
     </div>
-    <p class="fix-sub">Promote a report to a GitHub issue or decline it, with an optional note either way. Promoting opens a pre-filled issue on <span id="fbq-repo"></span> &mdash; nothing is published until you press &ldquo;Create&rdquo; there. Notes stay in Allyway. <span id="fbq-retention"></span></p>
-    <div class="fbq-filters" role="group" aria-label="Filter feedback by status">
-      <button class="tab" type="button" data-fbq-filter="new" aria-pressed="true" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">New</button>
-      <button class="tab" type="button" data-fbq-filter="promoted" aria-pressed="false" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Promoted</button>
-      <button class="tab" type="button" data-fbq-filter="declined" aria-pressed="false" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Declined</button>
-      <button class="tab" type="button" data-fbq-filter="all" aria-pressed="false" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">All</button>
+    <p class="fix-sub">Each column is a stage. Drag a card between them, or use the stage menu on the card. Declining and deleting still ask first, and a note can ride along with either. <span id="fbq-retention"></span></p>
+    <div class="fbb-bar">
+      <label class="fbb-ctl"><span>Group by</span>
+        <select id="fbq-group">
+          <option value="none">Nothing — columns only</option>
+          <option value="sev">Severity</option>
+          <option value="type">Type</option>
+        </select>
+      </label>
+      <label class="fbb-ctl"><span>Sort cards</span>
+        <select id="fbq-sort">
+          <option value="new">Newest first</option>
+          <option value="old">Oldest first</option>
+          <option value="sev">Severity</option>
+        </select>
+      </label>
     </div>
-    <ul id="fbq-list" class="fbq-list" aria-live="polite" aria-busy="false"></ul>
+    <div id="fbq-board" class="fbb" tabindex="-1" aria-busy="false"></div>
     <div class="fix-foot">
       <button type="button" class="bulk-sel" style="margin-top:0" data-fbq-close>Close</button>
       <button type="button" id="fbq-csv" class="bulk-sel" style="margin-top:0;margin-left:auto">Export CSV</button>
@@ -531,7 +582,7 @@ let state = null;
 let statsCache = {};                              // src -> last computed dashboard stats, so re-entry shows numbers instantly
 let sortKey = 'sev', sortDir = 1;
 let activeStream = 'standard';                    // 'standard' | 'contrast'
-let contrastGroupBy = 'page';                     // contrast tab: 'page' | 'signature'
+let contrastGroupBy = 'signature';                // contrast tab: 'signature' | 'page'
 const orders = { standard: [], contrast: [], contrastPage: [] };   // frozen display order per view
 const currentDefects = () => activeStream==='contrast' ? (state.contrast||{}) : state.defects;
 const pageView = () => activeStream==='contrast' && contrastGroupBy==='page';
@@ -574,7 +625,7 @@ async function saveNow(){
     if(mRemoved){ if(Object.keys(curMan).length) await putAll((state.manualFindings||[]).map(m=>({kind:'manual',source:src,mid:m.id,...m})), {kind:'manual',source:src}); }
     else for(const id of mChanged){ const m=state.manualFindings.find(x=>x.id===id); await NS().putRecords([{kind:'manual',source:src,mid:id,...m}], {replaceWhere:{kind:'manual',source:src,mid:id}}); }
     if(curXcats!==_savedXcats) await NS().putRecords([{kind:'config',source:'_site',ckey:'xcats',list:state.xcats}], {replaceWhere:{kind:'config',source:'_site',ckey:'xcats'}});
-    if(dChanged.length||dRemoved||mChanged.length||mRemoved){ const sm=computeSummary(state.defects, state.dispositions, state.manualFindings); statsCache[src]=sm; writeSummary(src, sm); }
+    if(dChanged.length||dRemoved||mChanged.length||mRemoved){ const sm=computeSummary(state.defects, state.contrast, state.dispositions, state.manualFindings); statsCache[src]=sm; writeSummary(src, sm); }
     _savedDisp=curDisp; _savedManual=curMan; _savedXcats=curXcats;   // commit only what we captured up front
     setSave('saved');
   }catch(e){ setSave('error'); toast('Save failed: '+(e.code||e.message),'error'); }
@@ -622,33 +673,43 @@ async function loadSources(){
   for(const it of await queryAll({kind:'source'})){ const s=it.data.source; if(seen.has(s))continue; seen.add(s); out.push({source:s,scanDate:it.data.scanDate}); }
   return out.sort((a,b)=>a.source.localeCompare(b.source));
 }
-// Canonical dashboard-summary math (standard stream + active manual a11y). Shared by sourceStats + saveNow.
-function computeSummary(defects, dispositions, manual){
+/* Canonical dashboard-summary math — BOTH streams + active manual a11y. Shared by sourceStats + saveNow.
+   Global-fix rules collapse to one item here exactly as in renderStats, so card and tab agree. */
+const SUMMARY_V = 2;   // bump when this math changes — older persisted summaries are ignored, then recomputed
+function computeSummary(defects, contrast, dispositions, manual){
   const excl=new Set(); for(const [k,v] of Object.entries(dispositions)){ if(v.status==='out_of_scope'&&k.includes('|||')) excl.add(k.split('|||')[1]); }
   const res=(fp,url)=>{ if(excl.has(url))return 'out_of_scope'; const pg=dispositions[`${fp}|||${url}`]; if(pg&&pg.status)return pg.status; const rd=dispositions[fp]; if(rd&&rd.status)return rd.status; return 'untriaged'; };
   let active=0,suppressed=0,verify=0,untriaged=0,total=0;
-  for(const d of Object.values(defects)){ for(const url of d.affected_pages){ const st=res(d.fingerprint,url), b=SMAP[st]?.bucket||'active';
-    total++; if(b==='active')active++; else if(b==='suppressed')suppressed++; else if(b==='verify')verify++; if(st==='untriaged')untriaged++; } }
+  for(const defs of [defects||{}, contrast||{}]) for(const d of Object.values(defs)){
+    const c={active:0,suppressed:0,verify:0}; let nUntriaged=0;
+    for(const url of d.affected_pages){ const st=res(d.fingerprint,url); c[SMAP[st]?.bucket||'active']++; if(st==='untriaged')nUntriaged++; }
+    if((dispositions[d.fingerprint]||{}).globalFix){   // one global fix = one item, in whichever bucket it sits
+      const b = c.active ? 'active' : c.verify ? 'verify' : c.suppressed ? 'suppressed' : '';
+      if(!b) continue;                                 // no pages at all — the rule contributes nothing
+      total++; if(b==='active')active++; else if(b==='verify')verify++; else suppressed++;
+      if(nUntriaged)untriaged++;                       // any untriaged page → the collapsed item isn't triaged
+    } else { total+=d.affected_pages.length; active+=c.active; suppressed+=c.suppressed; verify+=c.verify; untriaged+=nUntriaged; }
+  }
   active += (manual||[]).filter(m=>m.type==='a11y' && (SMAP[m.status||'untriaged']?.bucket||'active')==='active').length;
   return {active, suppressed, verify, untriaged, total, triagedPct: total?Math.round(100*(total-untriaged)/total):0};
 }
 // Persist a source's summary so the dashboard reads ONE small record instead of the whole scan. Non-critical: swallow errors.
 async function writeSummary(src, s){
   if(!NS()) return;
-  try{ await NS().putRecords([{kind:'summary',source:src,active:s.active,suppressed:s.suppressed,verify:s.verify,
+  try{ await NS().putRecords([{kind:'summary',source:src,v:SUMMARY_V,active:s.active,suppressed:s.suppressed,verify:s.verify,
     untriaged:s.untriaged,total:s.total,triagedPct:s.triagedPct,updatedAt:Date.now()}], {replaceWhere:{kind:'summary',source:src}}); }catch{}
 }
 // Full recompute for one source — dashboard FALLBACK, used only when no summary record exists yet.
 async function sourceStats(src){
   const [scanRows,dispRows,manualRows]=await Promise.all([
     queryAll({kind:'scan',source:src}), queryAll({kind:'disp',source:src}), queryAll({kind:'manual',source:src})]);
-  const defects={};
-  for(const it of scanRows){ const d=it.data; if(d.stream==='contrast')continue; defects[d.fingerprint]=defectFromScan(d); }
+  const defects={}, contrast={};
+  for(const it of scanRows){ const d=it.data; (d.stream==='contrast'?contrast:defects)[d.fingerprint]=defectFromScan(d); }
   const disp={}, dseen=new Set();
   for(const it of dispRows){ const k=it.data.dkey; if(dseen.has(k))continue; dseen.add(k); const {kind,source,dkey,...x}=it.data; disp[k]=x; }
   const manual=[], mseen=new Set();
   for(const it of manualRows){ const id=it.data.mid; if(mseen.has(id))continue; mseen.add(id); manual.push(it.data); }
-  return {src, ...computeSummary(defects, disp, manual)};
+  return {src, ...computeSummary(defects, contrast, disp, manual)};
 }
 function metricsHtml(s){
   if(s.err) return `<div class="src-card__foot"><span style="color:var(--gray)">Open to view →</span></div>`;
@@ -704,12 +765,13 @@ async function loadSource(src, localScan){
 }
 function activateSource(){
   const {source:src, scanDate, defects, contrast}=state;
-  activeStream='standard'; contrastGroupBy='page'; sortKey='sev'; sortDir=1;
+  activeStream='standard'; contrastGroupBy='signature'; sortKey='sev'; sortDir=1;
+  syncGroupByButtons();   // the reset above must reach the pills, not just the variable
   orders.standard=[]; orders.contrast=[]; orders.contrastPage=[];
   const ct=document.getElementById('tab-contrast'); const cCount=Object.keys(contrast).length;
   document.querySelector('.tab[data-stream=standard]').setAttribute('aria-selected','true');
   ct.setAttribute('aria-selected','false');
-  ct.disabled=!cCount; ct.textContent=cCount?`Contrast (${cCount})`:'Contrast (none)';
+  ct.disabled=!cCount; ct.textContent=cCount?'Contrast':'Contrast (none)';
   document.getElementById('picker-area').hidden=true;
   document.getElementById('tracker-area').hidden=false;
   populateHeaderSource();
@@ -945,9 +1007,12 @@ function switchStream(s){
   if(!orders[orderKey()].length) recomputeOrder();
   render();
 }
+function syncGroupByButtons(){
+  document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.groupby===contrastGroupBy)));
+}
 function setGroupBy(g){
   if(g===contrastGroupBy) return; contrastGroupBy=g; sortKey='sev'; sortDir=1;
-  document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.groupby===g)));
+  syncGroupByButtons();
   if(!orders[orderKey()].length) recomputeOrder();
   render();
 }
@@ -1532,7 +1597,8 @@ async function showPicker(forcePick){
     try{
       const [srcList, summaryRows]=await Promise.all([loadSources(), queryAll({kind:'summary'})]);   // ONE query gets every source's cached summary
       sources=srcList;
-      for(const it of summaryRows){ const d=it.data, cur=summ[d.source]; if(!cur||(d.updatedAt||0)>(cur.updatedAt||0)) summ[d.source]=d; }   // keep newest per source
+      for(const it of summaryRows){ const d=it.data; if(d.v!==SUMMARY_V) continue;   // written by older math — ignore so the card recomputes
+        const cur=summ[d.source]; if(!cur||(d.updatedAt||0)>(cur.updatedAt||0)) summ[d.source]=d; }   // keep newest per source
     }catch(e){ grid.innerHTML=`<p class="grid-msg" style="color:var(--error-red)">Could not read storage: ${esc(e.message||e.code||e)}</p>`; return; }
     if(!sources.length){ grid.innerHTML=`<p class="grid-msg">${admin?'No scans yet — load a scan.json to seed the site.':'No scans loaded yet — an admin needs to add one.'}</p>`; return; }
     // Prefer this session's cache, then the persisted summary (kept current on every save), else a skeleton.
@@ -1606,17 +1672,13 @@ async function showPicker(forcePick){
 </script>
 <script>
 'use strict';
-/* ── Feedback: open intake for any viewer, admin-only promote/deny to GitHub ──────
+/* ── Feedback: open intake for any viewer, admin-only board to work it ────────────
    Reports go to the append-only submission store (createdBy stamped by the platform, no
    PII scan on the free text); the admin's verdict goes to a mutable dataset record, so a
-   decision is an upsert and old verdicts can't pile up. The sandbox can't reach the GitHub
-   API and a token can't live in a public file, so "promote" hands the admin a pre-filled
-   issue to confirm rather than filing one itself. */
+   decision is an upsert and old verdicts can't pile up. Rideshare is the whole system of
+   record — the queue used to hand reports off to GitHub issues and no longer does. */
 (function(){
-  var REPO = 'wegnertm/Allyway';
   var MAX_SHOT = 5*1024*1024;
-  var GH_BODY_MAX = 5500;                 // keeps the pre-filled issue URL under GitHub's request-line cap
-  var GH_MARKER = 'Allyway feedback';     // stamped in every promoted issue body; how the search link finds it again
   var RETENTION_DAYS = 14;                // declined reports are cleared this many days after the decline; 0 disables
   var TYPES = {
     bug:       {label:"Something's broken", short:'Bug',       gh:'bug'},
@@ -1625,6 +1687,13 @@ async function showPicker(forcePick){
     a11y:      {label:'Accessibility',      short:'A11y',      gh:'accessibility'}
   };
   var SEVS = {blocker:'Blocker', annoying:'Annoying', nitpick:'Nitpick'};
+  /* The fbstatus vocabulary. Keys are what's stored, so renaming one strands existing rows. */
+  var STATUS = {new:'New', accepted:'Accepted', doing:'In progress', done:'Done', promoted:'Promoted', declined:'Declined'};
+  var EMPTY = {
+    new:'Nothing waiting — the queue is clear.', accepted:'Nothing accepted yet.',
+    doing:'Nothing in progress.', done:'Nothing finished yet.', promoted:'Nothing promoted yet.',
+    declined:'Nothing declined yet.', all:'No feedback yet.'
+  };
 
   var S = function(){ return window.NelnetStorage; };
   var isAdmin = function(){ var s=S(); return !!(s && s.viewer && s.viewer.isAdmin); };
@@ -1635,7 +1704,7 @@ async function showPicker(forcePick){
   var thumb=el('fb-thumb'), clearBtn=el('fb-shot-clear'), openBtn=el('fb-open'), qBtn=el('fb-review');
   if(!dlg || !form) return;
 
-  var shotFile=null, shotUrl=null, qFilter='new', qRows=[], qStatus={}, qPending={};
+  var shotFile=null, shotUrl=null, qGroup='none', qSort='new', qDeclOpen=false, qRows=[], qStatus={}, qPending={};
 
   function open(d){ if(typeof d.showModal==='function') d.showModal(); else d.setAttribute('open',''); }
   function close(d){ if(typeof d.close==='function') d.close(); else d.removeAttribute('open'); }
@@ -1655,7 +1724,7 @@ async function showPicker(forcePick){
     var src = (typeof state!=='undefined' && state && state.source) ? state.source : '';
     var view = 'Source picker';
     if(src) view = (typeof activeStream!=='undefined' && activeStream==='contrast')
-      ? 'Contrast — grouped by '+((typeof contrastGroupBy!=='undefined' && contrastGroupBy) || 'page')
+      ? 'Contrast — grouped by '+((typeof contrastGroupBy!=='undefined' && contrastGroupBy) || 'signature')
       : 'Standard rules';
     return {
       source: src || '(none — home)',
@@ -1669,7 +1738,7 @@ async function showPicker(forcePick){
   function renderContext(){
     var c=context(), s=S(), who=(s && s.viewer && s.viewer.email) || '';
     var rows=[['Source',c.source],['View',c.view],['Theme',c.theme],['Window',c.viewport],['Browser',c.ua],['Sent',c.at]];
-    if(who) rows.push(['You', who+' — kept in Allyway, never copied into a public GitHub issue']);
+    if(who) rows.push(['You', who+' — kept in Allyway, visible only to this site’s admins']);
     el('fb-ctx-dl').innerHTML = rows.map(function(r){ return '<dt>'+esc(r[0])+'</dt><dd>'+esc(r[1])+'</dd>'; }).join('');
   }
 
@@ -1758,6 +1827,9 @@ async function showPicker(forcePick){
     qStatus[fid]=row;
   }
   var statusOf = function(id){ return (qStatus[id] && qStatus[id].status) || 'new'; };
+  /* Rows written while the queue pushed to GitHub stored status:'promoted'. That stage is gone,
+     so read those as Accepted — otherwise they'd belong to no column and vanish off the board. */
+  var stageOf = function(id){ var st=statusOf(id); return st==='promoted' ? 'accepted' : st; };
   var noteOf = function(id){ return (qStatus[id] && qStatus[id].note) || ''; };
   var daysLeft = function(id){
     var s=qStatus[id];
@@ -1783,121 +1855,190 @@ async function showPicker(forcePick){
     for(var i=0;i<doomed.length;i++){ try{ await hardDelete(doomed[i]); n++; }catch(e){} }
     return n;
   }
-  var issueNo = function(v){ var m=String(v||'').match(/(\d+)\s*$/); return m?m[1]:''; };
+  /* Board view. Columns are the lifecycle; a card is dragged between them, or moved with its
+     own stage select. Declined sits in a collapsed lane and is not a drop target. */
+  var COLS = [{k:'new',label:'New'},{k:'accepted',label:'Accepted'},{k:'doing',label:'In progress'},{k:'done',label:'Done'}];
+  var SEV_RANK = {blocker:0, annoying:1, nitpick:2};
+  function lanesFor(g){
+    var out=[], k;
+    if(g==='sev'){ for(k in SEVS) out.push({k:k, label:SEVS[k]}); }
+    else if(g==='type'){ for(k in TYPES) out.push({k:k, label:TYPES[k].label}); }
+    return out;
+  }
+  function sortCards(a,b){
+    var da=a.data||{}, db=b.data||{};
+    if(qSort==='sev'){
+      var x=SEV_RANK[da.sev], y=SEV_RANK[db.sev];
+      x=(x===undefined?9:x); y=(y===undefined?9:y);
+      if(x!==y) return x-y;
+    }
+    var ta=Date.parse(da.at||a.createdAt||'')||0, tb=Date.parse(db.at||b.createdAt||'')||0;
+    return qSort==='old' ? ta-tb : tb-ta;
+  }
 
-  function ghUrl(d, id){
-    var t=TYPES[d.type]||TYPES.bug;
-    var head=(d.text||'').split(/\r?\n/)[0].trim();
-    if(head.length>72) head=head.slice(0,69).replace(/\s+\S*$/,'')+'…';
-    var body='**What happened**\n\n'+(d.text||'')+'\n\n'
-      + '| | |\n|---|---|\n'
-      + '| Type | '+t.label+' |\n'
-      + '| Severity | '+(SEVS[d.sev]||'—')+' |\n'
-      + '| Where | '+(d.source||'—')+' · '+(d.view||'—')+' |\n'
-      + '| Environment | '+(d.theme||'—')+' theme · '+(d.viewport||'—')+' |\n'
-      + '| Browser | '+(d.ua||'—')+' |\n'
-      + '| Reported | '+(d.at||'—')+' via Allyway |\n';
-    if(d.shot) body+='\n_A screenshot came with this report — download it from the Allyway feedback queue and drag it in here._\n';
-    body+='\n<sub>'+GH_MARKER+' '+id+'</sub>\n';
-    return 'https://github.com/'+REPO+'/issues/new'
-      + '?labels='+encodeURIComponent('feedback,'+t.gh)
-      + '&title='+encodeURIComponent('['+t.short+'] '+(head||'Feedback'))
-      + '&body='+encodeURIComponent(body.slice(0, GH_BODY_MAX));
+  function cardHtml(r){
+    var d=r.data||{}, st=stageOf(r.id), t=TYPES[d.type]||TYPES.bug;
+    var staged=qPending.id===r.id;
+    var when=String(d.at || r.createdAt || '').replace('T',' ').slice(0,16);
+    var b=function(a,label,cls){
+      return '<button type="button" class="'+(cls||'bulk-sel')+'" style="margin-top:0'+(cls?';padding:7px 14px;font-size:13px':'')+'" data-fbq-act="'+a+'" data-fbq-id="'+esc(r.id)+'">'+label+'</button>';
+    };
+    var tags='<span class="fbq-tag">'+esc(t.label)+'</span><span class="fbq-tag">'+esc(SEVS[d.sev]||'—')+'</span>';
+    var left=daysLeft(r.id);
+    if(left!==null) tags+='<span class="fbq-tag">Deletes in '+esc(Math.max(left,0))+'d</span>';
+
+    /* Dragging moves a card, but drag alone fails 2.1.1 and 2.5.7 — this select is the keyboard
+       path and the no-drag pointer path, and doubles as the card's stage read-out. */
+    var acts=[];
+    if(!staged){
+      if(st==='declined'){
+        acts.push(b('reopen','Move back to New'));
+      }else{
+        var opts='';
+        for(var i=0;i<COLS.length;i++) opts+='<option value="'+COLS[i].k+'"'+(COLS[i].k===st?' selected':'')+'>'+esc(COLS[i].label)+'</option>';
+        acts.push('<label class="fbb-stage"><span class="sr-only">Stage for this report</span>'
+          + '<select data-fbq-stage="'+esc(r.id)+'">'+opts+'</select></label>');
+      }
+      acts.push(b('note', noteOf(r.id) ? 'Edit note' : 'Add note'));
+      if(st!=='declined') acts.push(b('decline','Decline'));
+      if(st==='declined') acts.push(b('delete','Delete permanently'));
+    }
+    if(d.shot){
+      acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-nelnet-view="'+esc(d.shot)+'">View screenshot</button>');
+      acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-dl="'+esc(d.shot)+'">Download screenshot</button>');
+    }
+
+    /* Only the decisions that can't be undone by dragging back still stage a confirm. */
+    var pend='';
+    if(staged){
+      var a=qPending.act, isDel=a==='delete';
+      var heads={decline:'Decline this report', reopen:'Move back to New', note:'Note', delete:'Delete this report permanently'};
+      var confirms={decline:'Decline', reopen:'Move back to New', note:'Save note', delete:'Delete permanently'};
+      pend='<div class="fbq-pend'+(isDel?' is-danger':'')+'">'
+        + '<p class="fbq-pend-head">'+esc(heads[a])+'</p>'
+        + (isDel
+            ? '<p class="fbq-pend-warn">The report, its note, and any screenshot are deleted for good. This cannot be undone.</p>'
+            : '<label class="fbq-pend-lbl" for="pn-'+esc(r.id)+'">Note (optional)</label>'
+              + '<textarea class="fbq-note" id="pn-'+esc(r.id)+'" rows="2" placeholder="e.g. duplicate of the contrast one, but the focus half is still worth fixing">'+esc(noteOf(r.id))+'</textarea>')
+        + '<div class="fbq-acts">'
+        + '<button type="button" class="'+(isDel?'fbq-danger':'btn-primary')+'" style="margin-top:0;padding:7px 14px;font-size:13px" data-fbq-confirm="'+esc(r.id)+'">'+esc(confirms[a])+'</button>'
+        + '<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-cancel="1">Cancel</button>'
+        + '</div></div>';
+    }
+    /* Hidden only while editing the note itself — the textarea already holds it. */
+    var note = ((staged && qPending.act==='note') || !noteOf(r.id)) ? ''
+      : '<p class="fbq-noted"><span class="fbq-noted-lbl">Note</span> '+esc(noteOf(r.id))+'</p>';
+
+    return '<li class="fbb-card" draggable="true" tabindex="-1" data-fbq-card="'+esc(r.id)+'"><div class="fbb-tags">'+tags+'</div>'
+      + '<p class="fbq-body">'+esc(d.text||'')+'</p>'
+      + '<p class="fbb-meta"><span>'+esc(r.createdBy||'unknown')+'</span><span>'+esc(when)+'</span>'
+      + '<span>'+esc((d.source||'')+' · '+(d.view||''))+'</span></p>'
+      + note + pend
+      + '<div class="fbq-acts">'+acts.join('')+'</div></li>';
   }
-  function ghSearchUrl(id){
-    return 'https://github.com/'+REPO+'/issues?q='+encodeURIComponent('"'+GH_MARKER+' '+id+'"');
+  /* Re-rendering the board throws away whatever was focused, which drops a keyboard user back at
+     the top of the page — worst right after a move, when the card has also changed column. Note
+     where focus was, then hand it back to the same control on the same card. */
+  function focusMemo(){
+    var a=document.activeElement, board=el('fbq-board');
+    if(!a || !board.contains(a)) return null;
+    if(a.classList && a.classList.contains('fbb-declined-sum')) return {declsum:true};
+    var card=a.closest && a.closest('[data-fbq-card]');
+    if(!card) return null;
+    var act=a.getAttribute('data-fbq-act');
+    return {id:card.getAttribute('data-fbq-card'), stage:!!a.getAttribute('data-fbq-stage'), act:act||''};
   }
-  function openExternal(url){
-    if(typeof window.NelnetOpen==='function' && window.NelnetOpen(url)) return;
-    window.open(url,'_blank','noopener');
+  function focusRestore(memo){
+    if(!memo) return;
+    var board=el('fbq-board');
+    if(memo.declsum){ var sm=board.querySelector('.fbb-declined-sum'); (sm||board).focus(); return; }
+    var card=board.querySelector('[data-fbq-card="'+memo.id.replace(/"/g,'\\"')+'"]');
+    if(!card){ board.focus(); return; }          // deleted out from under us — stay in the board
+    /* Declining drops the card into the collapsed lane, and focus() inside a closed <details>
+       is a no-op — land on the summary instead, which says where the card went. */
+    var box=card.closest('details');
+    if(box && !box.open){ var sum=box.querySelector('summary'); if(sum){ sum.focus(); return; } }
+    var t = memo.stage ? card.querySelector('select[data-fbq-stage]')
+          : memo.act ? card.querySelector('[data-fbq-act="'+memo.act+'"]')
+          : null;
+    /* A declined card has no stage select, and a staged card has no action buttons — the card
+       itself is the fallback so focus never falls all the way back to the body. */
+    (t || card).focus();
+  }
+
+  function gridHtml(cards, laneKey){
+    var hl = qGroup==='none' ? 'h3' : 'h4';
+    var out='<div class="fbb-cols">';
+    for(var i=0;i<COLS.length;i++){
+      var c=COLS[i];
+      var mine=cards.filter(function(r){ return stageOf(r.id)===c.k; }).sort(sortCards);
+      var hid='fbb-h-'+c.k+(laneKey?'-'+laneKey:'');
+      out+='<section class="fbb-col" data-fbq-col="'+c.k+'" aria-labelledby="'+hid+'">'
+        + '<div class="fbb-col-head"><'+hl+' class="fbb-col-title" id="'+hid+'">'+esc(c.label)
+        + ' <span class="fbq-tag s-'+c.k+'">'+mine.length+'<span class="sr-only"> report'+(mine.length===1?'':'s')+'</span></span></'+hl+'></div>'
+        + '<ul class="fbb-cards">'
+        + (mine.length ? mine.map(cardHtml).join('') : '<li class="fbb-none">Nothing here</li>')
+        + '</ul></section>';
+    }
+    return out+'</div>';
   }
 
   function renderQueue(){
-    var list=el('fbq-list');
-    var rows=qRows.filter(function(r){ return qFilter==='all' || statusOf(r.id)===qFilter; });
-    if(!rows.length){
-      list.innerHTML='<li class="fbq-empty">'+(qFilter==='new'?'Nothing waiting — the queue is clear.':'No '+qFilter+' feedback yet.')+'</li>';
-      return;
+    var board=el('fbq-board'), memo=focusMemo();
+    if(!qRows.length){ board.innerHTML='<p class="fbq-empty">No feedback yet — nothing has been reported.</p>'; focusRestore(memo); return; }
+    var active=[], declined=[];
+    qRows.forEach(function(r){ (stageOf(r.id)==='declined' ? declined : active).push(r); });
+    var html='';
+    if(qGroup==='none') html+=gridHtml(active, '');
+    else{
+      var lanes=lanesFor(qGroup), seen={}, drawn=0;
+      lanes.forEach(function(lane){
+        var mine=active.filter(function(r){ var d=r.data||{}; return (qGroup==='sev'?d.sev:d.type)===lane.k; });
+        mine.forEach(function(r){ seen[r.id]=1; });
+        if(!mine.length) return;
+        drawn++;
+        html+='<h3 class="fbb-lane">'+esc(lane.label)+' <span class="fbb-lane-n">'+mine.length+'<span class="sr-only"> report'+(mine.length===1?'':'s')+'</span></span></h3>'+gridHtml(mine, lane.k);
+      });
+      var rest=active.filter(function(r){ return !seen[r.id]; });   // reports saved before this field existed
+      if(rest.length) html+='<h3 class="fbb-lane">Unlabelled <span class="fbb-lane-n">'+rest.length+'</span></h3>'+gridHtml(rest, 'none');
+      if(!drawn && !rest.length) html+='<p class="fbq-empty">Nothing outside Declined right now.</p>';
     }
-    list.innerHTML=rows.map(function(r){
-      var d=r.data||{}, st=statusOf(r.id), sr=qStatus[r.id]||{}, t=TYPES[d.type]||TYPES.bug;
-      var when=String(d.at || r.createdAt || '').replace('T',' ').slice(0,16);
-      var meta='<span class="fbq-tag s-'+st+'">'+esc(st.charAt(0).toUpperCase()+st.slice(1))+'</span>'
-        + '<span class="fbq-tag">'+esc(t.label)+'</span>'
-        + '<span class="fbq-tag">'+esc(SEVS[d.sev]||'—')+'</span>'
-        + '<span>'+esc(r.createdBy||'unknown')+'</span><span>'+esc(when)+'</span>'
-        + '<span>'+esc((d.source||'')+' · '+(d.view||''))+'</span>';
-      var left=daysLeft(r.id);
-      if(left!==null) meta+='<span class="fbq-tag">Deletes in '+esc(Math.max(left,0))+'d</span>';
-      var acts=[], staged=qPending.id===r.id, b=function(a,label,cls){
-        return '<button type="button" class="'+(cls||'bulk-sel')+'" style="margin-top:0'+(cls?';padding:7px 14px;font-size:13px':'')+'" data-fbq-act="'+a+'" data-fbq-id="'+esc(r.id)+'">'+label+'</button>';
-      };
-      if(!staged){                              // a staged panel owns the row; a stray click here would discard the note
-        if(st!=='promoted') acts.push(b('promote','Promote to GitHub issue','btn-primary'));
-        if(st!=='declined') acts.push(b('decline','Decline'));
-        if(st!=='new') acts.push(b('reopen','Move back to New'));
-        acts.push(b('note', noteOf(r.id) ? 'Edit note' : 'Add note'));
-        if(st==='declined') acts.push(b('delete','Delete permanently'));
-      }
-      if(d.shot){
-        acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-nelnet-view="'+esc(d.shot)+'">View screenshot</button>');
-        acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-dl="'+esc(d.shot)+'">Download screenshot</button>');
-      }
-      /* No stored number needed to get back to the issue: every promoted body carries an
-         "Allyway feedback <id>" marker, so search finds it. Pasting a number is an optional
-         upgrade to a direct link. */
-      if(st==='promoted'){
-        acts.push(sr.issue
-          ? '<a href="https://github.com/'+REPO+'/issues/'+esc(sr.issue)+'" target="_blank" rel="noopener noreferrer">Issue #'+esc(sr.issue)+'<span class="sr-only"> (opens in new tab)</span></a>'
-          : '<a href="'+esc(ghSearchUrl(r.id))+'" target="_blank" rel="noopener noreferrer">Find issue on GitHub<span class="sr-only"> (opens in new tab)</span></a>'
-            + '<label class="sr-only" for="iss-'+esc(r.id)+'">GitHub issue number for this report</label>'
-            + '<input class="fbq-issue" id="iss-'+esc(r.id)+'" data-fbq-issue="'+esc(r.id)+'" placeholder="Issue number, to link it directly">');
-      }
-      var pend='';
-      if(qPending.id===r.id){
-        var a=qPending.act, isDel=a==='delete';
-        var heads={promote:'Promote to a GitHub issue', decline:'Decline this report', reopen:'Move back to New', note:'Note', delete:'Delete this report permanently'};
-        var confirms={promote:'Promote', decline:'Decline', reopen:'Move back to New', note:'Save note', delete:'Delete permanently'};
-        pend='<div class="fbq-pend'+(isDel?' is-danger':'')+'">'
-          + '<p class="fbq-pend-head">'+esc(heads[a])+'</p>'
-          + (isDel
-              ? '<p class="fbq-pend-warn">The report, its note, and any screenshot are deleted for good. This cannot be undone.</p>'
-              : '<label class="fbq-pend-lbl" for="pn-'+esc(r.id)+'">Note (optional) — stays in Allyway, never published to GitHub</label>'
-                + '<textarea class="fbq-note" id="pn-'+esc(r.id)+'" rows="2" placeholder="e.g. duplicate of #12, but the contrast half is still worth fixing">'+esc(noteOf(r.id))+'</textarea>')
-          + '<div class="fbq-acts">'
-          + '<button type="button" class="'+(isDel?'fbq-danger':'btn-primary')+'" style="margin-top:0;padding:7px 14px;font-size:13px" data-fbq-confirm="'+esc(r.id)+'">'+esc(confirms[a])+'</button>'
-          + '<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-cancel="1">Cancel</button>'
-          + '</div></div>';
-      }
-      /* Hidden only while editing the note itself — the textarea already holds it. Kept visible for
-         promote/decline/delete, where you want to read it before deciding. */
-      var note = ((staged && qPending.act==='note') || !noteOf(r.id)) ? ''
-        : '<p class="fbq-noted"><span class="fbq-noted-lbl">Note</span> '+esc(noteOf(r.id))+'</p>';
-      return '<li class="fbq-row"><div class="fbq-meta">'+meta+'</div>'
-        + '<p class="fbq-body">'+esc(d.text||'')+'</p>'
-        + note
-        + '<div class="fbq-acts">'+acts.join('')+'</div>'
-        + pend + '</li>';
-    }).join('');
+    if(declined.length){
+      html+='<details class="fbb-declined"'+(qDeclOpen?' open':'')+'><summary class="fbb-declined-sum">Declined <span class="fbq-tag s-declined">'+declined.length
+          + '<span class="sr-only"> report'+(declined.length===1?'':'s')+'</span></span></summary>'
+          + '<ul class="fbb-cards fbb-declined-cards">'+declined.slice().sort(sortCards).map(cardHtml).join('')+'</ul></details>';
+    }
+    board.innerHTML=html;
+    focusRestore(memo);
+    qdlg.scrollTop=0;   // laying the board out (or restoring focus) can scroll the dialog past its own header
+  }
+  /* A drop is the commit — dragging it back is the undo, so there's nothing to confirm. */
+  async function moveCard(fid, stage){
+    if(stageOf(fid)===stage) return;
+    try{
+      await setStatus(fid, stage);
+      qPending={}; renderQueue(); setBadge();
+      toast('Moved to '+(STATUS[stage]||stage)+'.');
+    }catch(err){ toast('Could not move that: '+(err.code||err.message),'error'); }
   }
 
   function setBadge(){
-    var n=qRows.filter(function(r){ return statusOf(r.id)==='new'; }).length;
+    var n=qRows.filter(function(r){ return stageOf(r.id)==='new'; }).length;
     var b=el('fb-new-count');
     b.hidden=!n; b.textContent=n||'';
     qBtn.setAttribute('aria-label', n ? 'Review feedback — '+n+' waiting' : 'Review feedback');
   }
   async function refresh(){
-    var list=el('fbq-list');
+    var list=el('fbq-board');
     list.setAttribute('aria-busy','true');
-    list.innerHTML='<li class="fbq-empty">Loading feedback…</li>';
+    list.innerHTML='<p class="fbq-empty">Loading feedback…</p>';
     try{
       qStatus=await loadStatuses();
       qRows=await loadFeedback();
       var purged=await purgeExpired();
       renderQueue(); setBadge();
       if(purged) toast('Cleared '+purged+' declined report'+(purged===1?'':'s')+' past the '+RETENTION_DAYS+'-day window.');
-    }catch(e){ list.innerHTML='<li class="fbq-empty">Could not load feedback: '+esc(e.code||e.message)+'</li>'; }
+    }catch(e){ list.innerHTML='<p class="fbq-empty">Could not load feedback: '+esc(e.code||e.message)+'</p>'; }
     finally{ list.setAttribute('aria-busy','false'); }
   }
   async function refreshBadge(){
@@ -1905,29 +2046,22 @@ async function showPicker(forcePick){
   }
 
   if(qBtn){
-    el('fbq-repo').textContent=REPO;
     el('fbq-retention').textContent = RETENTION_DAYS
       ? 'Declined reports are cleared '+RETENTION_DAYS+' days after the decline, and you can delete one for good at any time.'
       : 'Declined reports are kept until you delete them.';
-    qBtn.addEventListener('click', function(){ open(qdlg); refresh(); });
+    /* Laying the board out can leave the dialog scrolled past its own header — put it back. */
+    qBtn.addEventListener('click', function(){ open(qdlg); qdlg.scrollTop=0; refresh().then(function(){ qdlg.scrollTop=0; }); });
     Array.prototype.forEach.call(document.querySelectorAll('[data-fbq-close]'), function(b){
       b.addEventListener('click', function(){ close(qdlg); });
     });
     qdlg.addEventListener('close', setBadge);   // covers Esc as well as the Close buttons
-    Array.prototype.forEach.call(qdlg.querySelectorAll('[data-fbq-filter]'), function(b){
-      b.addEventListener('click', function(){
-        qFilter=b.getAttribute('data-fbq-filter'); qPending={};
-        Array.prototype.forEach.call(qdlg.querySelectorAll('[data-fbq-filter]'), function(o){
-          o.setAttribute('aria-pressed', String(o===b));
-        });
-        renderQueue();
-      });
-    });
+    el('fbq-group').addEventListener('change', function(){ qGroup=this.value; qPending={}; renderQueue(); });
+    el('fbq-sort').addEventListener('change', function(){ qSort=this.value; qPending={}; renderQueue(); });
     el('fbq-csv').addEventListener('click', function(){
       S().downloadCSV(qRows.map(function(r){
-        var d=r.data||{}, sr=qStatus[r.id]||{};
+        var d=r.data||{};
         return {id:r.id, reportedBy:r.createdBy||'', at:d.at||r.createdAt||'', type:d.type||'', severity:d.sev||'',
-                status:sr.status||'new', issue:sr.issue||'', note:sr.note||'', source:d.source||'', view:d.view||'',
+                stage:stageOf(r.id), note:noteOf(r.id), source:d.source||'', view:d.view||'',
                 theme:d.theme||'', viewport:d.viewport||'', screenshot:d.shot?'yes':'no', text:d.text||''};
       }), 'allyway-feedback.csv');
     });
@@ -1948,22 +2082,55 @@ async function showPicker(forcePick){
       var row=qRows.filter(function(r){ return r.id===fid; })[0] || {};
       try{
         if(a==='delete'){ await hardDelete(row); toast('Deleted for good.'); }
-        else if(a==='promote'){
-          openExternal(ghUrl(row.data||{}, fid));
-          await setStatus(fid,'promoted',{note:note});
-          toast('GitHub is open with the issue pre-filled — press Create there to publish it.');
-        }
         else if(a==='decline'){ await setStatus(fid,'declined',{note:note}); toast('Declined.'); }
         else if(a==='reopen'){ await setStatus(fid,'new',{note:note}); toast('Moved back to New.'); }
         else if(a==='note'){ await setStatus(fid, statusOf(fid), {note:note}); toast(note?'Note saved.':'Note cleared.'); }
         qPending={}; renderQueue(); setBadge();
       }catch(err){ toast('Could not save that: '+(err.code||err.message),'error'); }
     });
-    qdlg.addEventListener('change', async function(e){
-      var fid=e.target.getAttribute && e.target.getAttribute('data-fbq-issue'); if(!fid) return;
-      var n=issueNo(e.target.value); if(!n) return;
-      try{ await setStatus(fid,'promoted',{issue:n}); renderQueue(); toast('Linked to issue #'+n+'.'); }
-      catch(err){ toast('Could not save the issue number: '+(err.code||err.message),'error'); }
+    qdlg.addEventListener('change', function(e){
+      var fid=e.target.getAttribute && e.target.getAttribute('data-fbq-stage');
+      if(fid) moveCard(fid, e.target.value);
+    });
+
+    var board=el('fbq-board'), dragId=null;
+    board.addEventListener('toggle', function(e){
+      if(e.target.classList && e.target.classList.contains('fbb-declined')) qDeclOpen=e.target.open;
+    }, true);
+
+    /* Drag to move. The stage select does the same job for keyboard and single-pointer users. */
+    var clearOver=function(){
+      Array.prototype.forEach.call(board.querySelectorAll('.is-over'), function(c){ c.classList.remove('is-over'); });
+    };
+    board.addEventListener('dragstart', function(e){
+      var card=e.target.closest && e.target.closest('[data-fbq-card]'); if(!card) return;
+      dragId=card.getAttribute('data-fbq-card');
+      e.dataTransfer.effectAllowed='move';
+      try{ e.dataTransfer.setData('text/plain', dragId); }catch(err){}   // Safari refuses an empty payload
+      card.classList.add('is-dragging');
+    });
+    board.addEventListener('dragend', function(e){
+      var card=e.target.closest && e.target.closest('[data-fbq-card]');
+      if(card) card.classList.remove('is-dragging');
+      dragId=null; clearOver();
+    });
+    board.addEventListener('dragover', function(e){
+      var col=e.target.closest && e.target.closest('[data-fbq-col]');
+      if(!col || !dragId) return;
+      e.preventDefault();                      // without this the drop never fires
+      e.dataTransfer.dropEffect='move';
+      if(!col.classList.contains('is-over')){ clearOver(); col.classList.add('is-over'); }
+    });
+    board.addEventListener('dragleave', function(e){
+      var col=e.target.closest && e.target.closest('[data-fbq-col]');
+      if(col && !col.contains(e.relatedTarget)) col.classList.remove('is-over');
+    });
+    board.addEventListener('drop', function(e){
+      var col=e.target.closest && e.target.closest('[data-fbq-col]'); if(!col) return;
+      e.preventDefault();
+      var id=dragId || e.dataTransfer.getData('text/plain');
+      clearOver();
+      if(id) moveCard(id, col.getAttribute('data-fbq-col'));
     });
   }
 

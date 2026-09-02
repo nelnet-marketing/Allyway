@@ -52,24 +52,26 @@ optional screenshot (file picker or Ctrl+V paste). Context — source, view, the
 timestamp — is captured automatically, so nobody has to describe their own setup. Reports land in the
 Rideshare submission store as `kind: "feedback"` rows; screenshots go to the site file store.
 
-Site **admins** additionally get a **Review** button with a count of waiting reports. From the queue an
-admin promotes a report to a GitHub issue or declines it — reporters cannot file issues themselves.
-The verdict is a mutable `kind: "fbstatus"` dataset record keyed by submission id, so a decision is an
-upsert rather than an append.
+Site **admins** additionally get a **Review** button with a count of waiting reports. It opens a
+**board**: four columns, **New → Accepted → In progress → Done**. Drag a card between columns to move
+it — the drop is the commit, and dragging it back is the undo. **Group by** lays the same board out as
+swimlanes banded by severity or type; **Sort cards** orders within each column. **Declined** is a
+collapsed lane under the board and is not a drop target.
 
-Promote opens a **pre-filled** issue on [wegnertm/Allyway](https://github.com/wegnertm/Allyway/issues)
-labelled `feedback` plus the type (`bug` / `question` / `enhancement` / `accessibility`); nothing is
-published until you press **Create** there. Two things to know:
+Drag alone would fail [2.1.1 Keyboard](https://www.w3.org/WAI/WCAG21/Understanding/keyboard) and
+[2.5.7 Dragging Movements](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements), so every
+card also carries a **stage select** that doubles as its stage read-out. That one control covers the
+keyboard, screen readers, and single-pointer users on touch, where HTML5 drag does not work at all.
+Toasts carry `role="status"` so a move is announced; the board itself is deliberately *not* a live
+region, or every re-render would read the whole board aloud.
 
-- The sandbox cannot reach the GitHub API and a token cannot live in a public HTML file, so the app
-  hands you an issue to confirm instead of filing one itself.
-- The repo is public, so **the reporter's email is deliberately left out of the issue body** — it stays
-  in Rideshare. Screenshots do not carry over either: download from the queue and drag them in.
-
-Promote, decline, and reopen are two-step: the first click stages the action and offers an optional
-**note**, so nothing changes status until you confirm. Notes are stored on the mutable `fbstatus`
+Moving a card saves immediately. **Decline** and **Delete** still stage a confirm with an optional
+**note**, because neither is undone by dragging the card back. Notes live on the mutable `fbstatus`
 record and can be re-edited any time; the reporter's original text is never rewritten, since the
-submission store is append-only. Notes stay in Rideshare and are not published to GitHub.
+submission store is append-only.
+
+The stage is a mutable `kind: "fbstatus"` dataset record keyed by submission id, so a decision is an
+upsert rather than an append. The **Review** badge counts only **New**, so accepted work stops nagging.
 
 Declined reports can be **deleted permanently** (report + note + screenshot, behind a confirm step),
 and are swept automatically `RETENTION_DAYS` after the decline — 14 by default, `0` disables it. The
@@ -77,21 +79,19 @@ sweep is opportunistic: there is no server-side cron for submissions, so it runs
 the queue, and reports what it cleared. A swept or deleted report leaves a bare `status:"deleted"`
 tombstone so the note cannot outlive the report it describes.
 
-Getting back to a promoted issue needs no bookkeeping: every promoted body is stamped with
-`<sub>Allyway feedback <submission id></sub>`, and the row links to a GitHub exact-phrase search for
-that id (**Find issue on GitHub**). Pasting the number into the row is optional — it upgrades the row
-to a direct **Issue #N** link. The marker lives in `GH_MARKER`; changing it breaks the search links on
-issues already filed.
+**This queue used to push reports to GitHub issues; it no longer does.** The issues it created were a
+lossier copy of the board — no screenshot, no reporter, no note — and nothing ever linked them to a
+commit or PR, so the round trip only cost a manual step per report. Rideshare is now the whole system
+of record for feedback. The repo still hosts the code; it just isn't a tracker. Rows written under the
+old flow stored `status: "promoted"`, and `stageOf` reads those as **Accepted** so they keep a column
+instead of vanishing off the board.
 
-Populating those numbers automatically would need `https://api.github.com` on the Rideshare approved
-endpoint list (keyless is enough — the repo is public). With that, a `connection_sync` reminder could
-pull issues into a named dataset on a schedule and the page could match them by marker with nobody in
-the loop. It is not approved today, so the page cannot reach GitHub at all.
-
-Read the raw queue outside the app with the Rideshare MCP (`list_site_submissions allyway`), or
-**Export CSV** from the queue dialog.
+Because nothing mirrors the queue off-platform any more, the Rideshare store is the only copy — read
+it outside the app with the Rideshare MCP (`list_site_submissions allyway`) or **Export CSV** from the
+board.
 
 ## Deploy the app
+
 
 `allyway.html` is published to the Rideshare `allyway` site. On Windows, PUT the file to a
 presigned upload URL with PowerShell (curl's schannel revocation check fails), then publish:
