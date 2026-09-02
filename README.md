@@ -77,6 +77,17 @@ sweep is opportunistic: there is no server-side cron for submissions, so it runs
 the queue, and reports what it cleared. A swept or deleted report leaves a bare `status:"deleted"`
 tombstone so the note cannot outlive the report it describes.
 
+Getting back to a promoted issue needs no bookkeeping: every promoted body is stamped with
+`<sub>Allyway feedback <submission id></sub>`, and the row links to a GitHub exact-phrase search for
+that id (**Find issue on GitHub**). Pasting the number into the row is optional — it upgrades the row
+to a direct **Issue #N** link. The marker lives in `GH_MARKER`; changing it breaks the search links on
+issues already filed.
+
+Populating those numbers automatically would need `https://api.github.com` on the Rideshare approved
+endpoint list (keyless is enough — the repo is public). With that, a `connection_sync` reminder could
+pull issues into a named dataset on a schedule and the page could match them by marker with nobody in
+the loop. It is not approved today, so the page cannot reach GitHub at all.
+
 Read the raw queue outside the app with the Rideshare MCP (`list_site_submissions allyway`), or
 **Export CSV** from the queue dialog.
 

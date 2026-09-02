@@ -1616,6 +1616,7 @@ async function showPicker(forcePick){
   var REPO = 'wegnertm/Allyway';
   var MAX_SHOT = 5*1024*1024;
   var GH_BODY_MAX = 5500;                 // keeps the pre-filled issue URL under GitHub's request-line cap
+  var GH_MARKER = 'Allyway feedback';     // stamped in every promoted issue body; how the search link finds it again
   var RETENTION_DAYS = 14;                // declined reports are cleared this many days after the decline; 0 disables
   var TYPES = {
     bug:       {label:"Something's broken", short:'Bug',       gh:'bug'},
@@ -1797,11 +1798,14 @@ async function showPicker(forcePick){
       + '| Browser | '+(d.ua||'—')+' |\n'
       + '| Reported | '+(d.at||'—')+' via Allyway |\n';
     if(d.shot) body+='\n_A screenshot came with this report — download it from the Allyway feedback queue and drag it in here._\n';
-    body+='\n<sub>Allyway feedback '+id+'</sub>\n';
+    body+='\n<sub>'+GH_MARKER+' '+id+'</sub>\n';
     return 'https://github.com/'+REPO+'/issues/new'
       + '?labels='+encodeURIComponent('feedback,'+t.gh)
       + '&title='+encodeURIComponent('['+t.short+'] '+(head||'Feedback'))
       + '&body='+encodeURIComponent(body.slice(0, GH_BODY_MAX));
+  }
+  function ghSearchUrl(id){
+    return 'https://github.com/'+REPO+'/issues?q='+encodeURIComponent('"'+GH_MARKER+' '+id+'"');
   }
   function openExternal(url){
     if(typeof window.NelnetOpen==='function' && window.NelnetOpen(url)) return;
@@ -1839,11 +1843,15 @@ async function showPicker(forcePick){
         acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-nelnet-view="'+esc(d.shot)+'">View screenshot</button>');
         acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-dl="'+esc(d.shot)+'">Download screenshot</button>');
       }
+      /* No stored number needed to get back to the issue: every promoted body carries an
+         "Allyway feedback <id>" marker, so search finds it. Pasting a number is an optional
+         upgrade to a direct link. */
       if(st==='promoted'){
         acts.push(sr.issue
           ? '<a href="https://github.com/'+REPO+'/issues/'+esc(sr.issue)+'" target="_blank" rel="noopener noreferrer">Issue #'+esc(sr.issue)+'<span class="sr-only"> (opens in new tab)</span></a>'
-          : '<label class="sr-only" for="iss-'+esc(r.id)+'">GitHub issue number for this report</label>'
-            + '<input class="fbq-issue" id="iss-'+esc(r.id)+'" data-fbq-issue="'+esc(r.id)+'" placeholder="Paste the issue number or URL">');
+          : '<a href="'+esc(ghSearchUrl(r.id))+'" target="_blank" rel="noopener noreferrer">Find issue on GitHub<span class="sr-only"> (opens in new tab)</span></a>'
+            + '<label class="sr-only" for="iss-'+esc(r.id)+'">GitHub issue number for this report</label>'
+            + '<input class="fbq-issue" id="iss-'+esc(r.id)+'" data-fbq-issue="'+esc(r.id)+'" placeholder="Issue number, to link it directly">');
       }
       var pend='';
       if(qPending.id===r.id){
