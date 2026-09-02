@@ -356,3 +356,6 @@ ARC Reports/
 rideshare-payload/
 calibration/
 a11y-iq-agent-reports/
+
+# Claude Code session state + git worktrees it creates
+.claude/
