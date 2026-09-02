@@ -198,6 +198,10 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .colorway-link{margin-left:auto;display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:6px 13px;background:var(--white);border:1.5px solid var(--secondary);border-radius:6px;font-family:'Red Hat Display',sans-serif;font-size:12.5px;font-weight:600;color:var(--secondary);text-decoration:none;cursor:pointer;}
 .colorway-link:hover{background:var(--off-white);}
 .colorway-link .ext{font-size:13px;line-height:1;}
+/* Stale-tab bar — shown when a save fails and this tab stops writing (see goStale). */
+.stale-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;max-width:1600px;margin:0 auto;padding:13px 32px;background:var(--white);border-left:4px solid var(--error-red);box-shadow:var(--shadow-md);font-size:13.5px;line-height:1.45;}
+.stale-bar strong{font-family:'Red Hat Display',sans-serif;color:var(--error-red);}
+.stale-bar .btn-primary{flex-shrink:0;padding:8px 16px;font-size:13px;box-shadow:none;}
 </style>
 <style>
 /* ---- Dark theme (WCAG AA verified: all text pairs >=4.5:1) ---- */
@@ -379,6 +383,11 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
     </div>
   </div>
 </header>
+
+<div id="stale-bar" class="stale-bar" role="alert" hidden>
+  <span><strong>Changes are no longer being saved.</strong> The last save failed (<span id="stale-why"></span>), so this tab may be behind what other people have saved since. Reload to pick up the current data — anything changed since the failure will need redoing.</span>
+  <button type="button" class="btn-primary" id="stale-reload">Reload</button>
+</div>
 
 <div class="main">
   <div class="card"><div class="card-body">
@@ -598,8 +607,18 @@ function hideLoading(){ document.getElementById('load-overlay').classList.remove
 const NS = () => window.NelnetStorage;                    // null in local preview
 const dkey = (fp,url) => url ? `${fp}|||${url}` : fp;
 
-let _saveT=null;
-function persist(){ if(_saveT)clearTimeout(_saveT); _saveT=setTimeout(saveNow,600); setSave('dirty'); }
+let _saveT=null, _stale=false;
+function persist(){ if(_stale) return;   // frozen after a failed save — only a reload writes again
+  if(_saveT)clearTimeout(_saveT); _saveT=setTimeout(saveNow,600); setSave('dirty'); }
+/* A failed save leaves this tab's copy possibly behind the store, and a stale tab that keeps
+   writing is how a whole source's triage got overwritten. Stop writing and ask for a reload. */
+function goStale(why){
+  _stale=true; if(_saveT) clearTimeout(_saveT);   // drop any debounced save still pending
+  setSave('error');
+  const bar=document.getElementById('stale-bar'); if(!bar) return;
+  const w=document.getElementById('stale-why'); if(w) w.textContent=why||'unknown error';
+  bar.hidden=false;
+}
 // Baseline of what's already in storage, so a save writes ONLY changed rows (Rideshare caps writes per viewer/day).
 let _savedDisp={}, _savedManual={}, _savedXcats='';
 function snapshotSaved(){
@@ -608,7 +627,7 @@ function snapshotSaved(){
   _savedXcats=JSON.stringify((state&&state.xcats)||[]);
 }
 async function saveNow(){
-  if(!state) return;
+  if(!state || _stale) return;   // the freeze is checked here too: persist() isn't the only way in
   if(!NS()){ setSave('saved'); return; }   // local preview: nothing persists
   const src=state.source;
   // Snapshot current state up front, so edits made DURING the async write stay 'dirty' for the next save.
@@ -616,30 +635,37 @@ async function saveNow(){
   const curMan={}; for(const m of (state.manualFindings||[])) curMan[m.id]=JSON.stringify(m);
   const curXcats=JSON.stringify(state.xcats||[]);
   const dChanged=Object.keys(curDisp).filter(k=>curDisp[k]!==_savedDisp[k]);
-  const dRemoved=Object.keys(_savedDisp).some(k=>!(k in curDisp));
+  const dCleared=Object.keys(_savedDisp).filter(k=>!(k in curDisp));
   const mChanged=Object.keys(curMan).filter(id=>curMan[id]!==_savedManual[id]);
-  const mRemoved=Object.keys(_savedManual).some(id=>!(id in curMan));
+  const mCleared=Object.keys(_savedManual).filter(id=>!(id in curMan));
   try{
-    if(dRemoved) await putAll(Object.entries(state.dispositions).map(([k,v])=>({kind:'disp',source:src,dkey:k,...v})), {kind:'disp',source:src});  // full slice drops removed keys
-    else for(const k of dChanged){ const v=state.dispositions[k]; await NS().putRecords([{kind:'disp',source:src,dkey:k,...v}], {replaceWhere:{kind:'disp',source:src,dkey:k}}); }
-    if(mRemoved){ if(Object.keys(curMan).length) await putAll((state.manualFindings||[]).map(m=>({kind:'manual',source:src,mid:m.id,...m})), {kind:'manual',source:src}); }
-    else for(const id of mChanged){ const m=state.manualFindings.find(x=>x.id===id); await NS().putRecords([{kind:'manual',source:src,mid:id,...m}], {replaceWhere:{kind:'manual',source:src,mid:id}}); }
+    // Every write is scoped to ONE dkey/mid. Never rewrite a source's whole slice: an admin's
+    // replaceWhere matches every viewer's rows, so one stale tab would delete everyone's triage.
+    for(const k of dChanged){ const v=state.dispositions[k]; await NS().putRecords([{kind:'disp',source:src,dkey:k,...v}], {replaceWhere:{kind:'disp',source:src,dkey:k}}); }
+    for(const k of dCleared) await NS().putRecords([{kind:'disp',source:src,dkey:k}], {replaceWhere:{kind:'disp',source:src,dkey:k}});           // tombstone
+    for(const id of mChanged){ const m=state.manualFindings.find(x=>x.id===id); await NS().putRecords([{kind:'manual',source:src,mid:id,...m}], {replaceWhere:{kind:'manual',source:src,mid:id}}); }
+    for(const id of mCleared) await NS().putRecords([{kind:'manual',source:src,mid:id}], {replaceWhere:{kind:'manual',source:src,mid:id}});      // tombstone
     if(curXcats!==_savedXcats) await NS().putRecords([{kind:'config',source:'_site',ckey:'xcats',list:state.xcats}], {replaceWhere:{kind:'config',source:'_site',ckey:'xcats'}});
-    if(dChanged.length||dRemoved||mChanged.length||mRemoved){ const sm=computeSummary(state.defects, state.contrast, state.dispositions, state.manualFindings); statsCache[src]=sm; writeSummary(src, sm); }
+    if(dChanged.length||dCleared.length||mChanged.length||mCleared.length){ const sm=computeSummary(state.defects, state.contrast, state.dispositions, state.manualFindings); statsCache[src]=sm; writeSummary(src, sm); }
     _savedDisp=curDisp; _savedManual=curMan; _savedXcats=curXcats;   // commit only what we captured up front
     setSave('saved');
-  }catch(e){ setSave('error'); toast('Save failed: '+(e.code||e.message),'error'); }
-}
-// Replace a source's slice in chunks so we stay under per-call caps (first chunk clears the old slice).
-async function putAll(rows, where){
-  const CH=150;
-  if(!rows.length) return;   // empty putRecords is rejected; nothing to write (rare all-cleared case leaves stale rows until next write)
-  await NS().putRecords(rows.slice(0,CH), {replaceWhere:where});
-  for(let i=CH;i<rows.length;i+=CH) await NS().putRecords(rows.slice(i,i+CH));
+  }catch(e){ goStale(e.code||e.message); }
 }
 function setSave(m){ const el=document.getElementById('save-indicator'); if(!el)return;
-  el.textContent = m==='dirty'?'Saving…' : m==='error'?'Save failed' : (NS()?'Saved to Rideshare':'Preview (not saved)');
+  el.textContent = m==='dirty'?'Saving…' : m==='error'?'Not saving — reload' : (NS()?'Saved to Rideshare':'Preview (not saved)');
   el.style.color = m==='error'?'var(--error-red)':'var(--gray)'; }
+/* Newest row per key wins (queryData is strictly newest-first). A row carrying nothing but its
+   own key is a TOMBSTONE — a cleared disposition or deleted manual finding — and it shadows the
+   older rows it replaced, so a clear survives a reload without any slice-wide delete. */
+function newestByKey(rows, keyField){
+  const out=new Map();
+  for(const it of rows){
+    const k=it.data[keyField]; if(out.has(k)) continue;
+    const {kind,source,...rest}=it.data; delete rest[keyField];
+    out.set(k, Object.keys(rest).length ? rest : null);
+  }
+  return out;
+}
 async function queryAll(filter){ const out=[]; let cursor;
   for(let i=0;i<50;i++){ const r=await NS().queryData({limit:100,filter,cursor}); out.push(...(r.items||[])); cursor=r.cursor; if(!cursor)break; }
   return out; }
@@ -705,10 +731,10 @@ async function sourceStats(src){
     queryAll({kind:'scan',source:src}), queryAll({kind:'disp',source:src}), queryAll({kind:'manual',source:src})]);
   const defects={}, contrast={};
   for(const it of scanRows){ const d=it.data; (d.stream==='contrast'?contrast:defects)[d.fingerprint]=defectFromScan(d); }
-  const disp={}, dseen=new Set();
-  for(const it of dispRows){ const k=it.data.dkey; if(dseen.has(k))continue; dseen.add(k); const {kind,source,dkey,...x}=it.data; disp[k]=x; }
-  const manual=[], mseen=new Set();
-  for(const it of manualRows){ const id=it.data.mid; if(mseen.has(id))continue; mseen.add(id); manual.push(it.data); }
+  const disp={};
+  for(const [k,x] of newestByKey(dispRows,'dkey')) if(x) disp[k]=x;
+  const manual=[];
+  for(const [id,m] of newestByKey(manualRows,'mid')) if(m) manual.push({id,...m});
   return {src, ...computeSummary(defects, contrast, disp, manual)};
 }
 function metricsHtml(s){
@@ -745,10 +771,8 @@ async function loadSource(src, localScan){
       queryAll({kind:'manual',source:src}), queryAll({kind:'config',source:'_site'})]);
     scan={source:src,standard:[],contrast:[]};
     for(const it of scanRows){ const d=it.data; (d.stream==='contrast'?scan.contrast:scan.standard).push(d); if(d.scanDate)scan.scanDate=d.scanDate; }
-    const dseen=new Set();
-    for(const it of dispRows){ const k=it.data.dkey; if(dseen.has(k))continue; dseen.add(k); const {kind,source,dkey,...disp}=it.data; dispositions[k]=disp; }
-    const mseen=new Set();
-    for(const it of manualRows){ const id=it.data.mid; if(mseen.has(id))continue; mseen.add(id); const {kind,source,mid,...m}=it.data; manualFindings.push({id,...m}); }
+    for(const [k,disp] of newestByKey(dispRows,'dkey')) if(disp) dispositions[k]=disp;
+    for(const [id,m] of newestByKey(manualRows,'mid')) if(m) manualFindings.push({id,...m});
     const cfg=cfgRows[0];
     if(cfg&&Array.isArray(cfg.data.list)&&cfg.data.list.length) xcats=cfg.data.list;
   } else scan=localScan;   // local preview: no stored dispositions — start empty
@@ -1574,6 +1598,7 @@ async function init(){
   document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.addEventListener('click',()=>setGroupBy(b.dataset.groupby)));
   document.getElementById('btn-add-manual').addEventListener('click',()=>openManualForm(''));
   document.getElementById('btn-worklist').addEventListener('click',exportWorkList);
+  document.getElementById('stale-reload').addEventListener('click',()=>location.reload());
   document.getElementById('home-link').addEventListener('click',e=>{ e.preventDefault(); showPicker(true); saveLastView(''); });
   document.getElementById('hdr-src').addEventListener('change',e=>{ if(e.target.value && (!state || e.target.value!==state.source)) loadSource(e.target.value); });
   let restored=false; try{ restored=await tryRestoreLastView(); }catch{}   // reopen last source if used within the TTL
