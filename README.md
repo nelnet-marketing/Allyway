@@ -45,6 +45,52 @@ npm run scan:rideshare
 and `--page-size` (lower it for scans whose ARC connection drops). See `docs/` for the ingest
 runbook.
 
+## Feedback
+
+Every viewer gets a **Feedback** button in the header: type, severity, one description, and an
+optional screenshot (file picker or Ctrl+V paste). Context — source, view, theme, viewport, browser,
+timestamp — is captured automatically, so nobody has to describe their own setup. Reports land in the
+Rideshare submission store as `kind: "feedback"` rows; screenshots go to the site file store.
+
+Site **admins** additionally get a **Review** button with a count of waiting reports. From the queue an
+admin promotes a report to a GitHub issue or declines it — reporters cannot file issues themselves.
+The verdict is a mutable `kind: "fbstatus"` dataset record keyed by submission id, so a decision is an
+upsert rather than an append.
+
+Promote opens a **pre-filled** issue on [wegnertm/Allyway](https://github.com/wegnertm/Allyway/issues)
+labelled `feedback` plus the type (`bug` / `question` / `enhancement` / `accessibility`); nothing is
+published until you press **Create** there. Two things to know:
+
+- The sandbox cannot reach the GitHub API and a token cannot live in a public HTML file, so the app
+  hands you an issue to confirm instead of filing one itself.
+- The repo is public, so **the reporter's email is deliberately left out of the issue body** — it stays
+  in Rideshare. Screenshots do not carry over either: download from the queue and drag them in.
+
+Promote, decline, and reopen are two-step: the first click stages the action and offers an optional
+**note**, so nothing changes status until you confirm. Notes are stored on the mutable `fbstatus`
+record and can be re-edited any time; the reporter's original text is never rewritten, since the
+submission store is append-only. Notes stay in Rideshare and are not published to GitHub.
+
+Declined reports can be **deleted permanently** (report + note + screenshot, behind a confirm step),
+and are swept automatically `RETENTION_DAYS` after the decline — 14 by default, `0` disables it. The
+sweep is opportunistic: there is no server-side cron for submissions, so it runs when an admin opens
+the queue, and reports what it cleared. A swept or deleted report leaves a bare `status:"deleted"`
+tombstone so the note cannot outlive the report it describes.
+
+Getting back to a promoted issue needs no bookkeeping: every promoted body is stamped with
+`<sub>Allyway feedback <submission id></sub>`, and the row links to a GitHub exact-phrase search for
+that id (**Find issue on GitHub**). Pasting the number into the row is optional — it upgrades the row
+to a direct **Issue #N** link. The marker lives in `GH_MARKER`; changing it breaks the search links on
+issues already filed.
+
+Populating those numbers automatically would need `https://api.github.com` on the Rideshare approved
+endpoint list (keyless is enough — the repo is public). With that, a `connection_sync` reminder could
+pull issues into a named dataset on a schedule and the page could match them by marker with nobody in
+the loop. It is not approved today, so the page cannot reach GitHub at all.
+
+Read the raw queue outside the app with the Rideshare MCP (`list_site_submissions allyway`), or
+**Export CSV** from the queue dialog.
+
 ## Deploy the app
 
 `allyway.html` is published to the Rideshare `allyway` site. On Windows, PUT the file to a
