@@ -37,7 +37,7 @@ header{background:var(--white);position:sticky;top:0;z-index:100;border-bottom:1
 .card-body{padding:22px 26px;}
 .btn-primary{padding:11px 22px;background:var(--dark-green);color:var(--white);border:none;border-radius:8px;font-family:'Red Hat Display',sans-serif;font-size:14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 4px 14px rgba(17,137,28,.22);transition:all .15s;}
 .btn-primary:hover{background:#0C6E14;transform:translateY(-1px);}   /* darker on hover keeps white text ≥4.5:1 */
-button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--dark-green);outline-offset:2px;}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--dark-green);outline-offset:2px;}
 .caret-btn{display:inline-flex;align-items:center;justify-content:center;min-width:24px;min-height:24px;padding:0;margin-right:2px;background:none;border:none;cursor:pointer;vertical-align:middle;border-radius:5px;}
 .caret-btn:hover{background:var(--soft-fill);}
 .empty-state{text-align:center;padding:50px 20px;color:var(--gray);}
@@ -253,6 +253,52 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 :root[data-theme="dark"] .status-sel.b-suppressed{border-color:#A85C7A;color:#F06BA0;background:#2E1622;}
 :root[data-theme="dark"] .status-sel.b-verify{border-color:#4E9E6E;color:#7FD3A0;background:#14281C;}
 </style>
+<style>
+/* ---- Feedback: open intake for every viewer, admin-only promote/deny queue ---- */
+.fb-wrap{position:relative;display:inline-flex;}
+.fb-badge{position:absolute;top:-6px;right:-7px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--error-red);color:#fff;font-family:'Red Hat Display',sans-serif;font-size:10.5px;font-weight:700;line-height:18px;text-align:center;pointer-events:none;}
+.fb-set{margin:14px 20px 0;border:none;}
+.fb-set legend{padding:0 0 8px;font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;color:var(--dark-gray);}
+.fb-chips{display:flex;flex-wrap:wrap;gap:8px;}
+.fb-chip{position:relative;display:inline-flex;}
+.fb-chip input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;}
+.fb-chip span{display:block;padding:8px 14px;border:1.5px solid var(--field-border);border-radius:8px;background:var(--white);font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;color:var(--dark-gray);transition:background .12s,color .12s,border-color .12s;}
+.fb-chip input:hover+span{background:var(--soft-fill);border-color:#bcd98f;color:var(--green-ink);}
+.fb-chip input:checked+span{background:var(--dark-green);border-color:var(--dark-green);color:var(--white);}
+.fb-chip input:focus-visible+span{outline:2px solid var(--dark-green);outline-offset:2px;}
+.fb-lbl{display:block;margin:16px 20px 6px;font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;color:var(--dark-gray);}
+.fb-text{display:block;width:calc(100% - 40px);margin:0 20px;min-height:120px;padding:11px;border:1.5px solid var(--field-border);border-radius:8px;font-family:'Open Sans',Arial,sans-serif;font-size:14px;line-height:1.5;color:var(--dark-gray);background:var(--white);resize:vertical;}
+.fb-text[aria-invalid=true]{border-color:var(--error-red);}
+.fb-err{margin:7px 20px 0;font-size:12.5px;font-weight:600;color:var(--error-red);}
+.fb-shot{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:8px 20px 0;}
+.fb-shot input[type=file]{font-size:12.5px;color:var(--dark-gray);max-width:100%;}
+.fb-thumb{max-height:88px;max-width:150px;border:1px solid var(--hairline);border-radius:6px;}
+.fb-ctx{margin:16px 20px 0;font-size:12px;color:var(--gray);}
+.fb-ctx summary{cursor:pointer;font-weight:600;min-height:24px;}
+.fb-ctx dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin-top:8px;}
+.fb-ctx dt{font-weight:600;}
+.fb-ctx dd{word-break:break-word;}
+/* ---- Admin queue ---- */
+.fbq-filters{display:flex;flex-wrap:wrap;gap:8px;padding:14px 20px 0;}
+.fbq-list{margin:0;padding:14px 20px;list-style:none;overflow-y:auto;}
+.fbq-row{padding:13px 0;border-top:1px solid var(--hairline);}
+.fbq-row:first-child{border-top:none;}
+.fbq-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:11.5px;color:var(--gray);}
+.fbq-tag{padding:2px 8px;border-radius:20px;border:1px solid var(--hairline);background:var(--off-white);font-family:'Red Hat Display',sans-serif;font-size:11px;font-weight:600;color:var(--dark-gray);}
+.fbq-tag.s-new{border-color:#f0c94a;color:var(--amber-ink);background:#fffaf0;}
+.fbq-tag.s-promoted{border-color:#8fd0a5;color:var(--green-ink);background:#eefaf1;}
+.fbq-tag.s-declined{border-color:#e6c9d5;color:var(--error-red);background:#fdf3f7;}
+.fbq-body{margin:7px 0;font-size:13.5px;line-height:1.55;color:var(--dark-gray);white-space:pre-wrap;word-break:break-word;}
+.fbq-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+.fbq-issue{width:210px;padding:5px 8px;border:1.5px solid var(--field-border);border-radius:6px;font-size:12.5px;font-family:'Red Hat Display',sans-serif;color:var(--dark-gray);background:var(--white);}
+.fbq-empty{padding:24px 20px;font-size:13.5px;color:var(--gray);text-align:center;}
+.fbq-acts a{color:var(--secondary);font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;text-decoration:underline;}
+:root[data-theme="dark"] .fb-chip input:checked+span{color:#10230F;}
+:root[data-theme="dark"] .fb-chip input:hover+span{border-color:#3f5a2a;}
+:root[data-theme="dark"] .fbq-tag.s-new{border-color:#C9A23A;color:#E8B84D;background:#2B2410;}
+:root[data-theme="dark"] .fbq-tag.s-promoted{border-color:#4E9E6E;color:#7FD3A0;background:#14281C;}
+:root[data-theme="dark"] .fbq-tag.s-declined{border-color:#A85C7A;color:#F06BA0;background:#2E1622;}
+</style>
 </head>
 <body>
 <header>
@@ -266,6 +312,12 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
     <span class="product-tag"><strong>Allyway</strong></span>
     </a>
     <div class="hdr-right" id="hdr-right">
+      <button type="button" id="fb-open" class="theme-toggle" title="Send feedback about Allyway">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-2.8-.4L3 21l1.9-5.2A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5Z"/></svg><span>Feedback</span>
+      </button>
+      <span class="fb-wrap"><button type="button" id="fb-review" class="theme-toggle" hidden aria-label="Review feedback">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg><span>Review</span>
+      </button><span id="fb-new-count" class="fb-badge" hidden></span></span>
       <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Switch to dark theme">
         <span class="theme-toggle__icon" aria-hidden="true"></span><span class="theme-toggle__txt">Dark</span>
       </button>
@@ -374,6 +426,73 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
       <button type="button" id="fix-copy" class="bulk-sel" style="margin-top:0;margin-left:auto">Copy</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="fb-dialog" class="fix-dialog" aria-labelledby="fb-title">
+  <form id="fb-form" class="fix-form" novalidate>
+    <div class="fix-head">
+      <h2 id="fb-title">Send feedback</h2>
+      <button type="button" class="fix-x" data-fb-close aria-label="Close without sending">&#10005;</button>
+    </div>
+    <p class="fix-sub">Tell us what tripped you up. Everything but the description is optional — one sentence is a perfectly good report.</p>
+    <fieldset class="fb-set">
+      <legend>What kind of feedback is this?</legend>
+      <div class="fb-chips">
+        <label class="fb-chip"><input type="radio" name="fb-type" value="bug" checked><span>Something's broken</span></label>
+        <label class="fb-chip"><input type="radio" name="fb-type" value="confusing"><span>Confusing</span></label>
+        <label class="fb-chip"><input type="radio" name="fb-type" value="idea"><span>Idea</span></label>
+        <label class="fb-chip"><input type="radio" name="fb-type" value="a11y"><span>Accessibility</span></label>
+      </div>
+    </fieldset>
+    <fieldset class="fb-set">
+      <legend>How much is it blocking you?</legend>
+      <div class="fb-chips">
+        <label class="fb-chip"><input type="radio" name="fb-sev" value="blocker"><span>Blocker</span></label>
+        <label class="fb-chip"><input type="radio" name="fb-sev" value="annoying" checked><span>Annoying</span></label>
+        <label class="fb-chip"><input type="radio" name="fb-sev" value="nitpick"><span>Nitpick</span></label>
+      </div>
+    </fieldset>
+    <label class="fb-lbl" for="fb-text">What happened? <span aria-hidden="true">*</span><span class="sr-only">(required)</span></label>
+    <textarea id="fb-text" class="fb-text" required aria-describedby="fb-text-hint fb-err" spellcheck="true" placeholder="e.g. Marking a finding Fixed on the Contrast tab doesn't stick after I reload."></textarea>
+    <p id="fb-text-hint" class="fix-hint">If it's a bug, what you were doing right before it happened is the most useful thing you can add.</p>
+    <p id="fb-err" class="fb-err" role="alert" hidden></p>
+    <label class="fb-lbl" for="fb-shot-file">Screenshot (optional)</label>
+    <div class="fb-shot">
+      <input type="file" id="fb-shot-file" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="fb-shot-hint">
+      <img id="fb-thumb" class="fb-thumb" alt="Preview of the screenshot you attached" hidden>
+      <button type="button" id="fb-shot-clear" class="bulk-sel" style="margin-top:0" hidden>Remove screenshot</button>
+    </div>
+    <p id="fb-shot-hint" class="fix-hint">You can also paste an image straight into this form with Ctrl+V. Max 5 MB.</p>
+    <details class="fb-ctx">
+      <summary>What gets sent with this</summary>
+      <dl id="fb-ctx-dl"></dl>
+    </details>
+    <div class="fix-foot">
+      <button type="submit" id="fb-send" class="btn-primary">Send feedback</button>
+      <button type="button" class="bulk-sel" style="margin-top:0" data-fb-close>Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="fbq-dialog" class="fix-dialog" aria-labelledby="fbq-title">
+  <div class="fix-form">
+    <div class="fix-head">
+      <h2 id="fbq-title">Feedback queue</h2>
+      <button type="button" class="fix-x" data-fbq-close aria-label="Close the feedback queue">&#10005;</button>
+    </div>
+    <p class="fix-sub">Promote a report to a GitHub issue or decline it. Promoting opens a pre-filled issue on <span id="fbq-repo"></span> &mdash; nothing is published until you press &ldquo;Create&rdquo; there.</p>
+    <div class="fbq-filters" role="group" aria-label="Filter feedback by status">
+      <button class="tab" type="button" data-fbq-filter="new" aria-pressed="true" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">New</button>
+      <button class="tab" type="button" data-fbq-filter="promoted" aria-pressed="false" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Promoted</button>
+      <button class="tab" type="button" data-fbq-filter="declined" aria-pressed="false" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Declined</button>
+      <button class="tab" type="button" data-fbq-filter="all" aria-pressed="false" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">All</button>
+    </div>
+    <ul id="fbq-list" class="fbq-list" aria-live="polite" aria-busy="false"></ul>
+    <div class="fix-foot">
+      <button type="button" class="bulk-sel" style="margin-top:0" data-fbq-close>Close</button>
+      <button type="button" id="fbq-csv" class="bulk-sel" style="margin-top:0;margin-left:auto">Export CSV</button>
+    </div>
+  </div>
 </dialog>
 
 <script>
@@ -1473,6 +1592,284 @@ async function showPicker(forcePick){
     var v=r&&r.items&&r.items[0]&&r.items[0].data;
     if(v&&(v.theme==='dark'||v.theme==='light')&&!themeExplicit){ themeExplicit=true; root.setAttribute('data-theme',v.theme); render(); }
   }).catch(function(){}); }catch(e){} }
+})();
+</script>
+<script>
+'use strict';
+/* ── Feedback: open intake for any viewer, admin-only promote/deny to GitHub ──────
+   Reports go to the append-only submission store (createdBy stamped by the platform, no
+   PII scan on the free text); the admin's verdict goes to a mutable dataset record, so a
+   decision is an upsert and old verdicts can't pile up. The sandbox can't reach the GitHub
+   API and a token can't live in a public file, so "promote" hands the admin a pre-filled
+   issue to confirm rather than filing one itself. */
+(function(){
+  var REPO = 'wegnertm/Allyway';
+  var MAX_SHOT = 5*1024*1024;
+  var GH_BODY_MAX = 5500;                 // keeps the pre-filled issue URL under GitHub's request-line cap
+  var TYPES = {
+    bug:       {label:"Something's broken", short:'Bug',       gh:'bug'},
+    confusing: {label:'Confusing',          short:'Confusing', gh:'question'},
+    idea:      {label:'Idea',               short:'Idea',      gh:'enhancement'},
+    a11y:      {label:'Accessibility',      short:'A11y',      gh:'accessibility'}
+  };
+  var SEVS = {blocker:'Blocker', annoying:'Annoying', nitpick:'Nitpick'};
+
+  var S = function(){ return window.NelnetStorage; };
+  var isAdmin = function(){ var s=S(); return !!(s && s.viewer && s.viewer.isAdmin); };
+  var el = function(id){ return document.getElementById(id); };
+
+  var dlg=el('fb-dialog'), qdlg=el('fbq-dialog'), form=el('fb-form'), ta=el('fb-text');
+  var errBox=el('fb-err'), sendBtn=el('fb-send'), fileInput=el('fb-shot-file');
+  var thumb=el('fb-thumb'), clearBtn=el('fb-shot-clear'), openBtn=el('fb-open'), qBtn=el('fb-review');
+  if(!dlg || !form) return;
+
+  var shotFile=null, shotUrl=null, qFilter='new', qRows=[], qStatus={};
+
+  function open(d){ if(typeof d.showModal==='function') d.showModal(); else d.setAttribute('open',''); }
+  function close(d){ if(typeof d.close==='function') d.close(); else d.removeAttribute('open'); }
+  function pick(name){ var r=form.querySelector('input[name="'+name+'"]:checked'); return r?r.value:''; }
+  function showErr(m){ errBox.textContent=m; errBox.hidden=false; }
+  function clearErr(){ errBox.hidden=true; errBox.textContent=''; ta.removeAttribute('aria-invalid'); }
+  function codeMsg(e){
+    var c = e && e.code;
+    if(c==='rate_limited') return "You've hit today's submission limit — please try again tomorrow.";
+    if(c==='too_large') return 'That screenshot is too large to store. Try a smaller one.';
+    if(c==='not_enabled') return "Storage isn't enabled on this site, so feedback can't be saved.";
+    return 'Could not send: ' + ((e && (e.code || e.message)) || 'unknown error');
+  }
+
+  /* Captured automatically so nobody has to describe their own setup. */
+  function context(){
+    var src = (typeof state!=='undefined' && state && state.source) ? state.source : '';
+    var view = 'Source picker';
+    if(src) view = (typeof activeStream!=='undefined' && activeStream==='contrast')
+      ? 'Contrast — grouped by '+((typeof contrastGroupBy!=='undefined' && contrastGroupBy) || 'page')
+      : 'Standard rules';
+    return {
+      source: src || '(none — home)',
+      view: view,
+      theme: document.documentElement.getAttribute('data-theme') || 'light',
+      viewport: window.innerWidth+'×'+window.innerHeight,
+      ua: navigator.userAgent,
+      at: new Date().toISOString()
+    };
+  }
+  function renderContext(){
+    var c=context(), s=S(), who=(s && s.viewer && s.viewer.email) || '';
+    var rows=[['Source',c.source],['View',c.view],['Theme',c.theme],['Window',c.viewport],['Browser',c.ua],['Sent',c.at]];
+    if(who) rows.push(['You', who+' — kept in Allyway, never copied into a public GitHub issue']);
+    el('fb-ctx-dl').innerHTML = rows.map(function(r){ return '<dt>'+esc(r[0])+'</dt><dd>'+esc(r[1])+'</dd>'; }).join('');
+  }
+
+  /* ── Screenshot: file picker or Ctrl+V paste ── */
+  function setShot(f){
+    if(!f) return;
+    if(!/^image\//.test(f.type||'')){ showErr('That file is not an image.'); return; }
+    if(f.size>MAX_SHOT){ showErr('That screenshot is larger than 5 MB — please crop or shrink it.'); return; }
+    clearErr();
+    shotFile=f;
+    if(shotUrl) URL.revokeObjectURL(shotUrl);
+    shotUrl=URL.createObjectURL(f);
+    thumb.src=shotUrl; thumb.hidden=false; clearBtn.hidden=false;
+  }
+  function dropShot(){
+    shotFile=null;
+    if(shotUrl){ URL.revokeObjectURL(shotUrl); shotUrl=null; }
+    thumb.hidden=true; thumb.removeAttribute('src'); clearBtn.hidden=true;
+    try{ fileInput.value=''; }catch(e){}
+  }
+  fileInput.addEventListener('change', function(){ setShot(fileInput.files && fileInput.files[0]); });
+  clearBtn.addEventListener('click', function(){ dropShot(); fileInput.focus(); });
+  dlg.addEventListener('paste', function(e){
+    var items=(e.clipboardData && e.clipboardData.items) || [];
+    for(var i=0;i<items.length;i++){
+      if(items[i].kind==='file' && /^image\//.test(items[i].type)){
+        e.preventDefault(); setShot(items[i].getAsFile()); toast('Screenshot attached from your clipboard.'); return;
+      }
+    }
+  });
+
+  /* ── Submit ── */
+  form.addEventListener('submit', async function(e){
+    e.preventDefault();
+    var text=ta.value.trim();
+    if(!text){ ta.setAttribute('aria-invalid','true'); showErr('Please describe what happened before sending.'); ta.focus(); return; }
+    if(!S()){ showErr('Local preview — nothing is saved here. Send feedback from the Rideshare site.'); return; }
+    clearErr(); sendBtn.disabled=true;
+    var row=context();
+    row.kind='feedback'; row.type=pick('fb-type'); row.sev=pick('fb-sev'); row.text=text;
+    try{
+      if(shotFile){
+        var f=await S().putFile(shotFile);
+        row.shot=(f && (f.id || f.fileId)) || f;
+        row.shotName=shotFile.name || 'screenshot.png';
+      }
+      await S().submit(row);
+      close(dlg); form.reset(); dropShot(); clearErr();
+      toast('Thanks — your feedback is in.');
+      if(isAdmin()) refreshBadge();
+    }catch(err){ showErr(codeMsg(err)); }
+    finally{ sendBtn.disabled=false; }
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-fb-close]'), function(b){
+    b.addEventListener('click', function(){ close(dlg); });
+  });
+  openBtn.addEventListener('click', function(){ clearErr(); renderContext(); open(dlg); ta.focus(); });
+
+  /* ── Admin queue ───────────────────────────────────────────── */
+  async function loadFeedback(){
+    var out=[], cursor;
+    for(var i=0;i<20;i++){
+      var r=await S().list({limit:100, filter:{kind:'feedback'}, cursor:cursor});
+      out=out.concat(r.items||[]); cursor=r.cursor; if(!cursor) break;
+    }
+    return out;
+  }
+  async function loadStatuses(){
+    var map={};
+    (await queryAll({kind:'fbstatus'})).forEach(function(it){ var d=it.data||{}; if(d.fid) map[d.fid]=d; });
+    return map;
+  }
+  async function setStatus(fid, status, extra){
+    var row={kind:'fbstatus', fid:fid, status:status, at:new Date().toISOString()};
+    if(extra) for(var k in extra) row[k]=extra[k];
+    await S().putRecords([row], {replaceWhere:{kind:'fbstatus', fid:fid}});
+    qStatus[fid]=row;
+  }
+  var statusOf = function(id){ return (qStatus[id] && qStatus[id].status) || 'new'; };
+  var issueNo = function(v){ var m=String(v||'').match(/(\d+)\s*$/); return m?m[1]:''; };
+
+  function ghUrl(d, id){
+    var t=TYPES[d.type]||TYPES.bug;
+    var head=(d.text||'').split(/\r?\n/)[0].trim();
+    if(head.length>72) head=head.slice(0,69).replace(/\s+\S*$/,'')+'…';
+    var body='**What happened**\n\n'+(d.text||'')+'\n\n'
+      + '| | |\n|---|---|\n'
+      + '| Type | '+t.label+' |\n'
+      + '| Severity | '+(SEVS[d.sev]||'—')+' |\n'
+      + '| Where | '+(d.source||'—')+' · '+(d.view||'—')+' |\n'
+      + '| Environment | '+(d.theme||'—')+' theme · '+(d.viewport||'—')+' |\n'
+      + '| Browser | '+(d.ua||'—')+' |\n'
+      + '| Reported | '+(d.at||'—')+' via Allyway |\n';
+    if(d.shot) body+='\n_A screenshot came with this report — download it from the Allyway feedback queue and drag it in here._\n';
+    body+='\n<sub>Allyway feedback '+id+'</sub>\n';
+    return 'https://github.com/'+REPO+'/issues/new'
+      + '?labels='+encodeURIComponent('feedback,'+t.gh)
+      + '&title='+encodeURIComponent('['+t.short+'] '+(head||'Feedback'))
+      + '&body='+encodeURIComponent(body.slice(0, GH_BODY_MAX));
+  }
+  function openExternal(url){
+    if(typeof window.NelnetOpen==='function' && window.NelnetOpen(url)) return;
+    window.open(url,'_blank','noopener');
+  }
+
+  function renderQueue(){
+    var list=el('fbq-list');
+    var rows=qRows.filter(function(r){ return qFilter==='all' || statusOf(r.id)===qFilter; });
+    if(!rows.length){
+      list.innerHTML='<li class="fbq-empty">'+(qFilter==='new'?'Nothing waiting — the queue is clear.':'No '+qFilter+' feedback yet.')+'</li>';
+      return;
+    }
+    list.innerHTML=rows.map(function(r){
+      var d=r.data||{}, st=statusOf(r.id), sr=qStatus[r.id]||{}, t=TYPES[d.type]||TYPES.bug;
+      var when=String(d.at || r.createdAt || '').replace('T',' ').slice(0,16);
+      var meta='<span class="fbq-tag s-'+st+'">'+esc(st.charAt(0).toUpperCase()+st.slice(1))+'</span>'
+        + '<span class="fbq-tag">'+esc(t.label)+'</span>'
+        + '<span class="fbq-tag">'+esc(SEVS[d.sev]||'—')+'</span>'
+        + '<span>'+esc(r.createdBy||'unknown')+'</span><span>'+esc(when)+'</span>'
+        + '<span>'+esc((d.source||'')+' · '+(d.view||''))+'</span>';
+      var acts=[];
+      if(st!=='promoted') acts.push('<button type="button" class="btn-primary" style="padding:7px 14px;font-size:13px" data-fbq-promote="'+esc(r.id)+'">Promote to GitHub issue</button>');
+      if(st!=='declined') acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-decline="'+esc(r.id)+'">Decline</button>');
+      if(st!=='new') acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-reopen="'+esc(r.id)+'">Move back to New</button>');
+      if(d.shot){
+        acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-nelnet-view="'+esc(d.shot)+'">View screenshot</button>');
+        acts.push('<button type="button" class="bulk-sel" style="margin-top:0" data-fbq-dl="'+esc(d.shot)+'">Download screenshot</button>');
+      }
+      if(st==='promoted'){
+        acts.push(sr.issue
+          ? '<a href="https://github.com/'+REPO+'/issues/'+esc(sr.issue)+'" target="_blank" rel="noopener noreferrer">Issue #'+esc(sr.issue)+'<span class="sr-only"> (opens in new tab)</span></a>'
+          : '<label class="sr-only" for="iss-'+esc(r.id)+'">GitHub issue number for this report</label>'
+            + '<input class="fbq-issue" id="iss-'+esc(r.id)+'" data-fbq-issue="'+esc(r.id)+'" placeholder="Paste the issue number or URL">');
+      }
+      return '<li class="fbq-row"><div class="fbq-meta">'+meta+'</div>'
+        + '<p class="fbq-body">'+esc(d.text||'')+'</p>'
+        + '<div class="fbq-acts">'+acts.join('')+'</div></li>';
+    }).join('');
+  }
+
+  function setBadge(){
+    var n=qRows.filter(function(r){ return statusOf(r.id)==='new'; }).length;
+    var b=el('fb-new-count');
+    b.hidden=!n; b.textContent=n||'';
+    qBtn.setAttribute('aria-label', n ? 'Review feedback — '+n+' waiting' : 'Review feedback');
+  }
+  async function refresh(){
+    var list=el('fbq-list');
+    list.setAttribute('aria-busy','true');
+    list.innerHTML='<li class="fbq-empty">Loading feedback…</li>';
+    try{
+      qStatus=await loadStatuses();
+      qRows=await loadFeedback();
+      renderQueue(); setBadge();
+    }catch(e){ list.innerHTML='<li class="fbq-empty">Could not load feedback: '+esc(e.code||e.message)+'</li>'; }
+    finally{ list.setAttribute('aria-busy','false'); }
+  }
+  async function refreshBadge(){
+    try{ qStatus=await loadStatuses(); qRows=await loadFeedback(); setBadge(); }catch(e){}
+  }
+
+  if(qBtn){
+    el('fbq-repo').textContent=REPO;
+    qBtn.addEventListener('click', function(){ open(qdlg); refresh(); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-fbq-close]'), function(b){
+      b.addEventListener('click', function(){ close(qdlg); });
+    });
+    qdlg.addEventListener('close', setBadge);   // covers Esc as well as the Close buttons
+    Array.prototype.forEach.call(qdlg.querySelectorAll('[data-fbq-filter]'), function(b){
+      b.addEventListener('click', function(){
+        qFilter=b.getAttribute('data-fbq-filter');
+        Array.prototype.forEach.call(qdlg.querySelectorAll('[data-fbq-filter]'), function(o){
+          o.setAttribute('aria-pressed', String(o===b));
+        });
+        renderQueue();
+      });
+    });
+    el('fbq-csv').addEventListener('click', function(){
+      S().downloadCSV(qRows.map(function(r){
+        var d=r.data||{}, sr=qStatus[r.id]||{};
+        return {id:r.id, reportedBy:r.createdBy||'', at:d.at||r.createdAt||'', type:d.type||'', severity:d.sev||'',
+                status:sr.status||'new', issue:sr.issue||'', source:d.source||'', view:d.view||'',
+                theme:d.theme||'', viewport:d.viewport||'', screenshot:d.shot?'yes':'no', text:d.text||''};
+      }), 'allyway-feedback.csv');
+    });
+    qdlg.addEventListener('click', async function(e){
+      var b=e.target.closest && e.target.closest('button'); if(!b) return;
+      var promote=b.getAttribute('data-fbq-promote'), decline=b.getAttribute('data-fbq-decline'),
+          reopen=b.getAttribute('data-fbq-reopen'), dl=b.getAttribute('data-fbq-dl');
+      try{
+        if(dl){ S().downloadFile(dl); }
+        else if(promote){
+          var row=qRows.filter(function(r){ return r.id===promote; })[0] || {};
+          openExternal(ghUrl(row.data||{}, promote));
+          await setStatus(promote,'promoted'); renderQueue(); setBadge();
+          toast('GitHub is open with the issue pre-filled — press Create there to publish it.');
+        }
+        else if(decline){ await setStatus(decline,'declined'); renderQueue(); setBadge(); toast('Declined.'); }
+        else if(reopen){ await setStatus(reopen,'new'); renderQueue(); setBadge(); toast('Moved back to New.'); }
+      }catch(err){ toast('Could not save that: '+(err.code||err.message),'error'); }
+    });
+    qdlg.addEventListener('change', async function(e){
+      var fid=e.target.getAttribute && e.target.getAttribute('data-fbq-issue'); if(!fid) return;
+      var n=issueNo(e.target.value); if(!n) return;
+      try{ await setStatus(fid,'promoted',{issue:n}); renderQueue(); toast('Linked to issue #'+n+'.'); }
+      catch(err){ toast('Could not save the issue number: '+(err.code||err.message),'error'); }
+    });
+  }
+
+  /* Admin-only controls; stay hidden in local preview, where there is no viewer and no store. */
+  if(isAdmin() && qBtn){ qBtn.hidden=false; refreshBadge(); }
 })();
 </script>
 </body>
