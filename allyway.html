@@ -607,7 +607,7 @@ function hideLoading(){ document.getElementById('load-overlay').classList.remove
 const NS = () => window.NelnetStorage;                    // null in local preview
 const dkey = (fp,url) => url ? `${fp}|||${url}` : fp;
 
-let _saveT=null, _stale=false;
+let _saveT=null, _stale=false, _saving=false;
 function persist(){ if(_stale) return;   // frozen after a failed save — only a reload writes again
   if(_saveT)clearTimeout(_saveT); _saveT=setTimeout(saveNow,600); setSave('dirty'); }
 /* A failed save leaves this tab's copy possibly behind the store, and a stale tab that keeps
@@ -631,6 +631,9 @@ function snapshotSaved(){
 async function saveNow(){
   if(!state || _stale) return;   // the freeze is checked here too: persist() isn't the only way in
   if(!NS()){ setSave('saved'); return; }   // local preview: nothing persists
+  // Each key is its own awaited write, so a big save outlives the debounce; two runs would
+  // double-write the same keys and the slower one's indicator would land last.
+  if(_saving){ persist(); return; }
   const src=state.source;
   // Snapshot current state up front, so edits made DURING the async write stay 'dirty' for the next save.
   const curDisp={}; for(const [k,v] of Object.entries(state.dispositions)) curDisp[k]=JSON.stringify(v);
@@ -640,6 +643,7 @@ async function saveNow(){
   const dCleared=Object.keys(_savedDisp).filter(k=>!(k in curDisp));
   const mChanged=Object.keys(curMan).filter(id=>curMan[id]!==_savedManual[id]);
   const mCleared=Object.keys(_savedManual).filter(id=>!(id in curMan));
+  _saving=true;
   try{
     // Every write is scoped to ONE dkey/mid. Never rewrite a source's whole slice: an admin's
     // replaceWhere matches every viewer's rows, so one stale tab would delete everyone's triage.
@@ -650,8 +654,9 @@ async function saveNow(){
     if(curXcats!==_savedXcats) await NS().putRecords([{kind:'config',source:'_site',ckey:'xcats',list:state.xcats}], {replaceWhere:{kind:'config',source:'_site',ckey:'xcats'}});
     if(dChanged.length||dCleared.length||mChanged.length||mCleared.length){ const sm=computeSummary(state.defects, state.contrast, state.dispositions, state.manualFindings); statsCache[src]=sm; writeSummary(src, sm); }
     _savedDisp=curDisp; _savedManual=curMan; _savedXcats=curXcats;   // commit only what we captured up front
-    setSave('saved');
+    if(!_stale) setSave('saved');   // never advertise a save on a tab that has since frozen
   }catch(e){ console.error('[allyway] save failed:', e); goStale(errText(e)); }
+  finally{ _saving=false; }
 }
 function setSave(m){ const el=document.getElementById('save-indicator'); if(!el)return;
   el.textContent = m==='dirty'?'Saving…' : m==='error'?'Not saving — reload' : (NS()?'Saved to Rideshare':'Preview (not saved)');
