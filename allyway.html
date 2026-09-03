@@ -426,6 +426,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         </label>
         <label class="chk"><input type="checkbox" id="filter-lowvol"> Hide low-volume (≤2 pages)</label>
         <button class="bulk-sel" id="btn-worklist" type="button" style="margin-top:0">⬇ Export work list (CSV)</button>
+        <button class="bulk-sel" id="btn-backup" type="button" style="margin-top:0">⬇ Back up triage (CSV)</button>
         <span class="spacer" id="result-count"></span>
       </div>
       <div class="tbl-wrap">
@@ -654,6 +655,7 @@ async function saveNow(){
     for(const id of mChanged){ const m=state.manualFindings.find(x=>x.id===id); await NS().putRecords([{kind:'manual',source:src,mid:id,...m}], {replaceWhere:{kind:'manual',source:src,mid:id}}); }
     for(const id of mCleared) await NS().putRecords([{kind:'manual',source:src,mid:id}], {replaceWhere:{kind:'manual',source:src,mid:id}});      // tombstone
     if(curXcats!==_savedXcats) await NS().putRecords([{kind:'config',source:'_site',ckey:'xcats',list:state.xcats}], {replaceWhere:{kind:'config',source:'_site',ckey:'xcats'}});
+    invalidateRows();   // rows just changed — drop the snapshot before anything reads it back
     if(dChanged.length||dCleared.length||mChanged.length||mCleared.length){ const sm=computeSummary(state.defects, state.contrast, state.dispositions, state.manualFindings); statsCache[src]=sm; writeSummary(src, sm); }
     _savedDisp=curDisp; _savedManual=curMan; _savedXcats=curXcats;   // commit only what we captured up front
     if(!_stale) setSave('saved');   // never advertise a save on a tab that has since frozen
@@ -675,9 +677,25 @@ function newestByKey(rows, keyField){
   }
   return out;
 }
-async function queryAll(filter){ const out=[]; let cursor;
-  for(let i=0;i<50;i++){ const r=await NS().queryData({limit:100,filter,cursor}); out.push(...(r.items||[])); cursor=r.cursor; if(!cursor)break; }
-  return out; }
+/* A FILTERED queryData parks its next cursor at the last row SCANNED, not the last row
+   RETURNED, so once a page fills its limit the rest of that scan window is skipped for good:
+   Propelr loaded 100 of its 200 dispositions and the other half read as untriaged. Unfiltered
+   paging can't skip (returned === scanned), so read the store whole and match locally. */
+let _rows=null, _rowsAt=0;
+const ROWS_TTL_MS = 15*1000;   // one pass feeds all the concurrent reads of a single load
+function invalidateRows(){ _rows=null; }   // after any write, or the next read serves stale rows
+function readAllRows(){
+  if(_rows && Date.now()-_rowsAt<ROWS_TTL_MS) return _rows;
+  _rowsAt=Date.now();
+  return _rows=(async()=>{ const out=[]; let cursor;
+    for(let i=0;i<500;i++){ const r=await NS().queryData({limit:200,cursor}); out.push(...(r.items||[])); cursor=r.cursor; if(!cursor)break; }
+    return out; })().catch(e=>{ _rows=null; throw e; });   // a failed pass must not be cached
+}
+// Filtering preserves store order, so newestByKey still gets its rows newest-first.
+async function queryAll(filter){
+  return (await readAllRows()).filter(it=>{ const d=it.data||{};
+    for(const k in filter) if(d[k]!==filter[k]) return false; return true; });
+}
 
 /* ── Remember last view (per-viewer, one-row upsert) ───────────────
    Scope every write by an opaque hash of the viewer's email: no PII is stored, and an
@@ -686,7 +704,7 @@ const LAST_VIEW_TTL_MS = 8*60*60*1000;   // reopen the last source within 8h; ol
 function viewerKey(){ const e=((NS()&&NS().viewer&&NS().viewer.email)||'').toLowerCase();
   let h=5381; for(let i=0;i<e.length;i++) h=((h<<5)+h+e.charCodeAt(i))>>>0; return 'u'+h.toString(36); }
 async function saveLastView(source){ if(!NS()) return;   // source='' records the homepage
-  try{ await NS().putRecords([{kind:'lastview',u:viewerKey(),source:source||'',updatedAt:Date.now()}], {replaceWhere:{kind:'lastview',u:viewerKey()}}); }catch{} }
+  try{ await NS().putRecords([{kind:'lastview',u:viewerKey(),source:source||'',updatedAt:Date.now()}], {replaceWhere:{kind:'lastview',u:viewerKey()}}); invalidateRows(); }catch{} }
 async function readLastView(){ if(!NS()) return null;
   try{ const rows=await queryAll({kind:'lastview',u:viewerKey()}); const it=rows[0]; return it?{source:it.data.source||'',updatedAt:it.data.updatedAt||0}:null; }catch{ return null; } }
 async function tryRestoreLastView(){   // returns true if it opened a source; false → caller shows the homepage
@@ -732,7 +750,8 @@ function computeSummary(defects, contrast, dispositions, manual){
 async function writeSummary(src, s){
   if(!NS()) return;
   try{ await NS().putRecords([{kind:'summary',source:src,v:SUMMARY_V,active:s.active,suppressed:s.suppressed,verify:s.verify,
-    untriaged:s.untriaged,total:s.total,triagedPct:s.triagedPct,updatedAt:Date.now()}], {replaceWhere:{kind:'summary',source:src}}); }catch{}
+    untriaged:s.untriaged,total:s.total,triagedPct:s.triagedPct,updatedAt:Date.now()}], {replaceWhere:{kind:'summary',source:src}});
+    invalidateRows(); }catch{}
 }
 // Full recompute for one source — dashboard FALLBACK, used only when no summary record exists yet.
 async function sourceStats(src){
@@ -832,6 +851,7 @@ async function ingestScanToStorage(scan){
     for(let i=CH;i<recs.length;i+=CH) await NS().putRecords(recs.slice(i,i+CH));         // rest append
   }
   await NS().putRecords([{kind:'source',source:src,scanDate:when}], {replaceWhere:{kind:'source',source:src}});
+  invalidateRows();   // a whole scan slice was just replaced
 }
 async function adminLoadScan(file){
   try{ const scan=JSON.parse(await file.text());
@@ -1532,6 +1552,16 @@ document.getElementById('fix-copy').addEventListener('click', copyFix);
 document.getElementById('fix-text').addEventListener('input', updateFixAI);
 document.getElementById('fix-dialog').addEventListener('close', ()=>{ _fixTarget=null; });
 
+// One download path for every export: the platform helper, or a local Blob in preview.
+function downloadRows(rows, name, cols){
+  if(NS() && NS().downloadCSV){ NS().downloadCSV(rows, name); return; }
+  const keys=cols || [...new Set(rows.flatMap(Object.keys))];
+  const cell=v=>{ const s=String(v??''); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const csv='﻿'+keys.map(cell).join(',')+'\n'+rows.map(r=>keys.map(k=>cell(r[k])).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download=name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+}
+
 /* ── Export work list (CSV) — actionable items, page-level, shareable.
    Two sections via a Section column: "Work List" (to-do) and "Deferred" (backlog). ── */
 const WORKLIST_STATUSES=['need_fix','in_progress','needs_approval','deferred'];
@@ -1573,16 +1603,35 @@ function exportWorkList(){
   const cols=['Section','Rule / Element','Stream','Page URL','Category / Severity','Instances','Status','Assignee','Note','Fix Instructions','Sample HTML'];
   const flat=rows.map(r=>({ 'Section': ACTIVE_TODO.has(r._s)?'Work List':'Deferred', 'Rule / Element':r.item, 'Stream':r.stream,
     'Page URL':r.url, 'Category / Severity':r.grade, 'Instances':r.instances, 'Status':r.status, 'Assignee':r.assignee, 'Note':r.note, 'Fix Instructions':r.fix, 'Sample HTML':r.html }));
-  const name=`${state.source} - work list.csv`;
-  if(NS() && NS().downloadCSV){ NS().downloadCSV(flat, name); }
-  else {   // local preview — build + download the CSV ourselves
-    const cell=v=>{ const s=String(v??''); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
-    const csv='﻿'+cols.map(cell).join(',')+'\n'+flat.map(r=>cols.map(c=>cell(r[c])).join(',')).join('\n');
-    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-    a.download=name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
-  }
+  downloadRows(flat, `${state.source} - work list.csv`, cols);
   const nDef=rows.filter(r=>r._s==='deferred').length;
   toast(`Exported ${rows.length-nDef} to-do + ${nDef} deferred (Section column).`);
+}
+
+/* ── Back up triage (CSV) — every decision, not just the actionable ones.
+   The work list covers 4 statuses; this covers everything SET (untriaged items have no
+   disposition row at all), so the "not an issue because…" reasoning is captured too.
+   dkey/mid ride along verbatim — they are the keys a restore writes back to, and the
+   work list drops them, which is what makes it unusable as a backup. ── */
+function collectTriage(){
+  const rows=[];
+  for(const [dkey,d] of Object.entries(state.dispositions||{}))
+    rows.push({ kind:'disp', source:state.source, dkey, status:d.status||'', reason:d.reason||'',
+      xcat:d.xcat||'', assignee:d.assignee||'', globalFix:d.globalFix?'yes':'', notes:d.notes||'', fix:d.fix||'' });
+  for(const m of (state.manualFindings||[]))   // hand-authored, so worth keeping at any status
+    rows.push({ kind:'manual', source:state.source, dkey:m.id, status:m.status||'',
+      assignee:m.assignee||'', notes:m.note||'', fix:m.fix||'',
+      title:m.title||'', url:m.url||'', type:m.type||'', severity:m.severity||'' });
+  rows.push({ kind:'config', source:'_site', dkey:'xcats', notes:(state.xcats||[]).join(' | ') });
+  return rows;
+}
+function exportTriage(){
+  if(!state) return;
+  const rows=collectTriage();
+  const nD=rows.filter(r=>r.kind==='disp').length, nM=rows.filter(r=>r.kind==='manual').length;
+  if(!nD&&!nM){ toast('Nothing triaged yet for this source.','error'); return; }
+  downloadRows(rows, `${state.source} - triage backup.csv`);
+  toast(`Backed up ${nD} decision${nD===1?'':'s'} + ${nM} manual finding${nM===1?'':'s'}.`);
 }
 
 /* ── Sorting ────────────────────────────────────────────────── */
@@ -1607,6 +1656,7 @@ async function init(){
   document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.addEventListener('click',()=>setGroupBy(b.dataset.groupby)));
   document.getElementById('btn-add-manual').addEventListener('click',()=>openManualForm(''));
   document.getElementById('btn-worklist').addEventListener('click',exportWorkList);
+  document.getElementById('btn-backup').addEventListener('click',exportTriage);
   document.getElementById('stale-reload').addEventListener('click',()=>location.reload());
   document.getElementById('home-link').addEventListener('click',e=>{ e.preventDefault(); showPicker(true); saveLastView(''); });
   document.getElementById('hdr-src').addEventListener('change',e=>{ if(e.target.value && (!state || e.target.value!==state.source)) loadSource(e.target.value); });
@@ -1833,11 +1883,14 @@ async function showPicker(forcePick){
   openBtn.addEventListener('click', function(){ clearErr(); renderContext(); open(dlg); ta.focus(); });
 
   /* ── Admin queue ───────────────────────────────────────────── */
+  // Unfiltered paging for the same reason as queryAll: a filtered page that fills its limit
+  // skips the rest of its scan window, so reports would vanish once the store passes 100.
   async function loadFeedback(){
     var out=[], cursor;
-    for(var i=0;i<20;i++){
-      var r=await S().list({limit:100, filter:{kind:'feedback'}, cursor:cursor});
-      out=out.concat(r.items||[]); cursor=r.cursor; if(!cursor) break;
+    for(var i=0;i<100;i++){
+      var r=await S().list({limit:100, cursor:cursor});
+      (r.items||[]).forEach(function(it){ if((it.data||{}).kind==='feedback') out.push(it); });
+      cursor=r.cursor; if(!cursor) break;
     }
     return out;
   }
@@ -1857,7 +1910,7 @@ async function showPicker(forcePick){
     if(prev.note) row.note=prev.note;
     if(extra) for(var k in extra) row[k]=extra[k];
     if(!row.note) delete row.note;
-    await S().putRecords([row], {replaceWhere:{kind:'fbstatus', fid:fid}});
+    await S().putRecords([row], {replaceWhere:{kind:'fbstatus', fid:fid}}); invalidateRows();
     qStatus[fid]=row;
   }
   var statusOf = function(id){ return (qStatus[id] && qStatus[id].status) || 'new'; };
@@ -1877,7 +1930,7 @@ async function showPicker(forcePick){
     var d=row.data||{};
     if(d.shot){ try{ await S().removeFile(d.shot); }catch(e){} }   // an already-gone file must not block the delete
     await S().remove(row.id);
-    try{ await S().putRecords([{kind:'fbstatus', fid:row.id, status:'deleted', at:new Date().toISOString()}], {replaceWhere:{kind:'fbstatus', fid:row.id}}); }catch(e){}
+    try{ await S().putRecords([{kind:'fbstatus', fid:row.id, status:'deleted', at:new Date().toISOString()}], {replaceWhere:{kind:'fbstatus', fid:row.id}}); invalidateRows(); }catch(e){}
     qRows=qRows.filter(function(r){ return r.id!==row.id; });
     qStatus[row.id]={kind:'fbstatus', fid:row.id, status:'deleted'};
   }
@@ -2092,7 +2145,7 @@ async function showPicker(forcePick){
     el('fbq-group').addEventListener('change', function(){ qGroup=this.value; qPending={}; renderQueue(); });
     el('fbq-sort').addEventListener('change', function(){ qSort=this.value; qPending={}; renderQueue(); });
     el('fbq-csv').addEventListener('click', function(){
-      S().downloadCSV(qRows.map(function(r){
+      downloadRows(qRows.map(function(r){
         var d=r.data||{};
         return {id:r.id, reportedBy:r.createdBy||'', at:d.at||r.createdAt||'', type:d.type||'', severity:d.sev||'',
                 stage:stageOf(r.id), note:noteOf(r.id), source:d.source||'', view:d.view||'',

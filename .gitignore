@@ -359,3 +359,6 @@ a11y-iq-agent-reports/
 
 # Claude Code session state + git worktrees it creates
 .claude/
+
+# Rideshare data snapshots — site data, not code. Never commit these.
+backups/
