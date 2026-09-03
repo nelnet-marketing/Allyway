@@ -200,6 +200,8 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .colorway-link .ext{font-size:13px;line-height:1;}
 /* Stale-tab bar — shown when a save fails and this tab stops writing (see goStale). */
 .stale-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;max-width:1600px;margin:0 auto;padding:13px 32px;background:var(--white);border-left:4px solid var(--error-red);box-shadow:var(--shadow-md);font-size:13.5px;line-height:1.45;}
+/* An author display: beats the UA's [hidden] rule, so anything toggled via .hidden needs this. */
+.stale-bar[hidden],.ai-followup[hidden]{display:none;}
 .stale-bar strong{font-family:'Red Hat Display',sans-serif;color:var(--error-red);}
 .stale-bar .btn-primary{flex-shrink:0;padding:8px 16px;font-size:13px;box-shadow:none;}
 </style>
