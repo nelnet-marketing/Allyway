@@ -103,7 +103,7 @@ table.defects tr.detail-row.hidden{display:none;}
 .ai-caret{display:inline-block;width:0;height:0;border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .15s;}
 .ai-explain-btn[aria-expanded=true] .ai-caret{transform:rotate(90deg);}
 .ai-explain-btn[aria-busy=true]{opacity:.7;cursor:progress;}
-.ai-out{margin-top:10px;width:100%;font-size:13px;line-height:1.55;color:var(--dark-gray);background:var(--off-white);border:1px solid var(--hairline);border-left:3px solid var(--secondary);border-radius:8px;padding:12px 14px;}
+.ai-out{margin-top:10px;width:100%;max-width:min(84ch,calc(100vw - 96px));overflow-wrap:anywhere;font-size:13px;line-height:1.55;color:var(--dark-gray);background:var(--off-white);border:1px solid var(--hairline);border-left:3px solid var(--secondary);border-radius:8px;padding:12px 14px;}   /* max-width, not 100%: the panel lives in a ~1300px-min table cell that scrolls */
 .ai-turn{padding:2px 0;}
 .ai-turn+.ai-turn{margin-top:10px;}
 .ai-turn.ai-q{color:var(--dark-gray);padding-left:10px;border-left:2px solid var(--hairline);}
