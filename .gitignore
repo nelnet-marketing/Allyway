@@ -357,8 +357,9 @@ rideshare-payload/
 calibration/
 a11y-iq-agent-reports/
 
-# Claude Code session state + git worktrees it creates
-.claude/
+# Claude Code session state + git worktrees it creates — but keep shared skills
+.claude/*
+!.claude/skills/
 
 # Rideshare data snapshots — site data, not code. Never commit these.
 backups/
