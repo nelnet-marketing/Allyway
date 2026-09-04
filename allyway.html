@@ -19,6 +19,7 @@
   --hairline:#E6E8E3;--soft-fill:#F0F4E8;--error-red:#A80C59;
   --green-ink:#0D7015;--amber-ink:#8A5A00;--field-border:#8A9198;   /* AA-contrast variants for small text / form borders */
   --secondary:#0e729a;--secondary-dark:#215e87;   /* brand blue — white text ≥5.4:1 (AA) */
+  --row-done:#F7F8F4;--row-todo:#FFFFFF;   /* rules table: fully-triaged rows recede, rows with work left sit forward */
   --r:10px;--rl:16px;--shadow-md:0 4px 18px rgba(17,137,28,0.11);
   color-scheme:light;
 }
@@ -82,7 +83,21 @@ table.defects tr.detail-row.hidden{display:none;}
 .cat-error{background:#FDEDEC;color:#C0392B;}.cat-alert{background:#FEF9E7;color:#7a5000;}.cat-bp,.cat-other{background:var(--off-white);color:var(--gray);}
 .lowvol{background:var(--off-white);color:var(--gray);border:1px dashed var(--gray);margin-left:5px;}
 .roll{font-size:12px;color:var(--dark-gray);}
-.roll .mix{font-weight:600;color:var(--amber-ink);}
+.tri{font-size:12px;font-weight:600;color:var(--dark-gray);font-variant-numeric:tabular-nums;}
+.tri.is-done{color:var(--green-ink);}
+.tri.is-none{color:var(--amber-ink);}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;}
+.chip{display:inline-flex;align-items:baseline;gap:5px;padding:2px 8px;border-radius:11px;font-size:11.5px;line-height:1.7;border:1px solid;white-space:nowrap;}
+.chip b{font-weight:700;font-variant-numeric:tabular-nums;}
+.chip.b-untriaged{background:#FEF9E7;color:#7a5000;border-color:#e8d9a8;}
+.chip.b-active{background:#EAF7FB;color:#1A5A6B;border-color:#b9dde8;}
+.chip.b-verify{background:var(--soft-fill);color:var(--green-ink);border-color:#cfe0b0;}
+.chip.b-suppressed{background:#F1F2F0;color:var(--gray);border-color:var(--hairline);}
+.done-tick{color:var(--dark-green);font-weight:700;margin-right:5px;}
+.todo-badge{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:11px;background:#FEF9E7;color:#7a5000;border:1px solid #e8d9a8;font-size:11px;font-weight:700;vertical-align:1px;}
+table.defects tr.rule-done td{background:var(--row-done);}   /* triaged work recedes, unfinished sits forward — tint, not opacity, so no text loses contrast */
+table.defects tr.rule-todo td{background:var(--row-todo);}
+#defects-tbody tr.rule-row td:last-child{width:290px;}   /* the rollup's own column, or its chips re-widen the table (rule rows only — the detail row is one colspan cell) */
 .caret{display:inline-block;width:0;height:0;border-left:5px solid var(--dark-green);border-top:4px solid transparent;border-bottom:4px solid transparent;margin-right:6px;transition:transform .15s;vertical-align:middle;}
 .caret.open{transform:rotate(90deg);}
 .status-sel{padding:5px 7px;border:1.5px solid var(--field-border);border-radius:6px;font-size:12.5px;font-family:'Red Hat Display',sans-serif;font-weight:600;background:var(--white);cursor:pointer;max-width:170px;min-height:24px;}
@@ -225,6 +240,8 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
   --error-red:#F06BA0;    /* error / suppressed text */
   --secondary:#56B6E4;    /* blue: links + filled buttons */
   --secondary-dark:#7AC6EA; /* blue hover (lighter) */
+  --row-done:#191D23;     /* triaged rows sink below the card surface … */
+  --row-todo:#252B34;     /* … rows with work left rise above it */
   --shadow-md:0 4px 18px rgba(0,0,0,0.45);
   color-scheme:dark;   /* native controls, dropdowns, scrollbars, checkboxes follow the theme */
 }
@@ -257,6 +274,11 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 :root[data-theme="dark"] .sev-medium,
 :root[data-theme="dark"] .cat-alert{background:#332B10;color:#E6C463;}
 :root[data-theme="dark"] .sev-low{background:#102A33;color:#7FC8DB;}
+:root[data-theme="dark"] .chip.b-untriaged,
+:root[data-theme="dark"] .todo-badge{background:#3A3315;color:#E8CC6A;border-color:#5C4A1C;}
+:root[data-theme="dark"] .chip.b-active{background:#16303D;color:#7FC9EA;border-color:#245166;}
+:root[data-theme="dark"] .chip.b-verify{background:var(--soft-fill);color:var(--green-ink);border-color:#3F5A2A;}
+:root[data-theme="dark"] .chip.b-suppressed{background:#262B33;color:var(--gray);border-color:#3B424C;}
 /* Status badges */
 :root[data-theme="dark"] .status-sel.b-untriaged{border-color:#C9A23A;color:#E8B84D;background:#2B2410;}
 :root[data-theme="dark"] .status-sel.b-active{border-color:#6E9B3E;color:#9FD46A;background:#1F2A18;}
@@ -943,13 +965,22 @@ const gradePill = g => { const k=(g||'').toUpperCase(); return activeStream==='c
   ? 'cat-'+(k==='ERROR'?'error':k==='ALERT'?'alert':'bp')
   : 'sev-'+((g||'other').toLowerCase().replace(/\s+/g,'-')); };
 
+/* Status rollup markup, shared by the rule and page tables: how much is triaged, then a count chip per status.
+   Chips over a one-line "Mixed: …" sentence so the column wraps instead of setting the table's width. */
+const chipLabel = v => SMAP[v].label.split(' —')[0].toLowerCase();
+function rollupHtml(by,total){
+  const untriaged=by.untriaged||0, done=total-untriaged;
+  const chips=STATUSES.filter(s=>by[s.v]).map(s=>   // STATUSES order, not count order, so the column reads the same way every row
+    `<span class="chip b-${s.v==='untriaged'?'untriaged':s.bucket}"><b>${by[s.v]}</b> ${esc(chipLabel(s.v))}</span>`).join('');
+  return `<div class="tri ${done===total?'is-done':done?'':'is-none'}">${done} of ${total} triaged</div><div class="chips">${chips}</div>`;
+}
+
 /* Rollup of a rule across its pages → {counts by bucket, label} */
 function ruleRollup(d,excl){
   const c={active:0,suppressed:0,verify:0}; const byStatus={};
   for(const url of d.affected_pages){ const st=resolvePage(d.fingerprint,url,excl).status; c[bucket(st)]++; byStatus[st]=(byStatus[st]||0)+1; }
-  const parts=Object.entries(byStatus).sort((a,b)=>b[1]-a[1]).map(([s,n])=>`${n} ${SMAP[s].label.split(' —')[0].toLowerCase()}`);
-  const label = parts.length<=1 ? (parts[0]||'untriaged') : `<span class="mix">Mixed:</span> ${parts.join(' · ')}`;
-  return {c,label,activePages:c.active,totalPages:d.affected_pages.length};
+  const total=d.affected_pages.length;
+  return {c,label:rollupHtml(byStatus,total),untriaged:byStatus.untriaged||0,activePages:c.active,totalPages:total};
 }
 
 /* ── Render ─────────────────────────────────────────────────── */
@@ -1022,8 +1053,7 @@ function contrastPages(){
 }
 function pageRollup(p,excl){ const c={active:0,suppressed:0,verify:0}; const by={};
   for(const e of p.elements){ const st=resolvePage(e.fp,p.url,excl).status; c[bucket(st)]++; by[st]=(by[st]||0)+1; }
-  const parts=Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([s,n])=>`${n} ${SMAP[s].label.split(' —')[0].toLowerCase()}`);
-  c.label=parts.length<=1?(parts[0]||'untriaged'):`<span class="mix">Mixed:</span> ${parts.join(' · ')}`;
+  c.label=rollupHtml(by,p.elements.length); c.untriaged=by.untriaged||0;
   let worst=null,wr=99; for(const e of p.elements){ const g=gradeOf(e),r=gradeRank(g); if(r<wr){wr=r;worst=g;} } c.worst=worst||'—'; return c; }
 function sortPages(list,excl){ const val=p=>{ if(sortKey==='url')return p.url.toLowerCase();
     if(sortKey==='elements')return p.elements.length; if(sortKey==='status')return pageRollup(p,excl).active;
@@ -1104,8 +1134,8 @@ function renderTable(all,excl){
     const fp=d.fingerprint, g=gradeOf(d), low=d.affected_pages.length<=2;
     const r=ruleRollup(d,excl), did=`det-${cssId(fp)}`;
     const ruleDef=state.dispositions[fp];
-    return `<tr class="rule-row" data-fp="${esc(fp)}">
-      <td class="clickable" data-toggle="${did}" style="max-width:280px"><button type="button" class="caret-btn" data-toggle="${did}" aria-controls="${did}" aria-expanded="false" aria-label="Toggle detail rows for ${esc(d.rule_title)}"><span class="caret" id="c-${cssId(fp)}"></span></button><strong>${esc(d.rule_title)}</strong>${(state.dispositions[fp]||{}).notes?'<span title="Has a rule note" aria-label="Has a rule note" style="margin-left:6px">📝</span>':''}${isGlobalFix(fp)?'<span title="Single global fix — one place fixes all pages" aria-label="Single global fix" style="margin-left:6px">🌐</span>':''}
+    return `<tr class="rule-row ${r.untriaged?'rule-todo':'rule-done'}" data-fp="${esc(fp)}">
+      <td class="clickable" data-toggle="${did}" style="max-width:280px"><button type="button" class="caret-btn" data-toggle="${did}" aria-controls="${did}" aria-expanded="false" aria-label="Toggle detail rows for ${esc(d.rule_title)}"><span class="caret" id="c-${cssId(fp)}"></span></button>${r.untriaged?'':'<span class="done-tick" aria-hidden="true">✓</span>'}<strong>${esc(d.rule_title)}</strong>${r.untriaged?`<span class="todo-badge">${r.untriaged} left</span>`:''}${(state.dispositions[fp]||{}).notes?'<span title="Has a rule note" aria-label="Has a rule note" style="margin-left:6px">📝</span>':''}${isGlobalFix(fp)?'<span title="Single global fix — one place fixes all pages" aria-label="Single global fix" style="margin-left:6px">🌐</span>':''}
         ${d.description?`<div class="rule-desc">${esc(d.description.slice(0,110))}${d.description.length>110?'…':''}</div>`:''}</td>
       <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(g)}">${esc(g||'—')}</span>${low?'<span class="pill lowvol">low-vol</span>':''}</td>
       <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.activePages}</strong> / ${r.totalPages}</td>
@@ -1363,8 +1393,8 @@ function renderByPage(excl){
   document.getElementById('result-count').textContent=`${list.length} of ${pagesMap.size} pages`;
   const tb=document.getElementById('defects-tbody');
   tb.innerHTML=list.map(p=>{ const did=`detp-${cssId(p.url)}`; const r=pageRollup(p,excl);
-    return `<tr class="rule-row">
-      <td class="clickable" data-toggle="${did}" style="max-width:380px"><button type="button" class="caret-btn" data-toggle="${did}" aria-controls="${did}" aria-expanded="false" aria-label="Toggle detail rows for ${esc(p.url)}"><span class="caret" id="c-${cssId(p.url)}"></span></button><a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${esc(p.url)}</a></td>
+    return `<tr class="rule-row ${r.untriaged?'rule-todo':'rule-done'}">
+      <td class="clickable" data-toggle="${did}" style="max-width:380px"><button type="button" class="caret-btn" data-toggle="${did}" aria-controls="${did}" aria-expanded="false" aria-label="Toggle detail rows for ${esc(p.url)}"><span class="caret" id="c-${cssId(p.url)}"></span></button>${r.untriaged?'':'<span class="done-tick" aria-hidden="true">✓</span>'}<a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${esc(p.url)}</a>${r.untriaged?`<span class="todo-badge">${r.untriaged} left</span>`:''}</td>
       <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.active}</strong> / ${p.elements.length}</td>
       <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(r.worst)}">${esc(r.worst)}</span></td>
       <td><div class="roll">${r.label}</div>
