@@ -157,9 +157,13 @@ table.defects tr.detail-row.hidden{display:none;}
 .detail-tbl code{font-family:Consolas,'SF Mono',monospace;font-size:11.5px;color:var(--dark-gray);white-space:pre-wrap;word-break:break-all;}
 .detail-tbl .status-sel{display:block;}   /* stack the assignee/reason field below the status, not inline */
 .detail-tbl .subfield{display:block;margin-top:6px;}
-.detail-tbl th:first-child,.detail-tbl td:first-child{width:210px;}   /* narrow Page URL (wraps) … */
-.detail-tbl th:nth-child(5),.detail-tbl td:nth-child(5){width:180px;}   /* narrow status col … */
-.detail-tbl th:last-child,.detail-tbl td:last-child{min-width:360px;}   /* … so Notes gets the room */
+.detail-tbl th:first-child,.detail-tbl td:first-child{width:210px;}
+.detail-tbl--pages th:first-child,.detail-tbl--pages td:first-child{width:32%;min-width:300px;word-break:break-word;}   /* Page URL reads better with room … */
+.detail-tbl--pages th:nth-child(3),.detail-tbl--pages td:nth-child(3){width:90px;}   /* … Component(s) is near-always empty … */
+.detail-tbl th:nth-child(4),.detail-tbl td:nth-child(4){width:300px;}   /* … Sample HTML wants a whole tag … */
+.detail-tbl th:nth-child(5),.detail-tbl td:nth-child(5){width:175px;}   /* … status rides tight */
+.detail-tbl th:last-child,.detail-tbl td:last-child{min-width:300px;}
+.detail-tbl .status-sel,.detail-tbl .subfield{max-width:156px;}   /* px, not %, or the select's own text re-widens the col */
 .pg-excluded td{opacity:.55;text-decoration:line-through;}
 details.suppressed-sec{margin-top:20px;border:1px solid var(--hairline);border-radius:var(--r);background:var(--white);}
 details.suppressed-sec summary{padding:12px 16px;font-family:'Red Hat Display',sans-serif;font-weight:600;font-size:14px;color:var(--dark-gray);cursor:pointer;}
@@ -1341,7 +1345,7 @@ function buildDetail(fp){
       <div class="ai-note">AI-generated guidance — verify against the WCAG spec before acting.</div>
     </div></div>`;
   const fixBar=`<div class="fix-bar">${fixBtn(fp,'',false)}</div>`;
-  return noteBar+fixBar+aiBar+`<table class="detail-tbl"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return noteBar+fixBar+aiBar+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 /* ── Contrast PAGE view — one row per page, expand to the contrast elements on it ── */
 function renderByPage(excl){
