@@ -20,8 +20,12 @@ For each named source, read its summary record:
 list_site_data({ slug:'allyway', limit:5, filter:{ kind:'summary', source:'<Source>' } })
 ```
 
-That gives `total`, `suppressed`, `active`, `untriaged`, `triagedPct`. Use these verbatim.
-Do not recompute them and do not round.
+That gives `total`, `suppressed`, `active`, `verify`, `untriaged`, `triagedPct` — the fields
+`saveSummary` writes (see `allyway.html`, the `kind:'summary'` putRecords call). Use these
+verbatim. Do not recompute them and do not round.
+
+`verify` is the one that's easy to skip past, and Step 2 branches the whole email on it. Read
+it every time.
 
 If a source has no summary record, it has never been saved since the summary math last
 changed — open it in the app once to regenerate, or say so rather than guessing.
@@ -79,21 +83,38 @@ Storylane demo iframe on `/products` — notes like *"can we fix anything on Sto
 Nine separate rule names, one decision.
 
 State the cluster and the decision it needs. If items don't cluster, list them plainly rather
-than inventing a theme. Mention the page URL when a cluster is confined to one page.
+than inventing a theme. When a cluster sits on one page, name the page the way a reader would
+say it ("the Products page"), not the path — she wrote it that way, and the recipient is
+navigating the site, not a URL list.
 
 ## Step 4 — Draft it
 
 Use the template below, filled with the live numbers. Then create an Outlook draft:
 
 ```
-CreateDraftMessage  → subject, body, To: <dev lead>, Cc: <PMs>
+CreateDraftMessage  → subject, body, To: Jose, Cc: <source PMs> + Mike, Ryan, Randall
 ```
 
-**Never send.** She reviews and sends. If recipient addresses aren't known, resolve the names
-through the Microsoft 365 people tools and confirm them before drafting rather than guessing
-at an address format.
+**Never send.** She reviews and sends.
+
+### Who it goes to
+
+The recipient list is stable — don't re-ask her every run:
+
+- **To:** Jose, the dev lead who owns remediation.
+- **Cc:** the PMs for that source, plus Mike, Ryan and Randall on every handoff.
+
+Only first names are recorded here on purpose — resolve each to an address with the Microsoft
+365 people tools at draft time and show her the resolved list before creating the draft. Never
+guess at an address format. If a name resolves to more than one person, ask rather than
+picking.
+
+For multiple sources, the Cc is the union of every source's PMs plus the standing three.
 
 ## Template
+
+This is calibrated against the Propelr handoff she actually sent in September 2026, not a
+guess at her voice. Deviate only when the data calls for it.
 
 Single source:
 
@@ -102,24 +123,37 @@ Subject: <Source> accessibility review complete — <active> items ready for rem
 
 Hi <Name>,
 
-The <Source> accessibility review is complete. I reviewed <total> automated findings and
-ruled out <suppressed> as false positives or non-issues, leaving <active> findings that need
-action. All findings are documented in Allyway
-(https://rideshare-internal.nelnettools.com/allyway/) under the <Source> card with notes and
-remediation guidance, and are assigned to you.
+I reviewed <total> automated findings and ruled out <suppressed> as false positives or
+non-issues, leaving <active> Active findings. All are documented in Allyway -> <Source> card
+with notes/remediation guidance and are assigned to you.
 
-For anyone unfamiliar, Allyway is the tool I'm using to track accessibility findings and
-remediation work.
+For anyone unfamiliar, Allyway is the tool I'm building to track accessibility findings and
+remediation work. Currently hosted on Nelnet Rideshare so you'll need to be on the VPN to
+access it. Reach out if you have any issues.
 
-That number may come down slightly, as most of the items I marked "Needs Approval" are due to
-<root cause> (<url>). <the decision question>? If not, I can mark those as "Can't Fix" and
-remove them from the Active Findings list.
+One question for you: Most of the items I marked as "Needs Approval" are due to <root cause>
+on the <page> page. <the decision question>? If not, I can mark those findings as "Can't Fix"
+and remove them from the Active findings list.
 
-I've copied <PM names> so they're aware of the remaining work and can factor it into planning
-once we've figured out <root cause short name>.
-
-Happy to walk through the findings with you before development starts if that would be helpful.
+Happy to walk through anything if that would be helpful 🙂
 ```
+
+What that template gets right, and why each piece is there:
+
+- **No "the review is complete" opener.** She leads straight with the number. The subject line
+  already said it's complete.
+- **"the tool I'm building"**, not "using". It's hers.
+- **The VPN sentence is not optional.** Allyway is behind Rideshare; a recipient off VPN just
+  gets a dead link and no explanation. She pairs it with an offer to help.
+- **No URL in the body.** She pointed at the location instead ("Allyway -> <Source> card").
+  Adding the raw link is fine if she asks, but the VPN note is what actually unblocks people.
+- **"One question for you:"** — the blocked cluster is framed as a single explicit ask, not
+  buried in a hedge. Drop the old "that number may come down slightly" phrasing; naming the
+  count and asking the question outright is stronger.
+- **No paragraph explaining the Cc.** They're copied; she doesn't narrate it.
+- **Emoji in the closing.** Keep it. The sign-off is short and warm, not a formal offer to
+  schedule a walkthrough.
+- **"Active findings"** capitalized the way the app labels it.
 
 If `verify` is above 0 alongside active work, add a line for it — those are items already marked
 Fixed that still need someone to confirm the fix shipped, and they're easy to lose track of:
@@ -139,10 +173,10 @@ Good news on <Source>: there's nothing left to remediate. Of <total> findings re
 <suppressed> were ruled out and the remaining <verify> are already marked Fixed.
 
 What I need is confirmation those changes are actually live, so I can close them out. They're
-in Allyway (https://rideshare-internal.nelnettools.com/allyway/) under the <Source> card —
-each one has a note about what was changed.
+in Allyway -> <Source> card and each one has a note about what was changed. It's hosted on
+Nelnet Rideshare, so you'll need to be on the VPN — reach out if you have any issues.
 
-Once you confirm, <Source> is fully closed for this review cycle.
+Once you confirm, <Source> is fully closed for this review cycle 🙂
 ```
 
 Multiple sources: keep the opening and closing, and give each source its own short paragraph
@@ -155,16 +189,18 @@ active work, and don't imply someone needs to write code for them.
 
 - Every figure traces to a live read. If something can't be verified, say so instead of
   hedging vaguely — "I couldn't confirm this number" beats a confident wrong one.
-- Prefer naming the Needs Approval count over the word "slightly" when she wants precision;
-  "slightly" is fine when the count is genuinely small relative to `active`.
+- Name the Needs Approval count. Don't reach for "slightly" — she cut that hedge and asked the
+  question outright instead.
 - Keep her voice: plain, direct, one clear ask, no corporate padding. The 525 → 488 → 39
   framing does real work — it shows the triage effort rather than just the leftovers.
-- Match the app's own labels ("Needs Approval", "Can't Fix", "Active Findings list") so a
-  reader isn't hunting for UI that doesn't exist under that name.
-- Allyway is an internal site. If recipients can't open the link, check the site's viewer
-  list — an internal site with no viewers and no groups admits any signed-in Nelnet user, but
-  an explicit viewer list locks everyone else out. There is no MCP tool that reads the list
-  back, so this has to be confirmed in the portal.
+- Match the app's own labels ("Needs Approval", "Can't Fix", "Active findings") so a reader
+  isn't hunting for UI that doesn't exist under that name.
+- **Allyway needs the VPN.** It's hosted on Nelnet Rideshare, so say so in every email —
+  otherwise an off-VPN recipient gets a dead link and no idea why.
+- Beyond the VPN, access is per-site. If someone on VPN still can't open it, check the site's
+  viewer list — an internal site with no viewers and no groups admits any signed-in Nelnet
+  user, but an explicit viewer list locks everyone else out. There is no MCP tool that reads
+  the list back, so this has to be confirmed in the portal.
 - Storage is in **shared** mode, so recipients can write, not just read. If a dev marks items
   fixed, their rows shadow hers for those findings. That is intended — mention it only if she
   asks why statuses moved.
