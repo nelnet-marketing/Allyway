@@ -92,24 +92,25 @@ navigating the site, not a URL list.
 Use the template below, filled with the live numbers. Then create an Outlook draft:
 
 ```
-CreateDraftMessage  → subject, body, To: Jose, Cc: <source PMs> + Mike, Ryan, Randall
+CreateDraftMessage  → subject, body, To: Jose, Cc: Felicia, Kylie, Mike, Ryan, Randall
 ```
 
 **Never send.** She reviews and sends.
 
 ### Who it goes to
 
-The recipient list is stable — don't re-ask her every run:
+The same six every time, whatever sources are in the email — don't re-ask her:
 
 - **To:** Jose, the dev lead who owns remediation.
-- **Cc:** the PMs for that source, plus Mike, Ryan and Randall on every handoff.
+- **Cc:** Felicia and Kylie, the two PMs, plus Mike, Ryan and Randall.
 
-Only first names are recorded here on purpose — resolve each to an address with the Microsoft
-365 people tools at draft time and show her the resolved list before creating the draft. Never
-guess at an address format. If a name resolves to more than one person, ask rather than
-picking.
+The PMs are not per-source. Both are copied on every handoff, and a multi-source email doesn't
+change the Cc.
 
-For multiple sources, the Cc is the union of every source's PMs plus the standing three.
+**First names only, deliberately — no addresses in this file.** Resolve each name through the
+Microsoft 365 people tools at draft time and show her the resolved list before creating the
+draft. Never guess or construct an address from a pattern; a wrong one either bounces or
+reaches a stranger. If a name resolves to more than one person, ask rather than picking.
 
 ## Template
 
