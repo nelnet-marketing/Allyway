@@ -99,6 +99,25 @@ table.defects tr.detail-row.hidden{display:none;}
 .reconcile-card .card-body h4:first-child{margin-top:0;}
 .reconcile-list{margin:0;padding-left:20px;font-size:12.5px;color:var(--dark-gray);}
 .reconcile-list li{margin-bottom:3px;}
+.reconcile-headline{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--hairline);}
+.reconcile-headline__label{font-size:12px;color:var(--gray);text-transform:uppercase;letter-spacing:.04em;}
+.reconcile-headline__value{font-size:34px;font-weight:700;font-family:'Red Hat Display',sans-serif;color:var(--dark-gray);line-height:1.1;}
+.reconcile-headline__delta{font-size:14px;font-weight:700;color:var(--dark-gray);}
+.reconcile-headline__delta.good{color:var(--green-ink);}
+.reconcile-headline__delta.bad{color:var(--error-red);}
+.reconcile-headline__sub{font-weight:400;color:var(--gray);}
+/* Bars: <=24px thick, 4px rounded, single baseline, value at the tip (dataviz skill mark spec) —
+   same track/fill convention as .src-card__bar so it reads as one visual language. */
+.reconcile-bars{margin-bottom:14px;display:flex;flex-direction:column;gap:8px;}
+.rbar-row{display:grid;grid-template-columns:150px 1fr 28px;align-items:center;gap:10px;}
+.rbar-label{font-size:12px;color:var(--dark-gray);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rbar-track{height:10px;border-radius:4px;background:var(--soft-fill);overflow:hidden;}
+.rbar-fill{display:block;height:100%;border-radius:4px;}
+.rbar-fill.verify{background:var(--dark-green);}
+.rbar-fill.escalate{background:var(--error-red);}
+.rbar-fill.untriaged{background:var(--gold);}
+.rbar-fill.active{background:var(--secondary);}
+.rbar-value{font-size:12px;font-weight:700;color:var(--dark-gray);text-align:right;font-variant-numeric:tabular-nums;}
 .done-tick{color:var(--dark-green);font-weight:700;margin-right:5px;}
 .todo-badge{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:11px;background:#FEF9E7;color:#7a5000;border:1px solid #e8d9a8;font-size:11px;font-weight:700;vertical-align:1px;}
 table.defects tr.rule-done td{background:var(--row-done);}   /* triaged work recedes, unfinished sits forward — tint, not opacity, so no text loses contrast */
@@ -871,6 +890,15 @@ function activateSource(){
 }
 // "What changed since last scan" — a persistent, re-openable card (not a toast) so it's still
 // there for a leadership walkthrough days after the pull that produced it.
+// Bar spec: <=24px thick, 4px rounded end, single left baseline, value at the tip, text in
+// text tokens (never the fill color) — dataviz skill's mark spec, reusing this app's existing
+// track/fill convention (.src-card__bar) rather than a new one.
+function reconcileBarRow(cls,label,n,max){
+  const pct = max ? Math.round(n/max*100) : 0;
+  return `<div class="rbar-row"><span class="rbar-label">${esc(label)}</span>
+    <div class="rbar-track"><div class="rbar-fill ${cls}" style="width:${n?Math.max(pct,3):0}%"></div></div>
+    <span class="rbar-value">${n}</span></div>`;
+}
 function renderReconcileCard(){
   const slot=document.getElementById('reconcile-slot');
   const r=state.reconcile;
@@ -879,6 +907,21 @@ function renderReconcileCard(){
   const pill=(cls,n,label)=>n?`<span class="chip b-${cls}"><b>${n}</b> ${esc(label)}</span>`:'';
   const range=r.fromDate&&r.toDate&&r.fromDate!==r.toDate?`${esc(r.fromDate)} → ${esc(r.toDate)}`:esc(r.toDate||'latest scan');
   const section=(title,items,fmt)=>items.length?`<h4>${esc(title)} (${items.length})</h4><ul class="reconcile-list">${items.map(fmt).join('')}</ul>`:'';
+
+  // Headline stat tile: the one number a leadership audience wants first.
+  const delta=r.activeAfter-r.activeBefore, good=delta<=0;
+  const pct=r.activeBefore ? Math.round(Math.abs(delta)/r.activeBefore*100) : null;
+  const deltaText = delta===0 ? 'No change' : `${good?'↓':'↑'} ${Math.abs(delta)}${pct!==null?` (${pct}%)`:''}`;
+  const headline = total ? `<div class="reconcile-headline">
+      <div><div class="reconcile-headline__label">Active findings</div><div class="reconcile-headline__value">${r.activeAfter}</div></div>
+      <div class="reconcile-headline__delta ${delta===0?'':(good?'good':'bad')}">${deltaText}<span class="reconcile-headline__sub"> since ${range}</span></div>
+    </div>` : '';
+
+  const cats=[['verify','✅ Confirmed fixed',r.confirmedFixed.length],['escalate',"🔁 Fix didn't take",r.fixDidntTake.length],
+    ['untriaged','🔍 No longer detected',r.noLongerDetected.length],['active','🆕 New',r.newFindings.length],['escalate','⬆️ Escalated',r.escalated.length]];
+  const max=Math.max(1,...cats.map(c=>c[2]));
+  const bars = total ? `<div class="reconcile-bars">${cats.map(c=>reconcileBarRow(c[0],c[1],c[2],max)).join('')}</div>` : '';
+
   const body=[
     section('✅ Confirmed fixed', r.confirmedFixed, i=>`<li>${esc(i.title)}</li>`),
     section("🔁 Fix didn't take — reopened", r.fixDidntTake, i=>`<li>${esc(i.title)} <span style="color:var(--gray)">(still on ${i.pages} page${i.pages===1?'':'s'})</span></li>`),
@@ -891,7 +934,7 @@ function renderReconcileCard(){
       ${pill('verify',r.confirmedFixed.length,'confirmed fixed')}${pill('escalate',r.fixDidntTake.length,"fix didn't take")}${pill('untriaged',r.noLongerDetected.length,'no longer detected')}${pill('active',r.newFindings.length,'new')}${pill('escalate',r.escalated.length,'escalated')}
       ${total?'':'<span style="color:var(--gray);font-weight:400">Nothing changed.</span>'}
     </summary>
-    <div class="card-body">${body}</div>
+    <div class="card-body">${headline}${bars}${body}</div>
   </details>`;
 }
 // Header source dropdown — quick-switch between sources without going home.
@@ -947,7 +990,22 @@ function computeReconciliation(oldScanRows, newScan, disp){
     else if(!d || bucket(status)!=='suppressed') noLongerDetected.push({fp,title:title.get(fp),pages,confidence:pages>=3?'high':'low'});
     // suppressed + absent: stays suppressed silently, per spec §5 — no event
   }
-  return {confirmedFixed,fixDidntTake,noLongerDetected,newFindings,escalated};
+
+  // Headline: the Active-findings count as it stood on the old scan vs. as it stands now —
+  // the single number a leadership audience actually wants. "Now" reflects reopened items
+  // (fix-didn't-take / escalated) folded in, since that's the real post-reconciliation state,
+  // not what a naive carry-forward would have shown.
+  const dispAfter={...disp};
+  for(const item of [...fixDidntTake,...escalated]) dispAfter[item.fp]={status:'untriaged'};
+  const oldDefects={}, oldContrast={};
+  for(const r of oldScanRows){ const d=r.data; (d.stream==='contrast'?oldContrast:oldDefects)[d.fingerprint]=defectFromScan(d); }
+  const newDefects={}, newContrast={};
+  for(const d of (newScan.standard||[])) newDefects[d.fingerprint]=defectFromScan(d);
+  for(const d of (newScan.contrast||[])) newContrast[d.fingerprint]=defectFromScan(d);
+  const activeBefore=computeSummary(oldDefects,oldContrast,disp,[]).active;
+  const activeAfter=computeSummary(newDefects,newContrast,dispAfter,[]).active;
+
+  return {confirmedFixed,fixDidntTake,noLongerDetected,newFindings,escalated,activeBefore,activeAfter};
 }
 // Reopen what the spec says must not stay silently hidden: a "Fixed" claim the new scan
 // disproved, or a suppressed finding whose footprint grew past the escalation guard.
@@ -964,7 +1022,8 @@ function writeReconciliation(src, fromDate, toDate, report){
   return NS().putRecords([{kind:'reconcile',source:src,fromDate,toDate,
     confirmedFixed:trim(report.confirmedFixed), fixDidntTake:trim(report.fixDidntTake),
     noLongerDetected:trim(report.noLongerDetected), newFindings:trim(report.newFindings),
-    escalated:trim(report.escalated), computedAt:Date.now()}], {replaceWhere:{kind:'reconcile',source:src}});
+    escalated:trim(report.escalated), activeBefore:report.activeBefore, activeAfter:report.activeAfter,
+    computedAt:Date.now()}], {replaceWhere:{kind:'reconcile',source:src}});
 }
 async function readReconciliation(src){
   const rows=await queryAll({kind:'reconcile',source:src});
@@ -994,7 +1053,9 @@ function reconcileSummary(report){
   if(report.noLongerDetected.length) parts.push(`🔍 ${report.noLongerDetected.length} no longer detected`);
   if(report.newFindings.length) parts.push(`🆕 ${report.newFindings.length} new`);
   if(report.escalated.length) parts.push(`⬆️ ${report.escalated.length} escalated`);
-  return parts.length ? ' Since last scan: '+parts.join(' · ')+'.' : ' Nothing changed since last scan.';
+  const d=report.activeAfter-report.activeBefore;
+  const headline=`Active findings: ${report.activeBefore} → ${report.activeAfter} (${d===0?'no change':(d<0?'↓':'↑')+Math.abs(d)}).`;
+  return ' '+headline+(parts.length ? ' '+parts.join(' · ')+'.' : '');
 }
 async function adminLoadScan(file){
   try{ const scan=JSON.parse(await file.text());

@@ -17,14 +17,16 @@ function loadComputeReconciliation() {
     assert.ok(start > 0 && end > start, `markers not found: ${startMark} .. ${endMark}`);
     return html.slice(start, end);
   };
-  // Three non-contiguous pieces: status model, the pure reconciliation logic, and the one-line
-  // bucket() helper the logic depends on — concatenated so the real definitions run unmodified.
+  // Three non-contiguous pieces: the status model, the block from defectFromScan through the
+  // reconciliation logic (computeReconciliation needs computeSummary + defectFromScan, both
+  // defined earlier in that span), and the one-line bucket() helper — concatenated so the real
+  // definitions run unmodified rather than duplicated by hand (which could silently drift).
   const statuses = slice('const STATUSES = [', 'const REASONS');
-  const reconcile = slice('/* ── Reconciliation — "why did the count change"', 'async function adminLoadScan');
+  const middle = slice('function defectFromScan(sd){', 'async function adminLoadScan');
   const bucket = "const bucket = st => SMAP[st]?.bucket || 'active';\n";
   const ctx = { console };
   vm.createContext(ctx);
-  new vm.Script(statuses + '\n' + bucket + '\n' + reconcile + '\n;({computeReconciliation});').runInContext(ctx);
+  new vm.Script(statuses + '\n' + bucket + '\n' + middle + '\n;({computeReconciliation});').runInContext(ctx);
   return new vm.Script('({computeReconciliation})').runInContext(ctx);
 }
 
@@ -79,6 +81,13 @@ check('an unchanged active finding produces no event',
 check('brand-new fingerprint (not in old scan) reported as New', has(r.newFindings, 'E-brand-new'));
 check('totals: nothing double-counted',
   r.confirmedFixed.length + r.fixDidntTake.length + r.noLongerDetected.length + r.newFindings.length === 5);
+
+/* ── Headline: Active findings before vs. after, reopened items folded into "after" ────────
+   Before (old scan + current dispositions): C(4,need_fix)+D(1,untriaged)+I(2,in_progress)=7 active.
+   After (new scan + dispositions with B and G reopened to untriaged by this same report):
+   B(1)+G(6)+I(2)+E(1)=10 active — H stays suppressed (no escalation), A/C/D are gone from the new scan. */
+check('activeBefore counts only what was active on the OLD scan', r.activeBefore === 7);
+check('activeAfter folds reopened (fix-didn\'t-take + escalated) items in as active', r.activeAfter === 10);
 
 console.log(fails ? `\n${fails} CHECK(S) FAILED` : '\nALL PASS');
 process.exit(fails ? 1 : 0);
