@@ -899,6 +899,164 @@ async function loadLocalFile(file){
   }catch(e){ toast('Could not read that file: '+e.message,'error'); }
 }
 
+/* ── ARC API pull (phase 2) ──────────────────────────────────────────
+   The same pipeline as `node index.js`, run in-page over Rideshare's brokered
+   connection: the broker pins the host and attaches the ARC key server-side, so
+   nothing in this file ever sees or stores a credential.
+   Grouping + fingerprints below are ported VERBATIM from index.js. Dispositions
+   key off `fingerprint`, so any drift here silently orphans triage state. */
+const ARC_EP       = '2b8542e7-0548-45f8-ba3d-f36678f07f9a';   // approved endpoint → arc.vispero.com
+const ARC_CONTRAST = new Set(['1.4.3','1.4.11']);              // WCAG contrast SCs
+const ARC_PAGE     = 100;    // 500 times out at the broker's 10s ceiling; 100 is what ARC serves reliably
+const ARC_MAX_PAGES = 200;   // hard stop — every page spends the site's daily cap (Nelnet Bank needs ~168)
+let arcRuleMap = {};
+
+const arcOn = () => !!window.NelnetConnect;
+// The approved endpoint's base already ends in /api, so paths start at the version segment.
+const arcGet = (path, query) => NelnetConnect.get(ARC_EP, query ? {path, query} : {path});
+
+/* Ported from index.js — keep behaviour identical so fingerprints match script-pulled scans. */
+function arcSanitize(s){ if(!s) return '';
+  return String(s).replace(/<[^>]*>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"')
+    .replace(/&#39;|&apos;/g,"'").replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim(); }
+function arcNormalizeUrl(raw){
+  try{ const u=new URL(raw); u.hostname=u.hostname.replace(/^www\./,'');
+    u.pathname=u.pathname.replace(/\/+$/,'')||'/'; u.search=''; u.hash=''; return u.toString().toLowerCase(); }
+  catch{ return String(raw||'').toLowerCase().replace(/\/+$/,''); } }
+function arcIsoDate(iso){ const d=new Date(iso); if(isNaN(d)) return '';
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`; }
+function arcContrastSig(html, ruleKey){ const h=html||'';
+  const tag=(h.match(/^\s*<\s*([a-zA-Z][\w-]*)/)||[])[1]||'?';
+  const cls=(h.match(/class\s*=\s*"([^"]*)"/i)||[])[1]||'';
+  const role=(h.match(/role\s*=\s*"([^"]*)"/i)||[])[1]||'';
+  const classes=cls.replace(/\d+/g,'#').split(/\s+/).filter(Boolean).sort().join('.');
+  return `${ruleKey}|${tag}${classes?'.'+classes:''}${role?'[role='+role+']':''}`; }
+
+const ARC_CAT_RANK = { ERROR:0, ALERT:1, 'BEST PRACTICE':2 };
+const arcCatRank  = c => ARC_CAT_RANK[(c||'').toUpperCase()] ?? 9;
+const arcCatOf    = f => f.category || arcRuleMap[f.ruleKey]?.type?.title || '';
+const arcWorseCat = (a,b) => !a ? b : !b ? a : (arcCatRank(a)<=arcCatRank(b) ? a : b);
+
+// index.js:683 buildScanJson — standard groups by rule title, contrast by element signature.
+function arcBuildScanJson(source, rows, contrast, scanInfo){
+  const addPage=(d,url,html)=>{ if(!url) return;
+    let p=d.pages[url]; if(!p) p=d.pages[url]={url,instances:0,html:''};
+    p.instances++;
+    // Sample HTML for the first 15 pages only, so one huge defect stays under the 64 KB record cap.
+    if(!p.html && html && Object.keys(d.pages).length<=15) p.html=String(html).slice(0,400); };
+
+  const std={};
+  for(const r of rows){ const fp=arcSanitize(r.ruleTitle); if(!fp) continue;
+    let d=std[fp]; if(!d) d=std[fp]={fingerprint:fp, title:fp, severity:(r.ruleSeverity||'').toUpperCase(),
+      description:arcSanitize(r.ruleDescription||''), instances:0, pages:{}};
+    d.instances++; addPage(d, arcNormalizeUrl(r.componentUrl??''), r.instanceHTMLSource); }
+
+  const con={}, seen=new Set();
+  for(const f of contrast){ const url=arcNormalizeUrl(f.componentUrl??'');
+    // ARC reports each element once per viewport — dedupe by locator or counts inflate.
+    const dedupe=`${url}|||${f.instanceLocatorType}|||${f.instanceLocator}|||${f.ruleKey}`;
+    if(seen.has(dedupe)) continue; seen.add(dedupe);
+    const fp=arcContrastSig(f.instanceHTMLSource, f.ruleKey);
+    let d=con[fp]; if(!d) d=con[fp]={fingerprint:fp, title:fp.split('|').slice(1).join('|')||'(element)',
+      severity:(f.severity||arcRuleMap[f.ruleKey]?.severity||'').toUpperCase(), category:'', instances:0, pages:{}};
+    d.category=arcWorseCat(d.category, arcCatOf(f));
+    d.instances++; addPage(d, url, f.instanceHTMLSource); }
+
+  const toArr=o=>Object.values(o).map(d=>({...d, pages:Object.values(d.pages)}));
+  return { source, scanDate:arcIsoDate(scanInfo.date), generatedFrom:'arc-api',
+    standard:toArr(std), contrast:toArr(con) }; }
+
+/* ── ARC reads ─────────────────────────────────────────────────────── */
+async function arcLoadRules(){
+  const rules=await arcGet('/v1/tests');
+  arcRuleMap={}; for(const r of (rules||[])) arcRuleMap[r.key]=r;
+  return Object.keys(arcRuleMap).length; }
+async function arcSourceList(){
+  const out=[]; let offset=0;
+  while(true){ const page=await arcGet('/v2/datasources',{limit:'500',offset:String(offset)});
+    if(!Array.isArray(page)||!page.length) break;
+    out.push(...page); if(page.length<500) break; offset+=page.length; }
+  return out; }
+async function arcLatestScan(sourceId){
+  const d=await arcGet(`/v1/scans/${sourceId}`,{status:'success',limit:'1'});
+  return Array.isArray(d)&&d.length ? d[0] : null; }
+// Paginated findings. Page size shrinks and sticks on trouble, matching index.js:162.
+async function arcFindings(scanId, onProgress){
+  let offset=0, limit=ARC_PAGE, pages=0; const all=[];
+  while(true){
+    if(++pages>ARC_MAX_PAGES) throw new Error(`Over the ${ARC_MAX_PAGES}-request ceiling for one pull — run \`node index.js\` for this source instead.`);
+    let data;
+    try{ data=await arcGet(`/v1/scans/${scanId}/findings`,{offset:String(offset),limit:String(limit)}); }
+    catch(err){
+      if(err.code==='rate_limited') throw new Error('Allyway hit its daily ARC call cap — try again tomorrow, or use `node index.js` for this source.');
+      if(limit>25){ limit=Math.floor(limit/2); pages--; continue; }   // shrink and retry; a failed page isn't a page
+      throw err; }
+    if(!Array.isArray(data)||!data.length) break;
+    all.push(...data); onProgress?.(all.length, pages);
+    if(data.length<limit) break;
+    offset+=data.length; }
+  return all; }
+
+/* ── Admin: pull a source straight from ARC into storage ───────────── */
+async function adminPullFromArc(sourceTitle){
+  if(!isAdmin()){ toast('Pulling from ARC is admin-only.','error'); return; }
+  if(!arcOn()){ toast('The ARC connection isn’t available on this site.','error'); return; }
+  try{
+    showLoading('Loading ARC rules…');
+    await arcLoadRules();
+
+    showLoading(`Finding “${sourceTitle}” in ARC…`);
+    const src=(await arcSourceList()).find(s=>s.title===sourceTitle);
+    if(!src) throw new Error(`ARC has no source titled “${sourceTitle}”.`);
+
+    const scan=await arcLatestScan(src.id);
+    if(!scan) throw new Error(`No completed scan found for “${sourceTitle}”.`);
+
+    // scan.findingsCount counts DISTINCT rule findings, not the instance rows /findings
+    // returns (Nelnet Inc: 102 vs 8,888) — so it can't predict the page count. Report
+    // progress as it goes and let ARC_MAX_PAGES be the stop.
+    showLoading(`Fetching findings for ${sourceTitle}…`);
+    const findings=await arcFindings(scan.scanId,(n,p)=>showLoading(`Fetched ${n} findings (${p} request${p===1?'':'s'})…`));
+
+    showLoading('Grouping defects…');
+    const contrast=[], rows=[];
+    for(const f of findings){
+      const rule=arcRuleMap[f.ruleKey];
+      if(rule?.standards?.some(s=>ARC_CONTRAST.has(s.criterionKey))){ contrast.push(f); continue; }
+      rows.push({ componentTitle:f.componentTitle, componentUrl:arcNormalizeUrl(f.componentUrl??''),
+        instanceLocator:f.instanceLocator, instanceLocatorType:f.instanceLocatorType,
+        instanceHTMLSource:f.instanceHTMLSource, ruleKey:f.ruleKey,
+        ruleTitle:f.ruleTitle||rule?.title||'', ruleSeverity:f.severity||rule?.severity||'',
+        ruleCategory:f.category||rule?.type?.title||'', ruleDescription:rule?.description||'' }); }
+
+    const built=arcBuildScanJson(sourceTitle, rows, contrast, scan);
+    showLoading(`Saving ${sourceTitle}…`);
+    await ingestScanToStorage(built);
+    hideLoading();
+
+    const st=await sourceStats(sourceTitle).catch(()=>null);   // scan changed — refresh the cached summary
+    if(st){ statsCache[sourceTitle]=st; await writeSummary(sourceTitle, st); } else delete statsCache[sourceTitle];
+    toast(`${sourceTitle}: ${built.standard.length} rules + ${built.contrast.length} contrast pulled from ARC (${findings.length} raw findings).`);
+    await showPicker(true);
+  }catch(e){ hideLoading(); toast('ARC pull failed: '+(e.message||e.code),'error'); } }
+
+// Source chooser for the pull — inline in the dashboard actions, no modal.
+async function openArcPicker(actions){
+  actions.innerHTML=`<span class="grid-msg" role="status">Loading ARC sources…</span>`;
+  let list;
+  try{ showLoading('Loading ARC sources…'); await arcLoadRules(); list=await arcSourceList(); hideLoading(); }
+  catch(e){ hideLoading(); toast('Could not reach ARC: '+(e.message||e.code),'error'); await showPicker(true); return; }
+  const titles=list.map(s=>s.title).filter(Boolean).sort((a,b)=>a.localeCompare(b));
+  if(!titles.length){ toast('ARC returned no sources.','error'); await showPicker(true); return; }
+  actions.innerHTML=`<label class="form-label" for="arc-src">ARC source</label>
+    <select class="form-input" id="arc-src" style="max-width:280px">${titles.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select>
+    <button class="bulk-sel" id="arc-go" style="margin-top:0">Pull latest scan</button>
+    <button class="bulk-sel" id="arc-cancel" style="margin-top:0">Cancel</button>`;
+  const sel=document.getElementById('arc-src');
+  sel.focus();
+  document.getElementById('arc-go').addEventListener('click',()=>adminPullFromArc(sel.value));
+  document.getElementById('arc-cancel').addEventListener('click',()=>showPicker(true));
+  sel.addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); adminPullFromArc(sel.value); } }); }
 /* One-time normalization of saved X-category names (e.g. HubSpot → HubSpot Form). */
 function migrateXcats(){
   state.xcats=[...new Set(state.xcats.map(c=>XCAT_RENAME[c]||c))];
@@ -1704,10 +1862,11 @@ async function showPicker(forcePick){
   const help=document.getElementById('picker-help'), actions=document.getElementById('picker-actions'), grid=document.getElementById('source-grid');
   if(NS()){
     const admin = !!(NS().viewer && NS().viewer.isAdmin);
-    help.textContent = admin ? 'Click a source to triage, or load a new scan.json.' : 'Click a source to triage.';
-    actions.innerHTML = admin ? `<label class="bulk-sel" for="scan-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">＋ Load scan.json</label><input id="scan-input" type="file" accept=".json" hidden>` : '';
+    help.textContent = admin ? (arcOn() ? 'Click a source to triage, pull a fresh scan from ARC, or load a scan.json.' : 'Click a source to triage, or load a new scan.json.') : 'Click a source to triage.';
+    actions.innerHTML = admin ? `<label class="bulk-sel" for="scan-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">＋ Load scan.json</label><input id="scan-input" type="file" accept=".json" hidden>${arcOn()?`<button class="bulk-sel" id="arc-pull" style="margin-top:0">⟳ Pull from ARC</button>`:''}` : '';
     if(admin){ const si=document.getElementById('scan-input'); si.addEventListener('change',e=>{ if(e.target.files[0]) adminLoadScan(e.target.files[0]); e.target.value=''; });
-      document.querySelector('label[for=scan-input]').addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();si.click();}}); }
+      document.querySelector('label[for=scan-input]').addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();si.click();}});
+      document.getElementById('arc-pull')?.addEventListener('click',()=>openArcPicker(actions)); }
     // No overlay: cards carry their own loading state. Keep any existing cards visible while we refresh;
     // only show a placeholder on a truly empty first load (grid has no cards yet).
     if(!grid.querySelector('.src-card')) grid.innerHTML='<p class="grid-msg">Loading sources…</p>';
