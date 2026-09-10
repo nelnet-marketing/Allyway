@@ -915,7 +915,12 @@ let arcRuleMap = {};
 
 const arcOn = () => !!window.NelnetConnect;
 // The approved endpoint's base already ends in /api, so paths start at the version segment.
-const arcGet = (path, query) => NelnetConnect.get(ARC_EP, query ? {path, query} : {path});
+// Rewrap rate_limited here, once, so every ARC call (rules, sources, latest-scan, findings)
+// surfaces the same plain-English reason instead of a bare {code,message} object reaching a
+// catch block that doesn't know to translate it (see populateArcPicker).
+const arcGet = (path, query) => NelnetConnect.get(ARC_EP, query ? {path, query} : {path}).catch(e=>{
+  if(e && e.code==='rate_limited'){ const err=new Error('Daily ARC connection limit reached — try again tomorrow.'); err.code='rate_limited'; throw err; }
+  throw e; });
 
 /* Ported from index.js — keep behaviour identical so fingerprints match script-pulled scans. */
 function arcSanitize(s){ if(!s) return '';
@@ -1062,7 +1067,7 @@ async function populateArcPicker(){
     const [list, tracked]=await Promise.all([arcSourceListCached(), loadSources()]);
     all=list.map(s=>s.title).filter(Boolean).sort((a,b)=>a.localeCompare(b));
     known=new Set(tracked.map(s=>s.source.toLowerCase()));
-  }catch(e){ sel.innerHTML=`<option>Could not reach ARC</option>`; return; }
+  }catch(e){ sel.innerHTML=`<option>${esc(e.message||'Could not reach ARC')}</option>`; return; }
   if(!all.length){ sel.innerHTML=`<option>ARC returned no sources</option>`; return; }
   const render=()=>{
     const filtered=all.filter(t=>known.has(t.toLowerCase()));
