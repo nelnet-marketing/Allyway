@@ -494,6 +494,8 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <label class="chk"><input type="checkbox" id="filter-lowvol"> Hide low-volume (≤2 pages)</label>
         <button class="bulk-sel" id="btn-worklist" type="button" style="margin-top:0">⬇ Export work list (CSV)</button>
         <button class="bulk-sel" id="btn-backup" type="button" style="margin-top:0">⬇ Back up triage (CSV)</button>
+        <label class="bulk-sel" for="triage-restore-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">⬆ Restore triage backup (CSV)</label>
+        <input id="triage-restore-input" type="file" accept=".csv" hidden>
         <span class="spacer" id="result-count"></span>
       </div>
       <div class="tbl-wrap">
@@ -2178,6 +2180,83 @@ function exportTriage(){
   downloadRows(rows, `${state.source} - triage backup.csv`);
   toast(`Backed up ${nD} decision${nD===1?'':'s'} + ${nM} manual finding${nM===1?'':'s'}.`);
 }
+/* Minimal RFC4180 CSV parser — handles quoted fields, doubled-quote escapes, and commas/
+   newlines inside quotes (a multi-line fix-instructions field roundtrips through exactly
+   this). Returns an array of {column: value} objects keyed by the header row. */
+function parseCSV(text){
+  text=text.replace(/^﻿/,'');   // strip the BOM downloadRows/downloadCSV writes
+  const rows=[]; let row=[], field='', inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQuotes){
+      if(c==='"'){ if(text[i+1]==='"'){ field+='"'; i++; } else inQuotes=false; }
+      else field+=c;
+    } else if(c==='"') inQuotes=true;
+    else if(c===','){ row.push(field); field=''; }
+    else if(c==='\r'){ /* skip — \n follows */ }
+    else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+    else field+=c;
+  }
+  if(field.length||row.length){ row.push(field); rows.push(row); }
+  if(!rows.length) return [];
+  const header=rows[0];
+  return rows.slice(1).filter(r=>r.length>1||r[0]!=='').map(r=>{ const o={}; header.forEach((h,i)=>o[h]=r[i]??''); return o; });
+}
+/* Restore a "<source> - triage backup.csv" (from exportTriage) — REPLACES this source's
+   current dispositions and manual findings with whatever the file contains. Site-wide
+   config (the xcat list) is intentionally never restored from a per-source backup: it isn't
+   scoped to one source, and silently changing every other source's "Can't fix" dropdown
+   from a single restore would be a surprising side effect of what looks like a local action. */
+async function restoreTriageFromCsv(file){
+  if(!isAdmin()){ toast('Restoring a triage backup is admin-only.','error'); return; }
+  if(!state) return;
+  const src=state.source;
+  try{
+    const parsed=parseCSV(await file.text());
+    const dispRows=[], manualRows=[];
+    for(const r of parsed){
+      if(r.kind==='disp'){
+        const d={kind:'disp',source:src,dkey:r.dkey};
+        if(r.status) d.status=r.status;
+        if(r.reason) d.reason=r.reason;
+        if(r.xcat) d.xcat=r.xcat;
+        if(r.assignee) d.assignee=r.assignee;
+        if(r.globalFix==='yes') d.globalFix=true;
+        if(r.notes) d.notes=r.notes;
+        if(r.fix) d.fix=r.fix;
+        dispRows.push(d);
+      } else if(r.kind==='manual'){
+        const m={kind:'manual',source:src,mid:r.dkey};
+        if(r.status) m.status=r.status;
+        if(r.assignee) m.assignee=r.assignee;
+        if(r.notes) m.note=r.notes;   // export column is "notes"; the in-app field is singular "note"
+        if(r.fix) m.fix=r.fix;
+        if(r.title) m.title=r.title;
+        if(r.url) m.url=r.url;
+        if(r.type) m.type=r.type;
+        if(r.severity) m.severity=r.severity;
+        manualRows.push(m);
+      }
+    }
+    if(!dispRows.length && !manualRows.length){ toast('No disposition or manual rows found in that file.','error'); return; }
+    showLoading(`Restoring ${src} triage…`);
+    const CH=120;
+    if(dispRows.length){
+      await NS().putRecords(dispRows.slice(0,CH), {replaceWhere:{kind:'disp',source:src}});   // 1st chunk replaces every existing disposition
+      for(let i=CH;i<dispRows.length;i+=CH) await NS().putRecords(dispRows.slice(i,i+CH));
+    }
+    if(manualRows.length){
+      await NS().putRecords(manualRows.slice(0,CH), {replaceWhere:{kind:'manual',source:src}});
+      for(let i=CH;i<manualRows.length;i+=CH) await NS().putRecords(manualRows.slice(i,i+CH));
+    }
+    invalidateRows();
+    await loadSource(src);   // reload so the table reflects the restored dispositions
+    const st=await sourceStats(src).catch(()=>null);
+    if(st){ statsCache[src]=st; await writeSummary(src, st); }
+    hideLoading();
+    toast(`Restored ${dispRows.length} decision${dispRows.length===1?'':'s'} + ${manualRows.length} manual finding${manualRows.length===1?'':'s'} for ${src}.`);
+  }catch(e){ hideLoading(); toast('Restore failed: '+(e.code||e.message),'error'); }
+}
 
 /* ── Sorting ────────────────────────────────────────────────── */
 document.getElementById('head-row').addEventListener('click', e=>{
@@ -2202,6 +2281,9 @@ async function init(){
   document.getElementById('btn-add-manual').addEventListener('click',()=>openManualForm(''));
   document.getElementById('btn-worklist').addEventListener('click',exportWorkList);
   document.getElementById('btn-backup').addEventListener('click',exportTriage);
+  { const ri=document.getElementById('triage-restore-input');
+    ri.addEventListener('change',e=>{ if(e.target.files[0]) restoreTriageFromCsv(e.target.files[0]); e.target.value=''; });
+    document.querySelector('label[for=triage-restore-input]').addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();ri.click();}}); }
   document.getElementById('stale-reload').addEventListener('click',()=>location.reload());
   document.getElementById('home-link').addEventListener('click',e=>{ e.preventDefault(); showPicker(true); saveLastView(''); });
   document.getElementById('hdr-src').addEventListener('change',e=>{ if(e.target.value && (!state || e.target.value!==state.source)) loadSource(e.target.value); });
