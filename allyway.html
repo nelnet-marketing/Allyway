@@ -120,6 +120,15 @@ table.defects tr.detail-row.hidden{display:none;}
 .rbar-fill.untriaged{background:var(--gold);}
 .rbar-fill.active{background:var(--secondary);}
 .rbar-value{font-size:12px;font-weight:700;color:var(--dark-gray);text-align:right;font-variant-numeric:tabular-nums;}
+/* Homepage leadership summary — the "are we improving, by how much" view. */
+.leadership-card{margin-bottom:22px;border:1px solid var(--hairline);border-radius:var(--rl);background:var(--white);padding:18px 20px;}
+.leadership-head{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px;}
+.leadership-head h3{font-family:'Red Hat Display',sans-serif;font-size:16px;color:var(--dark-gray);}
+.leadership-site-picker{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--dark-gray);}
+.leadership-stats{display:flex;gap:28px;flex-wrap:wrap;margin-bottom:16px;}
+.leadership-stat__n{font-family:'Red Hat Display',sans-serif;font-size:28px;font-weight:700;color:var(--dark-green);line-height:1.1;}
+.leadership-stat__l{font-size:12px;color:var(--gray);margin-top:2px;}
+.leadership-chart{margin-top:4px;}
 .done-tick{color:var(--dark-green);font-weight:700;margin-right:5px;}
 .todo-badge{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:11px;background:#FEF9E7;color:#7a5000;border:1px solid #e8d9a8;font-size:11px;font-weight:700;vertical-align:1px;}
 table.defects tr.rule-done td{background:var(--row-done);}   /* triaged work recedes, unfinished sits forward — tint, not opacity, so no text loses contrast */
@@ -450,6 +459,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 <div class="main">
   <div class="card"><div class="card-body">
     <div id="picker-area">
+      <div id="leadership-slot"></div>
       <div class="picker-head">
         <div><h2 id="picker-title">Sources</h2><p id="picker-help" class="picker-sub"></p></div>
         <div id="picker-actions"></div>
@@ -783,6 +793,84 @@ async function loadSources(){
   for(const it of await queryAll({kind:'source'})){ const s=it.data.source; if(seen.has(s))continue; seen.add(s); out.push({source:s,scanDate:it.data.scanDate}); }
   return out.sort((a,b)=>a.source.localeCompare(b.source));
 }
+
+/* ── Leadership summary (homepage) — "are we improving, and by how much" ──────────
+   Built entirely from kind:'trend' snapshots (one per source per scan, written by
+   writeTrendSnapshot on every ingest). Loaded once per picker view and cached; the
+   site-picker dropdown re-renders from the cache, no refetch. */
+const MINUTES_PER_FINDING = 3;   // Teisha's estimate: some findings are trivial, some aren't — 3 min average
+let _trendCache = null;
+// Pure: takes trend-record data objects (any order), returns everything the leadership view
+// needs. Split out from loadTrendAggregate (which just fetches + calls this) so the "as-of"
+// merge — the one piece of real logic here — can be unit-tested without hitting storage.
+function aggregateTrendRows(rows){
+  rows = [...rows].sort((a,b)=>(a.computedAt||0)-(b.computedAt||0));
+  const bySource = new Map();
+  for(const d of rows){ if(!bySource.has(d.source)) bySource.set(d.source,[]); bySource.get(d.source).push(d); }
+  // Overall series: at each event (any source), total = sum of every source's most-recently-known
+  // active count as of that moment. Sources scan on independent schedules, so this "as-of" merge
+  // is what makes a single combined line meaningful instead of just concatenating unrelated points.
+  const latest = new Map(); const overall = [];
+  for(const d of rows){ latest.set(d.source, d.active); overall.push({date:d.scanDate, t:d.computedAt, total:[...latest.values()].reduce((a,b)=>a+b,0)}); }
+  const currentActive = [...latest.values()].reduce((a,b)=>a+b,0);
+  const totalConfirmedFixed = rows.reduce((a,d)=>a+(d.confirmedFixed||0),0);
+  const totalCarriedForward = rows.reduce((a,d)=>a+(d.carriedForward||0),0);
+  return { bySource, overall, currentActive, totalConfirmedFixed, totalCarriedForward };
+}
+async function loadTrendAggregate(){
+  return aggregateTrendRows((await queryAll({kind:'trend'})).map(it=>it.data));
+}
+// Single-series SVG line chart — 2px round-cap line, >=8px end dots (native <title> for the
+// per-point value, a lightweight stand-in for a full hover layer), direct end label, hairline
+// baseline. One series needs no legend; the card's own heading already says what's plotted.
+function renderTrendChartSVG(points, opts={}){
+  if(!points.length) return `<p class="grid-msg">No trend data yet — it starts accumulating from your next scan.</p>`;
+  const w=opts.width||640, h=opts.height||150, padL=8, padR=44, padT=16, padB=24;
+  const val=p=>p.total ?? p.active ?? 0;
+  const maxY=Math.max(1,...points.map(val));
+  const xScale=i=>padL+(points.length>1?(i/(points.length-1))*(w-padL-padR):0);
+  const yScale=v=>h-padB-(v/maxY)*(h-padT-padB);
+  const path=points.map((p,i)=>`${i===0?'M':'L'}${xScale(i).toFixed(1)},${yScale(val(p)).toFixed(1)}`).join(' ');
+  const dots=points.map((p,i)=>`<circle cx="${xScale(i).toFixed(1)}" cy="${yScale(val(p)).toFixed(1)}" r="4" fill="${opts.color||'var(--dark-green)'}"><title>${esc(p.date||'')}: ${val(p)}</title></circle>`).join('');
+  const last=points[points.length-1], lastX=xScale(points.length-1), lastY=yScale(val(last));
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(opts.ariaLabel||'Trend over time')}" style="width:100%;height:${h}px;overflow:visible">
+    <line x1="${padL}" y1="${h-padB}" x2="${w-padR}" y2="${h-padB}" stroke="var(--hairline)" stroke-width="1"/>
+    <path d="${path}" fill="none" stroke="${opts.color||'var(--dark-green)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    ${dots}
+    <text x="${(lastX+10).toFixed(1)}" y="${(lastY+4).toFixed(1)}" font-size="13" font-weight="700" fill="var(--dark-gray)">${val(last)}</text>
+  </svg>`;
+}
+async function renderLeadershipView(selectedSrc){
+  const slot=document.getElementById('leadership-slot');
+  if(!_trendCache){ try{ _trendCache=await loadTrendAggregate(); }catch{ slot.innerHTML=''; return; } }
+  const t=_trendCache;
+  if(!t.overall.length){ slot.innerHTML=''; return; }   // nothing accumulated yet — stay quiet, not an empty card
+  const sites=[...t.bySource.keys()].sort((a,b)=>a.localeCompare(b));
+  const opts=`<option value="">All sources</option>${sites.map(s=>`<option value="${esc(s)}"${s===selectedSrc?' selected':''}>${esc(s)}</option>`).join('')}`;
+  let stats, chart, chartLabel;
+  if(selectedSrc && t.bySource.has(selectedSrc)){
+    const series=t.bySource.get(selectedSrc);
+    const cf=series.reduce((a,d)=>a+(d.confirmedFixed||0),0), carried=series.reduce((a,d)=>a+(d.carriedForward||0),0);
+    stats=[[series[series.length-1].active,'Active findings, this site'],[cf,'Confirmed fixed, this site'],
+      [Math.round(carried*MINUTES_PER_FINDING/60),'Hours saved, this site']];
+    chart=renderTrendChartSVG(series,{ariaLabel:`Active findings over time for ${selectedSrc}`});
+    chartLabel=`Active findings — ${selectedSrc}`;
+  } else {
+    stats=[[t.currentActive,'Active findings, all sources'],[t.totalConfirmedFixed,'Confirmed fixed, all time'],
+      [Math.round(t.totalCarriedForward*MINUTES_PER_FINDING/60),`Hours saved (@ ${MINUTES_PER_FINDING} min/finding)`]];
+    chart=renderTrendChartSVG(t.overall,{ariaLabel:'Total active findings across all sources over time'});
+    chartLabel='Active findings — all sources';
+  }
+  slot.innerHTML=`<div class="leadership-card">
+    <div class="leadership-head">
+      <h3>${esc(chartLabel)}</h3>
+      <label class="leadership-site-picker">Drill into <select id="leadership-site">${opts}</select></label>
+    </div>
+    <div class="leadership-stats">${stats.map(([n,l])=>`<div><div class="leadership-stat__n">${n}</div><div class="leadership-stat__l">${esc(l)}</div></div>`).join('')}</div>
+    <div class="leadership-chart">${chart}</div>
+  </div>`;
+  document.getElementById('leadership-site').addEventListener('change',e=>renderLeadershipView(e.target.value));
+}
 /* Canonical dashboard-summary math — BOTH streams + active manual a11y. Shared by sourceStats + saveNow.
    Global-fix rules collapse to one item here exactly as in renderStats, so card and tab agree. */
 const SUMMARY_V = 2;   // bump when this math changes — older persisted summaries are ignored, then recomputed
@@ -1025,7 +1113,12 @@ function reconcileDiffOne(oldRows, newRows, disp){
   const activeBefore=computeSummary(oldDefects,{},disp,[]).active;
   const activeAfter=computeSummary(newDefects,{},dispAfter,[]).active;
 
-  return {confirmedFixed,fixDidntTake,noLongerDetected,newFindings,escalated,activeBefore,activeAfter};
+  // Findings that needed ZERO human attention this cycle — present before and after, with no
+  // reopen event. This is the "time saved" line: without carry-forward, every one of these
+  // would need re-triage from scratch on every re-scan.
+  const carriedForward=newFp.size-newFindings.length-fixDidntTake.length-escalated.length;
+
+  return {confirmedFixed,fixDidntTake,noLongerDetected,newFindings,escalated,activeBefore,activeAfter,carriedForward};
 }
 function computeReconciliation(oldScanRows, newScan, disp){
   const oldStd=[], oldCon=[];
@@ -1050,7 +1143,7 @@ function writeReconciliation(src, fromDate, toDate, report){
   const trim=list=>list.slice(0,RECONCILE_CAP);
   const pack=r=>({confirmedFixed:trim(r.confirmedFixed), fixDidntTake:trim(r.fixDidntTake),
     noLongerDetected:trim(r.noLongerDetected), newFindings:trim(r.newFindings), escalated:trim(r.escalated),
-    activeBefore:r.activeBefore, activeAfter:r.activeAfter});
+    activeBefore:r.activeBefore, activeAfter:r.activeAfter, carriedForward:r.carriedForward});
   return NS().putRecords([{kind:'reconcile',source:src,v:RECONCILE_V,fromDate,toDate,
     standard:pack(report.standard), contrast:pack(report.contrast), computedAt:Date.now()}],
     {replaceWhere:{kind:'reconcile',source:src}});
@@ -1059,6 +1152,23 @@ async function readReconciliation(src){
   const rows=await queryAll({kind:'reconcile',source:src});
   const d=rows.length ? rows[0].data : null;
   return d && d.v===RECONCILE_V ? d : null;   // older shape (pre per-stream split) — ignore, don't crash on it
+}
+// One point in this source's history, written on every ingest (first-ever scan included, so day
+// one gets a data point too) — the raw material for the homepage's cross-source trend view.
+// Keyed by (source, scanDate) so re-pulling the same ARC scan date doesn't duplicate a point.
+async function writeTrendSnapshot(src, scanDate, scan, disp, report){
+  const dispEff={...disp};
+  if(report) for(const half of [report.standard, report.contrast])
+    for(const item of [...half.fixDidntTake,...half.escalated]) dispEff[item.fp]={status:'untriaged'};
+  const defects={}, contrast={};
+  for(const d of (scan.standard||[])) defects[d.fingerprint]=defectFromScan(d);
+  for(const d of (scan.contrast||[])) contrast[d.fingerprint]=defectFromScan(d);
+  const s=computeSummary(defects,contrast,dispEff,[]);
+  const confirmedFixed=report ? report.standard.confirmedFixed.length+report.contrast.confirmedFixed.length : 0;
+  const carriedForward=report ? report.standard.carriedForward+report.contrast.carriedForward : 0;
+  return NS().putRecords([{kind:'trend',source:src,scanDate:scanDate||'',active:s.active,suppressed:s.suppressed,
+    verify:s.verify,confirmedFixed,carriedForward,computedAt:Date.now()}],
+    {replaceWhere:{kind:'trend',source:src,scanDate:scanDate||''}});
 }
 // Runs a scan through reconciliation (if a prior scan exists for this source) before ingesting
 // it, so the diff is computed against what's about to be overwritten, then persists both the
@@ -1073,6 +1183,7 @@ async function reconcileAndIngest(scan){
   const report = hadPriorScan ? computeReconciliation(oldScanRows, scan, disp) : null;
   await ingestScanToStorage(scan);
   if(report){ await applyReconciliationEffects(src, report); await writeReconciliation(src, fromDate, scan.scanDate||'', report); }
+  await writeTrendSnapshot(src, scan.scanDate||'', scan, disp, report);
   return report;
 }
 // Compact one-line summary of a reconciliation report for a toast (both streams combined —
@@ -2107,6 +2218,7 @@ async function showPicker(forcePick){
   const help=document.getElementById('picker-help'), actions=document.getElementById('picker-actions'), grid=document.getElementById('source-grid');
   if(NS()){
     const admin = !!(NS().viewer && NS().viewer.isAdmin);
+    _trendCache=null; renderLeadershipView();   // every viewer sees this, not just admins — it's the leadership-facing view
     help.textContent = admin ? (arcOn() ? 'Pull a fresh scan from ARC, or click a source to triage.' : 'Click a source to triage, or load a new scan.json.') : 'Click a source to triage.';
     actions.innerHTML = admin ? `${arcOn()?`<span class="arc-picker" id="arc-picker">
         <label for="arc-src">ARC source</label>
@@ -2138,6 +2250,7 @@ async function showPicker(forcePick){
     });
     return;
   } else {
+    document.getElementById('leadership-slot').innerHTML='';
     help.innerHTML='Local preview — load a <code>&lt;source&gt; - scan.json</code> from <code>node index.js</code>. Nothing is saved; use Rideshare for real triage.';
     actions.innerHTML='';
     grid.innerHTML = `<div class="grid-msg"><label class="bulk-sel" for="file-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer;display:inline-block">Load scan.json…</label><input id="file-input" type="file" accept=".json" hidden></div>`;
