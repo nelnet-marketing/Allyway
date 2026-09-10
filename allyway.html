@@ -93,6 +93,12 @@ table.defects tr.detail-row.hidden{display:none;}
 .chip.b-active{background:#EAF7FB;color:#1A5A6B;border-color:#b9dde8;}
 .chip.b-verify{background:var(--soft-fill);color:var(--green-ink);border-color:#cfe0b0;}
 .chip.b-suppressed{background:#F1F2F0;color:var(--gray);border-color:var(--hairline);}
+.chip.b-escalate{background:#FDEDEC;color:#C0392B;border-color:#f3c6c2;}
+.reconcile-card summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.reconcile-card .card-body h4{font-size:12.5px;color:var(--dark-gray);margin:14px 0 6px;font-family:'Red Hat Display',sans-serif;}
+.reconcile-card .card-body h4:first-child{margin-top:0;}
+.reconcile-list{margin:0;padding-left:20px;font-size:12.5px;color:var(--dark-gray);}
+.reconcile-list li{margin-bottom:3px;}
 .done-tick{color:var(--dark-green);font-weight:700;margin-right:5px;}
 .todo-badge{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:11px;background:#FEF9E7;color:#7a5000;border:1px solid #e8d9a8;font-size:11px;font-weight:700;vertical-align:1px;}
 table.defects tr.rule-done td{background:var(--row-done);}   /* triaged work recedes, unfinished sits forward — tint, not opacity, so no text loses contrast */
@@ -281,6 +287,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 :root[data-theme="dark"] .chip.b-active{background:#16303D;color:#7FC9EA;border-color:#245166;}
 :root[data-theme="dark"] .chip.b-verify{background:var(--soft-fill);color:var(--green-ink);border-color:#3F5A2A;}
 :root[data-theme="dark"] .chip.b-suppressed{background:#262B33;color:var(--gray);border-color:#3B424C;}
+:root[data-theme="dark"] .chip.b-escalate{background:#3A1620;color:#F06BA0;border-color:#5C2430;}
 /* Status badges */
 :root[data-theme="dark"] .status-sel.b-untriaged{border-color:#C9A23A;color:#E8B84D;background:#2B2410;}
 :root[data-theme="dark"] .status-sel.b-active{border-color:#6E9B3E;color:#9FD46A;background:#1F2A18;}
@@ -440,6 +447,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <button class="tab" type="button" data-groupby="signature" aria-pressed="true" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Signature</button>
         <a id="colorway-link" class="colorway-link" href="https://rideshare-internal.nelnettools.com/colorway/" target="_blank" rel="noopener noreferrer">Open in Colorway<span class="ext" aria-hidden="true">↗</span><span class="sr-only">(opens in new tab)</span></a>
       </div>
+      <div id="reconcile-slot"></div>
       <div class="stat-row" id="stat-row"></div>
       <div class="toolbar">
         <label for="filter-search">Search <input type="search" id="filter-search" placeholder="Filter by rule title…"></label>
@@ -819,9 +827,9 @@ async function loadSource(src, localScan){
   const _spin = !!NS();                              // only Rideshare's multi-query load lags; skip flash in local preview
   if(_spin) showLoading('Loading '+src+'…');
   try{
-  let scan, dispositions={}, manualFindings=[], xcats=DEFAULT_XCATS.slice();
+  let scan, dispositions={}, manualFindings=[], xcats=DEFAULT_XCATS.slice(), reconcile=null;
   if(NS()){
-    // scan / disp / manual / config are independent — fetch concurrently instead of one-after-another
+    // scan / disp / manual / config / reconcile are independent — fetch concurrently
     const [scanRows,dispRows,manualRows,cfgRows]=await Promise.all([
       queryAll({kind:'scan',source:src}), queryAll({kind:'disp',source:src}),
       queryAll({kind:'manual',source:src}), queryAll({kind:'config',source:'_site'})]);
@@ -831,12 +839,13 @@ async function loadSource(src, localScan){
     for(const [id,m] of newestByKey(manualRows,'mid')) if(m) manualFindings.push({id,...m});
     const cfg=cfgRows[0];
     if(cfg&&Array.isArray(cfg.data.list)&&cfg.data.list.length) xcats=cfg.data.list;
+    reconcile=await readReconciliation(src).catch(()=>null);
   } else scan=localScan;   // local preview: no stored dispositions — start empty
   const defects={}, contrast={};
   for(const sd of (scan.standard||[])) defects[sd.fingerprint]=defectFromScan(sd);
   for(const sd of (scan.contrast||[])) contrast[sd.fingerprint]=defectFromScan(sd);
 
-  state={source:src, scanDate:scan.scanDate||'', defects, contrast, dispositions, xcats, manualFindings};
+  state={source:src, scanDate:scan.scanDate||'', defects, contrast, dispositions, xcats, manualFindings, reconcile};
   snapshotSaved();   // baseline = what we just loaded from storage; saves now write only changes
   migrateXcats();
   activateSource();
@@ -855,9 +864,35 @@ function activateSource(){
   document.getElementById('picker-area').hidden=true;
   document.getElementById('tracker-area').hidden=false;
   populateHeaderSource();
+  renderReconcileCard();
   setSave('saved');
   saveLastView(state.source);   // remember this as the viewer's last view
   updateFilterOptions(); recomputeOrder(); render();
+}
+// "What changed since last scan" — a persistent, re-openable card (not a toast) so it's still
+// there for a leadership walkthrough days after the pull that produced it.
+function renderReconcileCard(){
+  const slot=document.getElementById('reconcile-slot');
+  const r=state.reconcile;
+  if(!r){ slot.innerHTML=''; return; }
+  const total=r.confirmedFixed.length+r.fixDidntTake.length+r.noLongerDetected.length+r.newFindings.length+r.escalated.length;
+  const pill=(cls,n,label)=>n?`<span class="chip b-${cls}"><b>${n}</b> ${esc(label)}</span>`:'';
+  const range=r.fromDate&&r.toDate&&r.fromDate!==r.toDate?`${esc(r.fromDate)} → ${esc(r.toDate)}`:esc(r.toDate||'latest scan');
+  const section=(title,items,fmt)=>items.length?`<h4>${esc(title)} (${items.length})</h4><ul class="reconcile-list">${items.map(fmt).join('')}</ul>`:'';
+  const body=[
+    section('✅ Confirmed fixed', r.confirmedFixed, i=>`<li>${esc(i.title)}</li>`),
+    section("🔁 Fix didn't take — reopened", r.fixDidntTake, i=>`<li>${esc(i.title)} <span style="color:var(--gray)">(still on ${i.pages} page${i.pages===1?'':'s'})</span></li>`),
+    section('🔍 No longer detected (unverified)', r.noLongerDetected, i=>`<li>${esc(i.title)} <span style="color:var(--gray)">(${i.confidence} confidence, was ${i.pages} page${i.pages===1?'':'s'})</span></li>`),
+    section('🆕 New this scan', r.newFindings, i=>`<li>${esc(i.title)} <span style="color:var(--gray)">(${i.pages} page${i.pages===1?'':'s'})</span></li>`),
+    section('⬆️ Escalated — reopened', r.escalated, i=>`<li>${esc(i.title)} <span style="color:var(--gray)">(${i.from} → ${i.pages} pages)</span></li>`),
+  ].join('');
+  slot.innerHTML=`<details class="suppressed-sec reconcile-card" ${total?'open':''}>
+    <summary>What changed since last scan (${range})
+      ${pill('verify',r.confirmedFixed.length,'confirmed fixed')}${pill('escalate',r.fixDidntTake.length,"fix didn't take")}${pill('untriaged',r.noLongerDetected.length,'no longer detected')}${pill('active',r.newFindings.length,'new')}${pill('escalate',r.escalated.length,'escalated')}
+      ${total?'':'<span style="color:var(--gray);font-weight:400">Nothing changed.</span>'}
+    </summary>
+    <div class="card-body">${body}</div>
+  </details>`;
 }
 // Header source dropdown — quick-switch between sources without going home.
 async function populateHeaderSource(){
@@ -881,15 +916,95 @@ async function ingestScanToStorage(scan){
   await NS().putRecords([{kind:'source',source:src,scanDate:when}], {replaceWhere:{kind:'source',source:src}});
   invalidateRows();   // a whole scan slice was just replaced
 }
+
+/* ── Reconciliation — "why did the count change" (spec §5–8) ─────────
+   Runs BEFORE the new scan overwrites the old one, comparing old vs new fingerprints
+   against current dispositions, per source. Fingerprint is the join key throughout —
+   the same key dispositions already use — so this needs no new identity scheme.
+   Rule-level only (dkey with no `|||`): the per-page out_of_scope override is a finer-
+   grained exclusion layer the spec doesn't fold into this lifecycle model. */
+const RECONCILE_ESCALATE_PAGES=3, RECONCILE_ESCALATE_MULT=2;
+function computeReconciliation(oldScanRows, newScan, disp){
+  const oldFp=new Map(), title=new Map();
+  for(const r of oldScanRows){ const d=r.data; oldFp.set(d.fingerprint,(d.pages||[]).length); title.set(d.fingerprint,d.title||d.fingerprint); }
+  const newFp=new Map();
+  for(const d of [...(newScan.standard||[]),...(newScan.contrast||[])]){ newFp.set(d.fingerprint,(d.pages||[]).length); if(!title.has(d.fingerprint))title.set(d.fingerprint,d.title||d.fingerprint); }
+
+  const confirmedFixed=[], fixDidntTake=[], noLongerDetected=[], newFindings=[], escalated=[];
+  for(const [fp,pages] of newFp){
+    const d=disp[fp], status=d&&d.status;
+    if(!oldFp.has(fp)){ newFindings.push({fp,title:title.get(fp),pages}); continue; }
+    if(status==='fixed'){ fixDidntTake.push({fp,title:title.get(fp),pages}); continue; }
+    if(d && bucket(status)==='suppressed'){
+      const prev=oldFp.get(fp);
+      if(pages-prev>=RECONCILE_ESCALATE_PAGES || pages>=prev*RECONCILE_ESCALATE_MULT) escalated.push({fp,title:title.get(fp),pages,from:prev});
+    }
+  }
+  for(const [fp,pages] of oldFp){
+    if(newFp.has(fp)) continue;   // still present — handled above
+    const d=disp[fp], status=d&&d.status;
+    if(status==='fixed') confirmedFixed.push({fp,title:title.get(fp),pages});
+    else if(!d || bucket(status)!=='suppressed') noLongerDetected.push({fp,title:title.get(fp),pages,confidence:pages>=3?'high':'low'});
+    // suppressed + absent: stays suppressed silently, per spec §5 — no event
+  }
+  return {confirmedFixed,fixDidntTake,noLongerDetected,newFindings,escalated};
+}
+// Reopen what the spec says must not stay silently hidden: a "Fixed" claim the new scan
+// disproved, or a suppressed finding whose footprint grew past the escalation guard.
+async function applyReconciliationEffects(src, report){
+  const rows=[];
+  for(const item of report.fixDidntTake) rows.push({kind:'disp',source:src,dkey:item.fp,status:'untriaged',reopenedReason:'fix_didnt_take',reopenedAt:Date.now()});
+  for(const item of report.escalated) rows.push({kind:'disp',source:src,dkey:item.fp,status:'untriaged',reopenedReason:'escalated',reopenedAt:Date.now()});
+  for(const row of rows) await NS().putRecords([row], {replaceWhere:{kind:'disp',source:src,dkey:row.dkey}});
+  if(rows.length) invalidateRows();
+}
+const RECONCILE_CAP=200;   // defensive cap per list so one huge source can't blow the 64KB record
+function writeReconciliation(src, fromDate, toDate, report){
+  const trim=list=>list.slice(0,RECONCILE_CAP);
+  return NS().putRecords([{kind:'reconcile',source:src,fromDate,toDate,
+    confirmedFixed:trim(report.confirmedFixed), fixDidntTake:trim(report.fixDidntTake),
+    noLongerDetected:trim(report.noLongerDetected), newFindings:trim(report.newFindings),
+    escalated:trim(report.escalated), computedAt:Date.now()}], {replaceWhere:{kind:'reconcile',source:src}});
+}
+async function readReconciliation(src){
+  const rows=await queryAll({kind:'reconcile',source:src});
+  return rows.length ? rows[0].data : null;
+}
+// Runs a scan through reconciliation (if a prior scan exists for this source) before ingesting
+// it, so the diff is computed against what's about to be overwritten, then persists both the
+// updated dispositions (reopened items) and the report itself for the dashboard to show.
+async function reconcileAndIngest(scan){
+  const src=scan.source;
+  const [oldScanRows, dispRows]=await Promise.all([queryAll({kind:'scan',source:src}), queryAll({kind:'disp',source:src})]);
+  const hadPriorScan=oldScanRows.length>0;
+  let fromDate='';
+  const disp={}; for(const [k,d] of newestByKey(dispRows,'dkey')) if(d && !k.includes('|||')) disp[k]=d;
+  if(hadPriorScan) for(const r of oldScanRows) if(r.data.scanDate){ fromDate=r.data.scanDate; break; }
+  const report = hadPriorScan ? computeReconciliation(oldScanRows, scan, disp) : null;
+  await ingestScanToStorage(scan);
+  if(report){ await applyReconciliationEffects(src, report); await writeReconciliation(src, fromDate, scan.scanDate||'', report); }
+  return report;
+}
+// Compact one-line summary of a reconciliation report for a toast; null report (first-ever scan) → ''.
+function reconcileSummary(report){
+  if(!report) return '';
+  const parts=[];
+  if(report.confirmedFixed.length) parts.push(`✅ ${report.confirmedFixed.length} confirmed fixed`);
+  if(report.fixDidntTake.length) parts.push(`🔁 ${report.fixDidntTake.length} fix didn't take`);
+  if(report.noLongerDetected.length) parts.push(`🔍 ${report.noLongerDetected.length} no longer detected`);
+  if(report.newFindings.length) parts.push(`🆕 ${report.newFindings.length} new`);
+  if(report.escalated.length) parts.push(`⬆️ ${report.escalated.length} escalated`);
+  return parts.length ? ' Since last scan: '+parts.join(' · ')+'.' : ' Nothing changed since last scan.';
+}
 async function adminLoadScan(file){
   try{ const scan=JSON.parse(await file.text());
     if(!scan.source||!Array.isArray(scan.standard)) throw new Error('Not an Allyway scan.json.');
     showLoading(`Saving ${scan.source}…`);
-    await ingestScanToStorage(scan);
+    const report=await reconcileAndIngest(scan);
     hideLoading();
     const st=await sourceStats(scan.source).catch(()=>null);   // scan changed — recompute + overwrite any stale summary
     if(st){ statsCache[scan.source]=st; await writeSummary(scan.source, st); } else delete statsCache[scan.source];
-    toast(`${scan.source}: ${scan.standard.length} rules + ${(scan.contrast||[]).length} contrast saved. Added to the dashboard.`);
+    toast(`${scan.source}: ${scan.standard.length} rules + ${(scan.contrast||[]).length} contrast saved.${reconcileSummary(report)}`);
     await showPicker(true);   // stay on the dashboard so you can load more sources; click the card to open one
   }catch(e){ hideLoading(); toast('Load failed: '+(e.code||e.message),'error'); }
 }
@@ -1038,12 +1153,12 @@ async function adminPullFromArc(sourceTitle){
 
     const built=arcBuildScanJson(sourceTitle, rows, contrast, scan);
     showLoading(`Saving ${sourceTitle}…`);
-    await ingestScanToStorage(built);
+    const report=await reconcileAndIngest(built);
     hideLoading();
 
     const st=await sourceStats(sourceTitle).catch(()=>null);   // scan changed — refresh the cached summary
     if(st){ statsCache[sourceTitle]=st; await writeSummary(sourceTitle, st); } else delete statsCache[sourceTitle];
-    toast(`${sourceTitle}: ${built.standard.length} rules + ${built.contrast.length} contrast pulled from ARC (${findings.length} raw findings).`);
+    toast(`${sourceTitle}: ${built.standard.length} rules + ${built.contrast.length} contrast pulled from ARC (${findings.length} raw findings).${reconcileSummary(report)}`);
     await showPicker(true);
   }catch(e){ hideLoading(); toast('ARC pull failed: '+(e.message||e.code),'error'); } }
 
@@ -1102,6 +1217,13 @@ function effAssignee(fp,url){ const pd=url?state.dispositions[`${fp}|||${url}`]:
   if(pd&&pd.assignee) return pd.assignee; const rd=state.dispositions[fp]; return (rd&&rd.assignee)||''; }
 // A rule flagged as one global fix (e.g. a shared nav) — counts as 1 and exports as a single row.
 const isGlobalFix = fp => !!(state.dispositions[fp]||{}).globalFix;
+// A rule the last reconciliation auto-reopened (§ reconciliation) — visible until re-triaged.
+function reopenedBadge(fp){
+  const r=(state.dispositions[fp]||{}).reopenedReason;
+  if(r==='fix_didnt_take') return '<span title="Marked Fixed, but still detected in the latest scan — reopened for re-triage" aria-label="Fix did not take" style="margin-left:6px">🔁</span>';
+  if(r==='escalated') return '<span title="A suppressed finding grew significantly — reopened for re-triage" aria-label="Escalated" style="margin-left:6px">⬆️</span>';
+  return '';
+}
 /* ── Filter helpers (assignee + status) ────────────────────────
    Assignee/status live on dispositions at BOTH rule level (fp) and page level (fp|||url).
    A row matches if ANY backing page carries the value. The rule-level assignee counts even
@@ -1314,7 +1436,7 @@ function renderTable(all,excl){
     const r=ruleRollup(d,excl), did=`det-${cssId(fp)}`;
     const ruleDef=state.dispositions[fp];
     return `<tr class="rule-row ${r.untriaged?'rule-todo':'rule-done'}" data-fp="${esc(fp)}">
-      <td class="clickable" data-toggle="${did}" style="max-width:280px"><button type="button" class="caret-btn" data-toggle="${did}" aria-controls="${did}" aria-expanded="false" aria-label="Toggle detail rows for ${esc(d.rule_title)}"><span class="caret" id="c-${cssId(fp)}"></span></button>${r.untriaged?'':'<span class="done-tick" aria-hidden="true">✓</span>'}<strong>${esc(d.rule_title)}</strong>${r.untriaged?`<span class="todo-badge">${r.untriaged} left</span>`:''}${(state.dispositions[fp]||{}).notes?'<span title="Has a rule note" aria-label="Has a rule note" style="margin-left:6px">📝</span>':''}${isGlobalFix(fp)?'<span title="Single global fix — one place fixes all pages" aria-label="Single global fix" style="margin-left:6px">🌐</span>':''}
+      <td class="clickable" data-toggle="${did}" style="max-width:280px"><button type="button" class="caret-btn" data-toggle="${did}" aria-controls="${did}" aria-expanded="false" aria-label="Toggle detail rows for ${esc(d.rule_title)}"><span class="caret" id="c-${cssId(fp)}"></span></button>${r.untriaged?'':'<span class="done-tick" aria-hidden="true">✓</span>'}<strong>${esc(d.rule_title)}</strong>${r.untriaged?`<span class="todo-badge">${r.untriaged} left</span>`:''}${(state.dispositions[fp]||{}).notes?'<span title="Has a rule note" aria-label="Has a rule note" style="margin-left:6px">📝</span>':''}${isGlobalFix(fp)?'<span title="Single global fix — one place fixes all pages" aria-label="Single global fix" style="margin-left:6px">🌐</span>':''}${reopenedBadge(fp)}
         ${d.description?`<div class="rule-desc">${esc(d.description.slice(0,110))}${d.description.length>110?'…':''}</div>`:''}</td>
       <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(g)}">${esc(g||'—')}</span>${low?'<span class="pill lowvol">low-vol</span>':''}</td>
       <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.activePages}</strong> / ${r.totalPages}</td>
@@ -1689,19 +1811,22 @@ function ensureField(d,status){ const st=SMAP[status]; if(!st||!st.field) return
   // assignee intentionally left blank
 }
 function clearStatus(d){ delete d.status; delete d.assignee; delete d.reason; delete d.xcat; }  // keep .notes
+// A human picking any status — including back to Untriaged — is the human acting on a reopened
+// item, so the "why this came back" badge (§ reconciliation) has done its job and can clear.
+function clearReopened(d){ delete d.reopenedReason; delete d.reopenedAt; }
 function setStatus(fp,url,val){
   const key=url?`${fp}|||${url}`:fp; const cur=state.dispositions[key];
-  if(val==='untriaged'){ if(cur){ clearStatus(cur); if(Object.keys(cur).length===0) delete state.dispositions[key]; } }
-  else { const d={...(cur||{}),status:val}; ensureField(d,val); state.dispositions[key]=d; }
+  if(val==='untriaged'){ if(cur){ clearStatus(cur); clearReopened(cur); if(Object.keys(cur).length===0) delete state.dispositions[key]; } }
+  else { const d={...(cur||{}),status:val}; clearReopened(d); ensureField(d,val); state.dispositions[key]=d; }
   persist();
 }
 function setBulk(fp,val){ // apply a status to the whole rule
   if(val==='untriaged'){   // reset: clear rule default AND every per-page override (notes survive)
     for(const k of Object.keys(state.dispositions)){ if(k.startsWith(fp+'|||')){ const d=state.dispositions[k]; clearStatus(d); if(Object.keys(d).length===0) delete state.dispositions[k]; } }
-    const rd=state.dispositions[fp]; if(rd){ clearStatus(rd); if(Object.keys(rd).length===0) delete state.dispositions[fp]; }
+    const rd=state.dispositions[fp]; if(rd){ clearStatus(rd); clearReopened(rd); if(Object.keys(rd).length===0) delete state.dispositions[fp]; }
     persist(); return;
   }
-  const rd={...(state.dispositions[fp]||{}),status:val}; ensureField(rd,val); state.dispositions[fp]=rd;
+  const rd={...(state.dispositions[fp]||{}),status:val}; clearReopened(rd); ensureField(rd,val); state.dispositions[fp]=rd;
   for(const k of Object.keys(state.dispositions)){
     if(!k.startsWith(fp+'|||')) continue;
     const d=state.dispositions[k];
