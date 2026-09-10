@@ -1045,18 +1045,20 @@ async function applyReconciliationEffects(src, report){
   if(rows.length) invalidateRows();
 }
 const RECONCILE_CAP=200;   // defensive cap per list so one huge source can't blow the 64KB record
+const RECONCILE_V = 2;   // bump when this shape changes — older persisted reports are ignored (same pattern as SUMMARY_V)
 function writeReconciliation(src, fromDate, toDate, report){
   const trim=list=>list.slice(0,RECONCILE_CAP);
   const pack=r=>({confirmedFixed:trim(r.confirmedFixed), fixDidntTake:trim(r.fixDidntTake),
     noLongerDetected:trim(r.noLongerDetected), newFindings:trim(r.newFindings), escalated:trim(r.escalated),
     activeBefore:r.activeBefore, activeAfter:r.activeAfter});
-  return NS().putRecords([{kind:'reconcile',source:src,fromDate,toDate,
+  return NS().putRecords([{kind:'reconcile',source:src,v:RECONCILE_V,fromDate,toDate,
     standard:pack(report.standard), contrast:pack(report.contrast), computedAt:Date.now()}],
     {replaceWhere:{kind:'reconcile',source:src}});
 }
 async function readReconciliation(src){
   const rows=await queryAll({kind:'reconcile',source:src});
-  return rows.length ? rows[0].data : null;
+  const d=rows.length ? rows[0].data : null;
+  return d && d.v===RECONCILE_V ? d : null;   // older shape (pre per-stream split) — ignore, don't crash on it
 }
 // Runs a scan through reconciliation (if a prior scan exists for this source) before ingesting
 // it, so the diff is computed against what's about to be overwritten, then persists both the
