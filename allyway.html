@@ -195,6 +195,8 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .picker-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px;}
 .picker-head h2{font-family:'Red Hat Display',sans-serif;font-size:20px;color:var(--dark-gray);letter-spacing:-0.01em;}
 .picker-sub{font-size:13.5px;color:var(--gray);margin-top:3px;}
+.arc-picker{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin-right:14px;}
+.arc-picker label:first-child{font-size:12.5px;font-weight:600;color:var(--dark-gray);}
 .source-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:14px;}
 .src-card{text-align:left;background:var(--white);border:1px solid var(--hairline);border-radius:var(--rl);padding:16px 18px;cursor:pointer;font-family:inherit;box-shadow:var(--shadow-md);transition:transform .12s,box-shadow .12s,border-color .12s;display:flex;flex-direction:column;gap:13px;}
 .src-card:hover{transform:translateY(-2px);border-color:#d6e3b8;box-shadow:0 8px 24px rgba(17,137,28,.14);}
@@ -1040,22 +1042,36 @@ async function adminPullFromArc(sourceTitle){
     await showPicker(true);
   }catch(e){ hideLoading(); toast('ARC pull failed: '+(e.message||e.code),'error'); } }
 
-// Source chooser for the pull — inline in the dashboard actions, no modal.
-async function openArcPicker(actions){
-  actions.innerHTML=`<span class="grid-msg" role="status">Loading ARC sources…</span>`;
-  let list;
-  try{ showLoading('Loading ARC sources…'); await arcLoadRules(); list=await arcSourceList(); hideLoading(); }
-  catch(e){ hideLoading(); toast('Could not reach ARC: '+(e.message||e.code),'error'); await showPicker(true); return; }
-  const titles=list.map(s=>s.title).filter(Boolean).sort((a,b)=>a.localeCompare(b));
-  if(!titles.length){ toast('ARC returned no sources.','error'); await showPicker(true); return; }
-  actions.innerHTML=`<label class="form-label" for="arc-src">ARC source</label>
-    <select class="form-input" id="arc-src" style="max-width:280px">${titles.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select>
-    <button class="bulk-sel" id="arc-go" style="margin-top:0">Pull latest scan</button>
-    <button class="bulk-sel" id="arc-cancel" style="margin-top:0">Cancel</button>`;
-  const sel=document.getElementById('arc-src');
-  sel.focus();
-  document.getElementById('arc-go').addEventListener('click',()=>adminPullFromArc(sel.value));
-  document.getElementById('arc-cancel').addEventListener('click',()=>showPicker(true));
+// Cache the ARC datasource list for the page's lifetime — the picker is always visible now (not
+// revealed by a click), so populating it must not spend a live call on every dashboard view.
+let _arcSrcCache=null, _arcSrcPromise=null;
+function arcSourceListCached(){
+  if(_arcSrcCache) return Promise.resolve(_arcSrcCache);
+  if(_arcSrcPromise) return _arcSrcPromise;
+  return _arcSrcPromise=arcSourceList().then(list=>{ _arcSrcCache=list; _arcSrcPromise=null; return list; })
+    .catch(e=>{ _arcSrcPromise=null; throw e; });
+}
+// Populate the always-visible ARC source picker. Defaults to sources already tracked on this
+// site (the signal for "what I need" — everything else in ARC is another team's property, a
+// sample/demo site, or archived) with a checkbox to see the full ARC list for onboarding a new one.
+async function populateArcPicker(){
+  const sel=document.getElementById('arc-src'), go=document.getElementById('arc-go'), showAll=document.getElementById('arc-show-all');
+  if(!sel) return;
+  let all, known;
+  try{
+    const [list, tracked]=await Promise.all([arcSourceListCached(), loadSources()]);
+    all=list.map(s=>s.title).filter(Boolean).sort((a,b)=>a.localeCompare(b));
+    known=new Set(tracked.map(s=>s.source.toLowerCase()));
+  }catch(e){ sel.innerHTML=`<option>Could not reach ARC</option>`; return; }
+  if(!all.length){ sel.innerHTML=`<option>ARC returned no sources</option>`; return; }
+  const render=()=>{
+    const filtered=all.filter(t=>known.has(t.toLowerCase()));
+    const titles=(showAll.checked||!filtered.length) ? all : filtered;
+    sel.innerHTML=titles.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  };
+  render(); sel.disabled=false; go.disabled=false;
+  showAll.addEventListener('change',render);
+  go.addEventListener('click',()=>adminPullFromArc(sel.value));
   sel.addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); adminPullFromArc(sel.value); } }); }
 /* One-time normalization of saved X-category names (e.g. HubSpot → HubSpot Form). */
 function migrateXcats(){
@@ -1862,11 +1878,16 @@ async function showPicker(forcePick){
   const help=document.getElementById('picker-help'), actions=document.getElementById('picker-actions'), grid=document.getElementById('source-grid');
   if(NS()){
     const admin = !!(NS().viewer && NS().viewer.isAdmin);
-    help.textContent = admin ? (arcOn() ? 'Click a source to triage, pull a fresh scan from ARC, or load a scan.json.' : 'Click a source to triage, or load a new scan.json.') : 'Click a source to triage.';
-    actions.innerHTML = admin ? `<label class="bulk-sel" for="scan-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">＋ Load scan.json</label><input id="scan-input" type="file" accept=".json" hidden>${arcOn()?`<button class="bulk-sel" id="arc-pull" style="margin-top:0">⟳ Pull from ARC</button>`:''}` : '';
+    help.textContent = admin ? (arcOn() ? 'Pull a fresh scan from ARC, or click a source to triage.' : 'Click a source to triage, or load a new scan.json.') : 'Click a source to triage.';
+    actions.innerHTML = admin ? `${arcOn()?`<span class="arc-picker" id="arc-picker">
+        <label for="arc-src">ARC source</label>
+        <select class="status-sel" id="arc-src" style="max-width:230px;font-weight:600" disabled><option>Loading ARC sources…</option></select>
+        <button class="btn-primary" id="arc-go" type="button" style="margin-top:0;padding:9px 16px;font-size:13px" disabled>⟳ Pull latest scan</button>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:400;color:var(--dark-gray)"><input type="checkbox" id="arc-show-all"> Show all ARC sources</label>
+      </span>`:''}<label class="bulk-sel" for="scan-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">＋ Load scan.json</label><input id="scan-input" type="file" accept=".json" hidden>` : '';
     if(admin){ const si=document.getElementById('scan-input'); si.addEventListener('change',e=>{ if(e.target.files[0]) adminLoadScan(e.target.files[0]); e.target.value=''; });
       document.querySelector('label[for=scan-input]').addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();si.click();}});
-      document.getElementById('arc-pull')?.addEventListener('click',()=>openArcPicker(actions)); }
+      if(arcOn()) populateArcPicker(); }
     // No overlay: cards carry their own loading state. Keep any existing cards visible while we refresh;
     // only show a placeholder on a truly empty first load (grid has no cards yet).
     if(!grid.querySelector('.src-card')) grid.innerHTML='<p class="grid-msg">Loading sources…</p>';
