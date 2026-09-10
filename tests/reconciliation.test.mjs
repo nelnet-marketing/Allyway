@@ -32,16 +32,16 @@ function loadComputeReconciliation() {
 
 const { computeReconciliation } = loadComputeReconciliation();
 
-/* ── Fixtures ─────────────────────────────────────────────────────── */
+/* ── Fixtures (all on the standard stream) ───────────────────────────── */
 const oldScanRows = [
-  { data: { fingerprint: 'A-fixed-gone',        title: 'A', pages: [1,2,3].map(n=>({url:'/'+n})) } },
-  { data: { fingerprint: 'B-fixed-still-there', title: 'B', pages: [1].map(n=>({url:'/'+n})) } },
-  { data: { fingerprint: 'C-active-gone-high',  title: 'C', pages: [1,2,3,4].map(n=>({url:'/'+n})) } },
-  { data: { fingerprint: 'D-untriaged-gone-low',title: 'D', pages: [1].map(n=>({url:'/'+n})) } },
-  { data: { fingerprint: 'F-suppressed-gone',   title: 'F', pages: [1,2].map(n=>({url:'/'+n})) } },
-  { data: { fingerprint: 'G-suppressed-escalate', title: 'G', pages: [1,2].map(n=>({url:'/'+n})) } },
-  { data: { fingerprint: 'H-suppressed-no-escalate', title: 'H', pages: [1,2,3,4,5].map(n=>({url:'/'+n})) } },
-  { data: { fingerprint: 'I-active-unchanged',  title: 'I', pages: [1,2].map(n=>({url:'/'+n})) } },
+  { data: { stream:'standard', fingerprint: 'A-fixed-gone',        title: 'A', pages: [1,2,3].map(n=>({url:'/'+n})) } },
+  { data: { stream:'standard', fingerprint: 'B-fixed-still-there', title: 'B', pages: [1].map(n=>({url:'/'+n})) } },
+  { data: { stream:'standard', fingerprint: 'C-active-gone-high',  title: 'C', pages: [1,2,3,4].map(n=>({url:'/'+n})) } },
+  { data: { stream:'standard', fingerprint: 'D-untriaged-gone-low',title: 'D', pages: [1].map(n=>({url:'/'+n})) } },
+  { data: { stream:'standard', fingerprint: 'F-suppressed-gone',   title: 'F', pages: [1,2].map(n=>({url:'/'+n})) } },
+  { data: { stream:'standard', fingerprint: 'G-suppressed-escalate', title: 'G', pages: [1,2].map(n=>({url:'/'+n})) } },
+  { data: { stream:'standard', fingerprint: 'H-suppressed-no-escalate', title: 'H', pages: [1,2,3,4,5].map(n=>({url:'/'+n})) } },
+  { data: { stream:'standard', fingerprint: 'I-active-unchanged',  title: 'I', pages: [1,2].map(n=>({url:'/'+n})) } },
 ];
 const newScan = { standard: [
   { fingerprint: 'B-fixed-still-there',    title: 'B', pages: [{url:'/1'}] },
@@ -61,7 +61,8 @@ const disp = {
   'I-active-unchanged':    { status: 'in_progress' },
 };
 
-const r = computeReconciliation(oldScanRows, newScan, disp);
+const full = computeReconciliation(oldScanRows, newScan, disp);
+const r = full.standard;
 let fails = 0;
 const has = (list, fp) => list.some(i => i.fp === fp);
 const check = (name, cond) => { console.log(`${cond ? 'ok  ' : 'FAIL'} ${name}`); if (!cond) fails++; };
@@ -88,6 +89,13 @@ check('totals: nothing double-counted',
    B(1)+G(6)+I(2)+E(1)=10 active — H stays suppressed (no escalation), A/C/D are gone from the new scan. */
 check('activeBefore counts only what was active on the OLD scan', r.activeBefore === 7);
 check('activeAfter folds reopened (fix-didn\'t-take + escalated) items in as active', r.activeAfter === 10);
+
+// Per-stream split: an empty contrast stream (no old rows, no new rows) must diff cleanly to
+// all-zero, not throw or bleed standard-stream fingerprints into it.
+check('contrast stream is isolated from standard and empty here',
+  full.contrast.confirmedFixed.length===0 && full.contrast.fixDidntTake.length===0 &&
+  full.contrast.noLongerDetected.length===0 && full.contrast.newFindings.length===0 &&
+  full.contrast.escalated.length===0 && full.contrast.activeBefore===0 && full.contrast.activeAfter===0);
 
 console.log(fails ? `\n${fails} CHECK(S) FAILED` : '\nALL PASS');
 process.exit(fails ? 1 : 0);
