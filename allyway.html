@@ -175,6 +175,15 @@ table.defects tr.rule-todo td{background:var(--row-todo);}
 .detail-tbl .subfield{display:block;margin-top:6px;}
 .detail-tbl th:first-child,.detail-tbl td:first-child{width:210px;}
 .detail-tbl--pages th:first-child,.detail-tbl--pages td:first-child{width:32%;min-width:300px;word-break:break-word;}   /* Page URL reads better with room … */
+.pg-pick{display:inline-flex;align-items:center;margin-right:8px;vertical-align:middle;}
+.bulk-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 10px;padding:8px 10px;border:1px solid var(--hairline);border-radius:var(--r);background:var(--off-white);font-size:13px;}
+.bulk-bar .bulk-fields{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+.bulk-bar .bulk-fields[hidden]{display:none;}
+.bulk-count{font-weight:600;color:var(--dark-gray);}
+.same-list{list-style:none;margin:0 0 10px;padding:0;max-height:300px;overflow:auto;border:1px solid var(--hairline);border-radius:var(--r);}
+.same-list button{display:block;width:100%;text-align:left;padding:8px 10px;background:none;border:0;border-bottom:1px solid var(--hairline);font:inherit;color:var(--dark-gray);cursor:pointer;}
+.same-list button:hover,.same-list button:focus-visible{background:var(--soft-fill);color:var(--green-ink);}
+.same-list .same-url{display:block;font-size:12px;color:var(--gray);word-break:break-all;}
 .detail-tbl--pages th:nth-child(3),.detail-tbl--pages td:nth-child(3){width:90px;}   /* … Component(s) is near-always empty … */
 .detail-tbl th:nth-child(4),.detail-tbl td:nth-child(4){width:300px;}   /* … Sample HTML wants a whole tag … */
 .detail-tbl th:nth-child(5),.detail-tbl td:nth-child(5){width:175px;}   /* … status rides tight */
@@ -524,6 +533,22 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
   </form>
 </dialog>
 
+<dialog id="same-dialog" class="fix-dialog" aria-labelledby="same-title">
+  <form method="dialog" class="fix-form" id="same-form">
+    <div class="fix-head">
+      <h2 id="same-title">Same finding as…</h2>
+      <button type="submit" value="cancel" class="fix-x" aria-label="Close without linking">✕</button>
+    </div>
+    <p id="same-sub" class="fix-sub"></p>
+    <label for="same-q" class="fix-sub" style="display:block;margin-bottom:6px">Search by rule or page URL</label>
+    <input id="same-q" type="search" class="notes-input" autocomplete="off" aria-controls="same-list" style="max-width:none">
+    <p id="same-count" class="fix-sub" role="status" aria-live="polite"></p>
+    <ul id="same-list" class="same-list"></ul>
+    <p class="fix-hint">This page will follow the status and assignee of the page you pick. Its own note, fix and category stay separate.</p>
+    <div class="fix-foot"><button type="submit" value="cancel" class="bulk-sel" style="margin-top:0">Cancel</button></div>
+  </form>
+</dialog>
+
 <dialog id="fb-dialog" class="fix-dialog" aria-labelledby="fb-title">
   <form id="fb-form" class="fix-form" novalidate>
     <div class="fix-head">
@@ -778,7 +803,9 @@ async function loadSources(){
 const SUMMARY_V = 2;   // bump when this math changes — older persisted summaries are ignored, then recomputed
 function computeSummary(defects, contrast, dispositions, manual){
   const excl=new Set(); for(const [k,v] of Object.entries(dispositions)){ if(v.status==='out_of_scope'&&k.includes('|||')) excl.add(k.split('|||')[1]); }
-  const res=(fp,url)=>{ if(excl.has(url))return 'out_of_scope'; const pg=dispositions[`${fp}|||${url}`]; if(pg&&pg.status)return pg.status; const rd=dispositions[fp]; if(rd&&rd.status)return rd.status; return 'untriaged'; };
+  const res=(fp,url)=>{ if(excl.has(url))return 'out_of_scope';
+    const lk=linkTarget(dispositions,fp,url); if(lk){ const [tf,tu]=lk.split('|||'); return res(tf,tu); }   // "same as" page
+    const pg=dispositions[`${fp}|||${url}`]; if(pg&&pg.status)return pg.status; const rd=dispositions[fp]; if(rd&&rd.status)return rd.status; return 'untriaged'; };
   let active=0,suppressed=0,verify=0,untriaged=0,total=0;
   for(const defs of [defects||{}, contrast||{}]) for(const d of Object.values(defs)){
     const c={active:0,suppressed:0,verify:0}; let nUntriaged=0;
@@ -936,16 +963,29 @@ function migrateXcats(){
 function excludedUrls(){ const s=new Set(); for(const [k,v] of Object.entries(state.dispositions)){ if(v.status==='out_of_scope'&&k.includes('|||')) s.add(k.split('|||')[1]); } return s; }
 function resolvePage(fp,url,excl){
   if(excl.has(url)) return {status:'out_of_scope',_viaPage:true};
+  const lk=linkTarget(state.dispositions,fp,url);
+  if(lk){ const [tf,tu]=lk.split('|||'); const t=resolvePage(tf,tu,excl);   // "same as" page: take the target's status
+    return {status:t.status, reason:t.reason, xcat:t.xcat, _linked:lk}; }
   const pg=state.dispositions[`${fp}|||${url}`];
   if(pg && pg.status) return pg;                 // explicit per-page status
   const rd=state.dispositions[fp];
   if(rd && rd.status) return rd;                 // rule default
   return {status:'untriaged'};
 }
+/* "Same as" link: a page's disposition can carry sameAs = another page's key (fp|||url). The page then
+   takes that page's status and assignee; its own note, fix and category stay its own. Links chain
+   (A→B→C resolves to C). Returns the final target's key, or null when there's no link or it loops. */
+function linkTarget(disps,fp,url){
+  const start=`${fp}|||${url}`, seen=new Set(); let key=start;
+  for(;;){ const d=disps[key]; if(!d||!d.sameAs) return key===start?null:key;
+    if(seen.has(key)) return null; seen.add(key); key=d.sameAs; }
+}
 function pageNotes(fp,url){ return (state.dispositions[`${fp}|||${url}`]||{}).notes||''; }
 // Effective assignee for a page: its own if set, else the rule-level owner (so a per-page
 // status override doesn't blank the inherited assignee). url='' asks the rule level directly.
-function effAssignee(fp,url){ const pd=url?state.dispositions[`${fp}|||${url}`]:null;
+function effAssignee(fp,url){ const lk=url?linkTarget(state.dispositions,fp,url):null;
+  if(lk){ const [tf,tu]=lk.split('|||'); return effAssignee(tf,tu); }
+  const pd=url?state.dispositions[`${fp}|||${url}`]:null;
   if(pd&&pd.assignee) return pd.assignee; const rd=state.dispositions[fp]; return (rd&&rd.assignee)||''; }
 // A rule flagged as one global fix (e.g. a shared nav) — counts as 1 and exports as a single row.
 const isGlobalFix = fp => !!(state.dispositions[fp]||{}).globalFix;
@@ -1304,9 +1344,14 @@ function setFix(fp,url,val){ const key=fixKey(fp,url); let d=state.dispositions[
 }
 // A fix target is either a rule/page {fp,url} (stored on a disposition) or a manual finding {mid} (stored on m.fix).
 function tgtManual(){ return _fixTarget && _fixTarget.mid ? (state.manualFindings||[]).find(x=>x.id===_fixTarget.mid) : null; }
-function tgtFix(){ if(!_fixTarget) return ''; const m=tgtManual(); return m ? (m.fix||'') : fixOf(_fixTarget.fp,_fixTarget.url); }
+// A bulk target {fp,urls} edits several pages at once: it shows the fix they all share (blank if they differ).
+function tgtFix(){ if(!_fixTarget) return ''; const m=tgtManual(); if(m) return m.fix||'';
+  if(_fixTarget.urls){ const fx=_fixTarget.urls.map(u=>fixOf(_fixTarget.fp,u)); return fx.every(x=>x===fx[0])?fx[0]:''; }
+  return fixOf(_fixTarget.fp,_fixTarget.url); }
 function tgtSetFix(val){ if(!_fixTarget) return; const m=tgtManual();
-  if(m){ if(val) m.fix=val; else delete m.fix; persist(); } else setFix(_fixTarget.fp,_fixTarget.url,val); }
+  if(m){ if(val) m.fix=val; else delete m.fix; persist(); }
+  else if(_fixTarget.urls){ if(val) for(const u of _fixTarget.urls) setFix(_fixTarget.fp,u,val); }   // never bulk-clear fixes
+  else setFix(_fixTarget.fp,_fixTarget.url,val); }
 function isAdmin(){ const ns=(typeof NS==='function')&&NS(); return !!(ns && ns.viewer && ns.viewer.isAdmin); }
 // Editing fix instructions follows the site's Rideshare admin access (Who-can-access → Admins).
 function canEditFix(){ return isAdmin(); }
@@ -1329,7 +1374,7 @@ function openFix(target){
   _fixTarget=target; const dlg=document.getElementById('fix-dialog'); const ro=!canEditFix();   // editors edit; everyone else is view-only
   const m=tgtManual();
   const title = m ? (m.title||'Manual finding') : ((()=>{ const d=currentDefects()[target.fp]; return (d&&(d.rule_title||d.title))||target.fp; })());
-  const sub = m ? (m.url?`${title}  ·  ${m.url}`:title) : (target.url?`${title}  ·  ${target.url}`:`${title}  ·  applies to all pages of this rule`);
+  const sub = m ? (m.url?`${title}  ·  ${m.url}`:title) : target.urls ? `${title}  ·  applies to ${target.urls.length} selected page${target.urls.length===1?'':'s'} (replaces their current fix)` : (target.url?`${title}  ·  ${target.url}`:`${title}  ·  applies to all pages of this rule`);
   document.getElementById('fix-title').textContent = ro ? 'Fix instructions' : (tgtFix()?'Edit fix instructions':'Add fix instructions');
   document.getElementById('fix-sub').textContent = sub;
   document.querySelector('#fix-dialog .fix-tabs').hidden = ro;   // Edit/Preview/Draft-AI are editor-only
@@ -1382,11 +1427,11 @@ function buildDetail(fp){
     const rp=resolvePage(fp,url,excl); const via=rp._viaPage&&!state.dispositions[`${fp}|||${url}`];
     const html=(d.page_html[url]||[])[0]||''; const comps=(d.page_components[url]||[]).join('; ');
     return `<tr class="${bucket(rp.status)==='suppressed'?'pg-excluded':''}">
-      <td><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a></td>
+      <td><label class="pg-pick"><input type="checkbox" data-role="pgsel" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Select ${esc(url)} for bulk edit"></label><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a></td>
       <td style="text-align:center">${d.page_instances[url]}</td>
       <td>${esc(comps)}</td>
       <td>${html?`<code>${esc(html.slice(0,180))}${html.length>180?'…':''}</code>`:''}</td>
-      <td>${statusSelect(fp,url,rp.status)}${subField(fp,url,rp)}${via?'<div class="stat-sub">(via page out-of-scope)</div>':''}</td>
+      <td>${rp._linked?linkedStatus(rp,fp,url):statusSelect(fp,url,rp.status)+subField(fp,url,rp)+(via?'<div class="stat-sub">(via page out-of-scope)</div>':'')+`<button type="button" class="pages-btn" data-role="samebtn" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Mark ${esc(url)} as the same finding as another page">↪ Same as…</button>`}</td>
       <td>${catSelect(fp,url)}</td>
       <td><input class="notes-input" type="text" value="${esc(pageNotes(fp,url))}" data-role="notes" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Notes for ${esc(url)}">
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px"><button class="pages-btn" type="button" data-add-url="${esc(url)}" aria-label="Add a manual finding on ${esc(url)}">＋ finding</button>${fixBtn(fp,url,true)}</div></td></tr>`;
@@ -1409,7 +1454,26 @@ function buildDetail(fp){
       <div class="ai-note">AI-generated guidance — verify against the WCAG spec before acting.</div>
     </div></div>`;
   const fixBar=`<div class="fix-bar">${fixBtn(fp,'',false)}</div>`;
-  return noteBar+fixBar+aiBar+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const bulkBar=`<div class="bulk-bar" role="group" aria-label="Apply to selected pages of ${esc(d.rule_title)}" data-fp="${esc(fp)}">
+    <label class="chk"><input type="checkbox" data-role="pgselall" data-fp="${esc(fp)}"> Select all</label>
+    <span class="bulk-count" role="status" aria-live="polite">0 selected</span>
+    <span class="bulk-fields" hidden>
+      <select data-bf="status" aria-label="Status for selected pages"><option value="">Status…</option>${STATUSES.map(s=>`<option value="${s.v}">${esc(s.label)}</option>`).join('')}</select>
+      <input type="text" data-bf="assignee" placeholder="Assignee…" aria-label="Assignee for selected pages">
+      <select data-bf="cat" aria-label="Category for selected pages"><option value="">Category…</option>${CATS.map(c=>`<option value="${c.v}">${esc(c.label)}</option>`).join('')}</select>
+      <input type="text" data-bf="note" placeholder="Note (replaces existing)…" aria-label="Note for selected pages">
+      ${canEditFix()?`<button type="button" class="pages-btn" data-role="bulkfix" data-fp="${esc(fp)}">Fix instructions…</button>`:''}
+      <button type="button" class="btn-primary" data-role="bulkapply" data-fp="${esc(fp)}">Apply to selected</button>
+    </span></div>`;
+  return noteBar+fixBar+aiBar+bulkBar+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+// Read-only status for a page that follows another ("same as") — shows where it points and offers Unlink.
+function linkedStatus(rp,fp,url){
+  const [tf,tu]=rp._linked.split('|||'); const all={...state.defects,...(state.contrast||{})}; const td=all[tf];
+  const st=SMAP[rp.status]||SMAP.untriaged, who=effAssignee(fp,url);
+  return `<div class="same-as"><span class="status-sel ${statusClass(rp.status)}" style="display:inline-block">${esc(st.label)}</span>${who?` <span class="stat-sub">· ${esc(who)}</span>`:''}
+    <div class="stat-sub">↪ Same as <strong>${esc(td?td.rule_title:tf)}</strong> on <a href="${esc(tu)}" target="_blank" rel="noopener noreferrer">${esc(tu)}</a></div>
+    <button type="button" class="pages-btn" data-role="unlink" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Unlink ${esc(url)} from the page it follows">Unlink</button></div>`;
 }
 function catSelect(fp,url){ const cur=effCat(fp,url);
   return `<select class="subfield" data-role="cat" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Category for ${esc(url)}"><option value="">—</option>${CATS.map(c=>`<option value="${c.v}"${c.v===cur?' selected':''}>${esc(c.label)}</option>`).join('')}</select>`;
@@ -1553,7 +1617,7 @@ function setStatus(fp,url,val){
 }
 function setBulk(fp,val){ // apply a status to the whole rule
   if(val==='untriaged'){   // reset: clear rule default AND every per-page override (notes survive)
-    for(const k of Object.keys(state.dispositions)){ if(k.startsWith(fp+'|||')){ const d=state.dispositions[k]; clearStatus(d); if(Object.keys(d).length===0) delete state.dispositions[k]; } }
+    for(const k of Object.keys(state.dispositions)){ if(k.startsWith(fp+'|||')){ const d=state.dispositions[k]; clearStatus(d); delete d.sameAs; if(Object.keys(d).length===0) delete state.dispositions[k]; } }
     const rd=state.dispositions[fp]; if(rd){ clearStatus(rd); if(Object.keys(rd).length===0) delete state.dispositions[fp]; }
     persist(); return;
   }
@@ -1562,9 +1626,9 @@ function setBulk(fp,val){ // apply a status to the whole rule
     if(!k.startsWith(fp+'|||')) continue;
     const d=state.dispositions[k];
     if(d.assignee){   // page has its own owner → carry it onto the new status, drop other overrides
-      const kept={status:val,assignee:d.assignee}; if(d.notes) kept.notes=d.notes; if(d.fix) kept.fix=d.fix; if(d.cat) kept.cat=d.cat; ensureField(kept,val); state.dispositions[k]=kept;
+      const kept={status:val,assignee:d.assignee}; if(d.notes) kept.notes=d.notes; if(d.fix) kept.fix=d.fix; if(d.cat) kept.cat=d.cat; if(d.sameAs) kept.sameAs=d.sameAs; ensureField(kept,val); state.dispositions[k]=kept;
     } else {          // no page owner → inherit rule-level status + assignee; keep only a note/fix/category if present
-      const kept={}; if(d.notes) kept.notes=d.notes; if(d.fix) kept.fix=d.fix; if(d.cat) kept.cat=d.cat;
+      const kept={}; if(d.notes) kept.notes=d.notes; if(d.fix) kept.fix=d.fix; if(d.cat) kept.cat=d.cat; if(d.sameAs) kept.sameAs=d.sameAs;
       if(Object.keys(kept).length) state.dispositions[k]=kept; else delete state.dispositions[k];
     }
   }
@@ -1583,6 +1647,69 @@ function setCatBulk(fp,val){
   if(!activeCat){ for(const k of Object.keys(state.dispositions)){ if(k.startsWith(fp+'|||')) setCat(fp,k.slice(fp.length+3),''); } setCat(fp,'',v); return; }
   for(const u of currentDefects()[fp].affected_pages) setCat(fp,u,v);
 }
+/* ── Bulk edit of selected pages inside an expanded rule ── */
+const selectedPages = fp => [...document.querySelectorAll('[data-role=pgsel]:checked')].filter(el=>el.dataset.fp===fp).map(el=>el.dataset.url);
+const bulkBarFor = fp => [...document.querySelectorAll('.bulk-bar')].find(b=>b.dataset.fp===fp);
+function updateBulkBar(fp){ const bar=bulkBarFor(fp); if(!bar) return;
+  const n=selectedPages(fp).length; bar.querySelector('.bulk-count').textContent=`${n} selected`; bar.querySelector('.bulk-fields').hidden=!n; }
+// Only the fields you fill in are applied. Pages that follow another page ("same as") keep their link,
+// so status/assignee are skipped for them.
+function applyBulk(fp){
+  const bar=bulkBarFor(fp), urls=selectedPages(fp); if(!bar||!urls.length) return;
+  const v=k=>bar.querySelector(`[data-bf=${k}]`).value.trim();
+  const status=v('status'), assignee=v('assignee'), cat=v('cat'), note=v('note');
+  if(!status&&!assignee&&!cat&&!note){ toast('Fill in at least one field to apply.','error'); return; }
+  const excl=excludedUrls(); let linked=0, noOwner=0;
+  for(const u of urls){
+    const isLinked=!!linkTarget(state.dispositions,fp,u);
+    if(status){ if(isLinked) linked++; else setStatus(fp,u,status); }
+    if(assignee){
+      const st=status||resolvePage(fp,u,excl).status;
+      if(isLinked){ if(!status) linked++; }
+      else if(ASSIGNEE_STATUSES.has(st)){ const key=`${fp}|||${u}`; (state.dispositions[key]||(state.dispositions[key]={})).assignee=assignee; }
+      else noOwner++;
+    }
+    if(cat) setCat(fp,u,cat);
+    if(note) setNotes(fp,u,note);
+  }
+  persist(); render();
+  const skip=[linked&&`${linked} linked page${linked===1?'':'s'} keep following their target`, noOwner&&`${noOwner} without an owner status skipped for assignee`].filter(Boolean);
+  toast(`Updated ${urls.length} page${urls.length===1?'':'s'}${skip.length?' — '+skip.join('; '):''}.`);
+}
+/* ── "Same as" picker ── */
+let _sameFrom=null, _sameHits=[];
+function wouldLoop(fromKey,targetKey){ const seen=new Set(); let key=targetKey;
+  while(key && !seen.has(key)){ if(key===fromKey) return true; seen.add(key); const d=state.dispositions[key]; key=d&&d.sameAs; }
+  return false; }
+function renderSameList(){
+  const q=document.getElementById('same-q').value.trim().toLowerCase();
+  const defs = activeStream==='contrast' ? (state.contrast||{}) : state.defects;
+  const hits=[]; let total=0;
+  for(const d of Object.values(defs)) for(const u of d.affected_pages){
+    if(d.fingerprint===_sameFrom.fp && u===_sameFrom.url) continue;
+    if(q && !d.rule_title.toLowerCase().includes(q) && !u.toLowerCase().includes(q)) continue;
+    total++; if(hits.length<50) hits.push({fp:d.fingerprint,title:d.rule_title,url:u});
+  }
+  _sameHits=hits;
+  document.getElementById('same-list').innerHTML=hits.map((c,i)=>`<li><button type="button" data-pick="${i}"><strong>${esc(c.title)}</strong><span class="same-url">${esc(c.url)}</span></button></li>`).join('');
+  document.getElementById('same-count').textContent = total ? `${total} page${total===1?'':'s'}${total>hits.length?` — showing the first ${hits.length}, type to narrow`:''}` : 'No matching pages.';
+}
+function openSame(fp,url){
+  _sameFrom={fp,url}; const dlg=document.getElementById('same-dialog');
+  document.getElementById('same-sub').textContent=`This page: ${url}`;
+  document.getElementById('same-q').value=''; renderSameList();
+  if(typeof dlg.showModal==='function') dlg.showModal(); else dlg.setAttribute('open','');
+  document.getElementById('same-q').focus();
+}
+function pickSame(i){
+  const c=_sameHits[i]; if(!c||!_sameFrom) return;
+  const fromKey=`${_sameFrom.fp}|||${_sameFrom.url}`, targetKey=`${c.fp}|||${c.url}`;
+  if(wouldLoop(fromKey,targetKey)){ toast('That page already follows this one — pick a different page.','error'); return; }
+  (state.dispositions[fromKey]||(state.dispositions[fromKey]={})).sameAs=targetKey;
+  document.getElementById('same-dialog').close(); _sameFrom=null; persist(); render(); toast('Linked — this page now follows that page’s status.');
+}
+function unlinkSame(fp,url){ const key=`${fp}|||${url}`, d=state.dispositions[key]; if(!d) return;
+  delete d.sameAs; if(Object.keys(d).length===0) delete state.dispositions[key]; persist(); render(); toast('Unlinked.'); }
 function setNotes(fp,url,val){
   const key=url?`${fp}|||${url}`:fp; let d=state.dispositions[key];
   if(val){ if(!d) d=state.dispositions[key]={}; d.notes=val; }
@@ -1592,6 +1719,8 @@ function setNotes(fp,url,val){
 
 document.addEventListener('change', e=>{
   const el=e.target, fp=el.dataset.fp, url=el.dataset.url||'';
+  if(el.dataset.role==='pgsel'){ updateBulkBar(fp); return; }
+  if(el.dataset.role==='pgselall'){ document.querySelectorAll('[data-role=pgsel]').forEach(c=>{ if(c.dataset.fp===fp) c.checked=el.checked; }); updateBulkBar(fp); return; }
   if(el.dataset.role==='mstatus'){ const m=state.manualFindings.find(x=>x.id===el.dataset.id); if(m){m.status=el.value;persist();render();} return; }
   if(el.dataset.role==='globalfix'){ let d=state.dispositions[fp];
     if(el.checked){ if(!d) d=state.dispositions[fp]={}; d.globalFix=true; }
@@ -1615,6 +1744,11 @@ document.addEventListener('blur', e=>{
   else if(e.target.dataset.role==='massignee'){ const m=state.manualFindings.find(x=>x.id===e.target.dataset.id); if(m){ const v=e.target.value.trim(); if(v)m.assignee=v; else delete m.assignee; persist(); } }
 }, true);
 document.addEventListener('click', e=>{
+  const sb=e.target.closest('[data-role=samebtn]'); if(sb){ openSame(sb.dataset.fp,sb.dataset.url); return; }
+  const ul=e.target.closest('[data-role=unlink]'); if(ul){ unlinkSame(ul.dataset.fp,ul.dataset.url); return; }
+  const sp=e.target.closest('[data-pick]'); if(sp){ pickSame(+sp.dataset.pick); return; }
+  const ba=e.target.closest('[data-role=bulkapply]'); if(ba){ applyBulk(ba.dataset.fp); return; }
+  const bf=e.target.closest('[data-role=bulkfix]'); if(bf){ const urls=selectedPages(bf.dataset.fp); if(urls.length) openFix({fp:bf.dataset.fp,urls}); return; }
   const fe=e.target.closest('[data-role=fixedit]'); if(fe){ openFix(fe.dataset.mid?{mid:fe.dataset.mid}:{fp:fe.dataset.fp,url:fe.dataset.url||''}); return; }
   const ft=e.target.closest('.fix-tab'); if(ft){ fixTab(ft.dataset.tab); return; }
   const ex=e.target.closest('[data-role=explain]'); if(ex){ explainRule(ex.dataset.fp); return; }
@@ -1635,6 +1769,7 @@ document.getElementById('fix-ai').addEventListener('click', draftFixWithAI);
 document.getElementById('fix-copy').addEventListener('click', copyFix);
 document.getElementById('fix-text').addEventListener('input', updateFixAI);
 document.getElementById('fix-dialog').addEventListener('close', ()=>{ _fixTarget=null; });
+document.getElementById('same-q').addEventListener('input', renderSameList);
 
 // One download path for every export: the platform helper, or a local Blob in preview.
 function downloadRows(rows, name, cols){
@@ -1650,6 +1785,10 @@ function downloadRows(rows, name, cols){
    Two sections via a Section column: "Work List" (to-do), "Deferred" (backlog) and "Question" (unsure). ── */
 const WORKLIST_STATUSES=['need_fix','in_progress','needs_approval','deferred','question'];
 const ACTIVE_TODO=new Set(['need_fix','in_progress','needs_approval']);
+// Work-list note prefix for a page that follows another: "Same as <rule> — <url>. "
+function sameAsNote(fp,url){ const lk=linkTarget(state.dispositions,fp,url); if(!lk) return '';
+  const [tf,tu]=lk.split('|||'); const td=state.defects[tf]||(state.contrast||{})[tf];
+  return `Same as ${td?td.rule_title:tf} — ${tu}. `; }
 function collectWorkList(){
   const rows=[], excl=excludedUrls();
   for(const [stream,defs] of [['standard',state.defects],['contrast',state.contrast||{}]]){
@@ -1671,7 +1810,7 @@ function collectWorkList(){
       rows.push({ _s:rp.status, item:d.rule_title, stream, url,
         grade: stream==='contrast' ? (d.page_category?.[url]||d.category||'') : (d.severity||''),
         instances:d.page_instances[url]||'', status:SMAP[rp.status].label, assignee:effAssignee(d.fingerprint,url),
-        note:pageNotes(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).notes||'',
+        note:sameAsNote(d.fingerprint,url)+(pageNotes(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).notes||''),
         fix:fixOf(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).fix||'',
         html:(d.page_html[url]||[])[0]||'', cat:stream==='contrast'?'':effCat(d.fingerprint,url) }); } }
   }
