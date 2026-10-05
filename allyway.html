@@ -208,6 +208,8 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .src-card__n.warn{color:var(--amber-ink);}
 .src-card__l{font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:.05em;margin-top:5px;}
 .src-card__foot{display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600;color:var(--dark-gray);font-family:'Red Hat Display',sans-serif;}
+.src-card__progress{display:flex;flex-direction:column;gap:7px;}
+.src-card__progress .src-card__foot span:first-child{min-width:88px;}   /* keeps both bars starting at the same x */
 .src-card__bar{flex:1;height:6px;border-radius:4px;background:var(--soft-fill);overflow:hidden;}
 .src-card__bar span{display:block;height:100%;background:var(--dark-green);border-radius:4px;}
 .grid-msg{grid-column:1/-1;text-align:center;color:var(--gray);padding:40px 20px;font-size:14px;line-height:1.6;}
@@ -605,7 +607,7 @@ const STATUSES = [
   {v:'in_progress',    label:'In progress',             bucket:'active', field:'assignee'},
   {v:'needs_approval', label:'Needs approval',          bucket:'active', field:'assignee'},
   {v:'deferred',       label:'Deferred / backlog',      bucket:'active'},
-  {v:'question',       label:'Question — unsure if we fix', bucket:'active'},
+  {v:'question',       label:'Question',                 bucket:'active'},
   {v:'fixed',          label:'Fixed',                   bucket:'verify', field:'assignee'},
   {v:'ok_ignore',      label:'OK to ignore',            bucket:'suppressed', field:'reason'},
   {v:'not_issue',      label:'Not really an issue',     bucket:'suppressed'},
@@ -801,9 +803,14 @@ function metricsHtml(s){
       <div class="src-card__stat"><div class="src-card__n">${s.verify}</div><div class="src-card__l">Fixed</div></div>
       <div class="src-card__stat"><div class="src-card__n">${s.suppressed}</div><div class="src-card__l">Suppressed</div></div>
     </div>
-    <div class="src-card__foot"><span>${s.triagedPct}% triaged</span><span class="src-card__bar"><span style="width:${s.triagedPct}%"></span></span></div>`;
+    <div class="src-card__progress">
+      <div class="src-card__foot"><span>${s.triagedPct}% triaged</span><span class="src-card__bar"><span style="width:${s.triagedPct}%"></span></span></div>
+      <div class="src-card__foot"><span>${fixedPct(s)}% fixed</span><span class="src-card__bar"><span style="width:${fixedPct(s)}%"></span></span></div>
+    </div>`;
 }
-const cardAria = s => (s.err||s.loading) ? `Open ${s.src}` : `Open ${s.src}: ${s.active} active findings, ${s.triagedPct} percent triaged`;
+// Fixing progress = Fixed ÷ (Active + Fixed); suppressed items never need a fix, so they sit outside it
+const fixedPct = s => (s.active+s.verify) ? Math.round(100*s.verify/(s.active+s.verify)) : 0;
+const cardAria = s => (s.err||s.loading) ? `Open ${s.src}` : `Open ${s.src}: ${s.active} active findings, ${s.triagedPct} percent triaged, ${fixedPct(s)} percent fixed`;
 function renderSourceCards(grid, cards){
   grid.innerHTML = cards.map(s=>`<button class="src-card" data-src="${esc(s.src)}" aria-label="${esc(cardAria(s))}"><div><div class="src-card__name">${esc(s.src)}</div><div class="src-card__date">${s.scanDate?esc(s.scanDate):'no scan date'}</div></div><div class="src-card__metrics">${metricsHtml(s)}</div></button>`).join('');
   grid.querySelectorAll('.src-card').forEach(b=>b.addEventListener('click',()=>loadSource(b.dataset.src)));
