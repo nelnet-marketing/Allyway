@@ -1082,13 +1082,22 @@ function render(){
   openIds.forEach(id=>{ if(document.getElementById(id)) toggleDetail(id); });   // preserve expanded rows
 }
 
-// Rules with at least one page in each category, so an empty tab is obvious before you click it.
+// Findings (rule × page) in a stream: a global-fix rule counts once, like the stats tiles. Also how many are still active.
+function findingsIn(defs,excl){ let total=0, active=0;
+  for(const d of Object.values(defs||{})){ const r=ruleRollup(d,excl);
+    if(isGlobalFix(d.fingerprint)){ if(d.affected_pages.length){ total++; if(r.c.active>0) active++; } }
+    else { total+=d.affected_pages.length; active+=r.c.active; } }
+  return {total,active}; }
+// Finding counts on every tab, so an empty or huge one is obvious before you click it.
 function refreshCatTabs(){
-  const n=Object.fromEntries(CATS.map(c=>[c.v,0]));
-  for(const [fp,d] of Object.entries(state.defects||{})){ const seen=new Set();
-    for(const u of d.affected_pages){ const c=effCat(fp,u); if(c&&n[c]!==undefined&&!seen.has(c)){ seen.add(c); n[c]++; } } }
+  const excl=excludedUrls(), n=Object.fromEntries(CATS.map(c=>[c.v,0]));
+  const std=findingsIn(state.defects,excl), con=findingsIn(state.contrast,excl);
+  const setTab=(id,label,count,tip)=>{ const t=document.getElementById(id); t.textContent=`${label} (${count})`; t.title=tip; };
+  setTab('tab-standard','Standard rules',std.total,`${std.active} active of ${std.total} findings`);
+  if(con.total) setTab('tab-contrast','Contrast',con.total,`${con.active} active of ${con.total} findings`);
+  for(const [fp,d] of Object.entries(state.defects||{})) for(const u of d.affected_pages){ const c=effCat(fp,u); if(c&&n[c]!==undefined) n[c]++; }
   for(const m of (state.manualFindings||[])) if(m.cat&&n[m.cat]!==undefined) n[m.cat]++;   // manual findings count toward their tab too
-  for(const c of CATS) document.getElementById('tab-cat-'+c.v).textContent=`${c.label} (${n[c.v]})`;
+  for(const c of CATS) setTab('tab-cat-'+c.v,c.label,n[c.v],`${n[c.v]} finding${n[c.v]===1?'':'s'} in this category`);
 }
 function renderStats(all,excl){
   let activeFindings=0,supprFindings=0,verifyFindings=0;
