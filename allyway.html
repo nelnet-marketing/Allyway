@@ -660,8 +660,12 @@ const CATS = [{v:'html',label:'HTML'},{v:'js',label:'JavaScript'},{v:'widget',la
 const CMAP = Object.fromEntries(CATS.map(c=>[c.v,c]));
 let activeCat = '';                               // standard stream only: '' = all pages, else a CATS value
 const orders = { standard: [], contrast: [], contrastPage: [] };   // frozen display order per view
-const effCat = (fp,url) => { const pd=url?state.dispositions[`${fp}|||${url}`]:null; if(pd&&pd.cat) return pd.cat;
+const ownCat = (fp,url) => { const pd=url?state.dispositions[`${fp}|||${url}`]:null; if(pd&&pd.cat) return pd.cat;
   const rd=state.dispositions[fp]; return (rd&&rd.cat)||''; };
+// A page that follows another ("same as") takes that page's category when it has one, else keeps its own.
+const catSource = (fp,url) => { const lk=url?linkTarget(state.dispositions,fp,url):null;
+  if(lk){ const [tf,tu]=lk.split('|||'); if(ownCat(tf,tu)) return {fp:tf,url:tu,shared:true}; } return {fp,url,shared:false}; };
+const effCat = (fp,url) => { const s=catSource(fp,url); return ownCat(s.fp,s.url); };
 // A category tab sees each rule trimmed to the pages in that category; rules with none drop out.
 function catView(defs,cat){ const out={};
   for(const [fp,d] of Object.entries(defs)){ const pages=d.affected_pages.filter(u=>effCat(fp,u)===cat);
@@ -1336,7 +1340,11 @@ function renderMarkdown(md){   // compact, safe subset → HTML string (all text
   return html;
 }
 function fixKey(fp,url){ return url?`${fp}|||${url}`:fp; }
-function fixOf(fp,url){ return (state.dispositions[fixKey(fp,url)]||{}).fix||''; }
+function ownFix(fp,url){ return (state.dispositions[fixKey(fp,url)]||{}).fix||''; }
+// A page that follows another ("same as") shares that page's fix when it has one, else keeps its own.
+function fixSource(fp,url){ const lk=url?linkTarget(state.dispositions,fp,url):null;
+  if(lk){ const [tf,tu]=lk.split('|||'); if(ownFix(tf,tu)) return {fp:tf,url:tu,shared:true}; } return {fp,url,shared:false}; }
+function fixOf(fp,url){ const s=fixSource(fp,url); return ownFix(s.fp,s.url); }
 function setFix(fp,url,val){ const key=fixKey(fp,url); let d=state.dispositions[key];
   if(val){ if(!d) d=state.dispositions[key]={}; d.fix=val; }
   else if(d){ delete d.fix; if(Object.keys(d).length===0) delete state.dispositions[key]; }
@@ -1371,10 +1379,12 @@ function fixBtnManual(m){ const has=!!m.fix, admin=canEditFix();
 let _fixTarget=null;
 const FIX_SYSTEM="You are a senior accessibility engineer writing remediation instructions for another developer, in GitHub-flavored Markdown. You are given a scan rule and the developer-provided markup or notes. Produce a concise fix note: a one-line summary; a short numbered list of the specific problems; then a **Before** and an **After** fenced ```html code block showing the corrected markup (base Before on the markup you were given). Only claim problems you can see in the provided markup or that the rule clearly implies — do not invent issues. Cite the relevant WCAG 2.1 success criterion by number and name when it applies. Keep code blocks minimal: show only the relevant element and use ... for omitted parts. Output Markdown only — no preamble, no closing remarks.";
 function openFix(target){
+  let shared=false;   // editing a followed page's fix edits the target's, which every page following it shares
+  if(target.fp!==undefined && target.url){ const s=fixSource(target.fp,target.url); if(s.shared){ target={fp:s.fp,url:s.url}; shared=true; } }
   _fixTarget=target; const dlg=document.getElementById('fix-dialog'); const ro=!canEditFix();   // editors edit; everyone else is view-only
   const m=tgtManual();
   const title = m ? (m.title||'Manual finding') : ((()=>{ const d=currentDefects()[target.fp]; return (d&&(d.rule_title||d.title))||target.fp; })());
-  const sub = m ? (m.url?`${title}  ·  ${m.url}`:title) : target.urls ? `${title}  ·  applies to ${target.urls.length} selected page${target.urls.length===1?'':'s'} (replaces their current fix)` : (target.url?`${title}  ·  ${target.url}`:`${title}  ·  applies to all pages of this rule`);
+  const sub = m ? (m.url?`${title}  ·  ${m.url}`:title) : target.urls ? `${title}  ·  applies to ${target.urls.length} selected page${target.urls.length===1?'':'s'} (replaces their current fix)` : (target.url?`${title}  ·  ${target.url}${shared?'  —  shared: every page that follows this one uses this fix':''}`:`${title}  ·  applies to all pages of this rule`);
   document.getElementById('fix-title').textContent = ro ? 'Fix instructions' : (tgtFix()?'Edit fix instructions':'Add fix instructions');
   document.getElementById('fix-sub').textContent = sub;
   document.querySelector('#fix-dialog .fix-tabs').hidden = ro;   // Edit/Preview/Draft-AI are editor-only
@@ -1423,7 +1433,8 @@ async function draftFixWithAI(){ if(!_fixTarget || !window.NelnetAI || !canEditF
 }
 function buildDetail(fp){
   const d=currentDefects()[fp]; const excl=excludedUrls();
-  const rows=d.affected_pages.slice().sort((a,b)=>(d.page_instances[b]-d.page_instances[a])).map(url=>{
+  const f=filters(), shown=d.affected_pages.filter(u=>{ const pr=[{fp,url:u}]; return matchStatus(pr,excl,f)&&matchAssignee(pr,excl,f); });   // honour the Status/Assignee filters
+  const rows=shown.slice().sort((a,b)=>(d.page_instances[b]-d.page_instances[a])).map(url=>{
     const rp=resolvePage(fp,url,excl); const via=rp._viaPage&&!state.dispositions[`${fp}|||${url}`];
     const html=(d.page_html[url]||[])[0]||''; const comps=(d.page_components[url]||[]).join('; ');
     return `<tr class="${bucket(rp.status)==='suppressed'?'pg-excluded':''}">
@@ -1466,7 +1477,8 @@ function buildDetail(fp){
       <button type="button" class="pages-btn" data-role="bulksame" data-fp="${esc(fp)}">↪ Same as…</button>
       <button type="button" class="btn-primary" data-role="bulkapply" data-fp="${esc(fp)}">Apply to selected</button>
     </span></div>`;
-  return noteBar+fixBar+aiBar+bulkBar+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const filtNote = shown.length<d.affected_pages.length ? `<p class="stat-sub" role="status">Showing ${shown.length} of ${d.affected_pages.length} pages that match the current Status/Assignee filter.</p>` : '';
+  return noteBar+fixBar+aiBar+bulkBar+filtNote+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 // Read-only status for a page that follows another ("same as") — shows where it points and offers Unlink.
 function linkedStatus(rp,fp,url){
@@ -1477,6 +1489,7 @@ function linkedStatus(rp,fp,url){
     <button type="button" class="pages-btn" data-role="unlink" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Unlink ${esc(url)} from the page it follows">Unlink</button></div>`;
 }
 function catSelect(fp,url){ const cur=effCat(fp,url);
+  if(catSource(fp,url).shared) return `<span title="Follows the page this one is 'same as'">${esc(CMAP[cur]?CMAP[cur].label:cur)}</span><div class="stat-sub">(from linked page)</div>`;
   return `<select class="subfield" data-role="cat" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Category for ${esc(url)}"><option value="">—</option>${CATS.map(c=>`<option value="${c.v}"${c.v===cur?' selected':''}>${esc(c.label)}</option>`).join('')}</select>`;
 }
 /* ── Contrast PAGE view — one row per page, expand to the contrast elements on it ── */
@@ -1505,7 +1518,8 @@ function renderByPage(excl){
 }
 function buildPageDetail(url){
   const p=contrastPages().get(url); if(!p) return ''; const excl=excludedUrls();
-  const rows=p.elements.slice().sort((a,b)=>b.instances-a.instances).map(e=>{
+  const f=filters(), shownEls=p.elements.filter(e=>{ const pr=[{fp:e.fp,url}]; return matchStatus(pr,excl,f)&&matchAssignee(pr,excl,f); });   // honour the Status/Assignee filters
+  const rows=shownEls.slice().sort((a,b)=>b.instances-a.instances).map(e=>{
     const rp=resolvePage(e.fp,url,excl); const via=rp._viaPage&&!state.dispositions[`${e.fp}|||${url}`];
     return `<tr class="${bucket(rp.status)==='suppressed'?'pg-excluded':''}">
       <td style="max-width:280px"><strong>${esc(e.label)}</strong>${e.description?`<div class="rule-desc">${esc(e.description)}</div>`:''}</td>
@@ -1516,7 +1530,8 @@ function buildPageDetail(url){
       <td><input class="notes-input" type="text" value="${esc(pageNotes(e.fp,url))}" data-role="notes" data-fp="${esc(e.fp)}" data-url="${esc(url)}" aria-label="Note">
         <div style="margin-top:5px">${fixBtn(e.fp,url,true)}</div></td></tr>`;
   }).join('');
-  return `<table class="detail-tbl"><thead><tr><th>Element (signature)</th><th>Category</th><th>Inst</th><th>Sample HTML</th><th>Status (this element)</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const filtNote = shownEls.length<p.elements.length ? `<p class="stat-sub" role="status">Showing ${shownEls.length} of ${p.elements.length} elements that match the current Status/Assignee filter.</p>` : '';
+  return filtNote+`<table class="detail-tbl"><thead><tr><th>Element (signature)</th><th>Category</th><th>Inst</th><th>Sample HTML</th><th>Status (this element)</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function toggleDetail(id){
