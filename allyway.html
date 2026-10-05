@@ -104,6 +104,7 @@ table.defects tr.rule-todo td{background:var(--row-todo);}
 .status-sel.b-untriaged{border-color:#f0c94a;color:#935A00;background:#fffaf0;}
 .status-sel.b-active{border-color:#bcd98f;color:var(--green-ink);background:#f3f9ea;}
 .status-sel.b-deferred{border-color:#b3bfd6;color:#3a4a6b;background:#eef1f8;}
+.status-sel.b-question{border-color:#d9b86a;color:var(--amber-ink);background:#fff6e0;}
 .status-sel.b-suppressed{border-color:#e6c9d5;color:var(--error-red);background:#fdf3f7;}
 .status-sel.b-verify{border-color:#8fd0a5;color:#1A6B3A;background:#eefaf1;}
 .bulk-sel{margin-top:5px;font-size:11.5px;max-width:170px;padding:4px 6px;border:1px dashed var(--field-border);border-radius:6px;color:var(--dark-gray);background:var(--white);cursor:pointer;font-family:'Red Hat Display',sans-serif;min-height:24px;}
@@ -283,6 +284,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 :root[data-theme="dark"] .status-sel.b-untriaged{border-color:#C9A23A;color:#E8B84D;background:#2B2410;}
 :root[data-theme="dark"] .status-sel.b-active{border-color:#6E9B3E;color:#9FD46A;background:#1F2A18;}
 :root[data-theme="dark"] .status-sel.b-deferred{border-color:#6C7AA0;color:#A9B6D8;background:#1B2130;}
+:root[data-theme="dark"] .status-sel.b-question{border-color:#8A6A22;color:var(--amber-ink);background:#2A2414;}
 :root[data-theme="dark"] .status-sel.b-suppressed{border-color:#A85C7A;color:#F06BA0;background:#2E1622;}
 :root[data-theme="dark"] .status-sel.b-verify{border-color:#4E9E6E;color:#7FD3A0;background:#14281C;}
 </style>
@@ -450,7 +452,6 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <label for="filter-assignee">Assignee
           <select id="filter-assignee"><option value="">All</option></select>
         </label>
-        <label class="chk"><input type="checkbox" id="filter-lowvol"> Hide low-volume (≤2 pages)</label>
         <button class="bulk-sel" id="btn-worklist" type="button" style="margin-top:0">⬇ Export work list (CSV)</button>
         <button class="bulk-sel" id="btn-backup" type="button" style="margin-top:0">⬇ Back up triage (CSV)</button>
         <span class="spacer" id="result-count"></span>
@@ -604,6 +605,7 @@ const STATUSES = [
   {v:'in_progress',    label:'In progress',             bucket:'active', field:'assignee'},
   {v:'needs_approval', label:'Needs approval',          bucket:'active', field:'assignee'},
   {v:'deferred',       label:'Deferred / backlog',      bucket:'active'},
+  {v:'question',       label:'Question — unsure if we fix', bucket:'active'},
   {v:'fixed',          label:'Fixed',                   bucket:'verify', field:'assignee'},
   {v:'ok_ignore',      label:'OK to ignore',            bucket:'suppressed', field:'reason'},
   {v:'not_issue',      label:'Not really an issue',     bucket:'suppressed'},
@@ -955,7 +957,7 @@ function matchStatus(pairs,excl,f){
   return pairs.some(p=>resolvePage(p.fp,p.url,excl).status===f.status);
 }
 const bucket = st => SMAP[st]?.bucket || 'active';
-const statusClass = st => st==='untriaged' ? 'b-untriaged' : st==='deferred' ? 'b-deferred' : 'b-'+bucket(st);
+const statusClass = st => st==='untriaged' ? 'b-untriaged' : st==='deferred' ? 'b-deferred' : st==='question' ? 'b-question' : 'b-'+bucket(st);
 // "Grade" = severity for standard rules, category (Error/Alert) for contrast (severity is flat there).
 const CAT_RANK = {ERROR:0,ALERT:1,'BEST PRACTICE':2};
 const gradeOf = d => activeStream==='contrast' ? (d.category||'') : (d.severity||'');
@@ -986,7 +988,7 @@ function ruleRollup(d,excl){
 /* ── Render ─────────────────────────────────────────────────── */
 const filters = () => ({search:document.getElementById('filter-search').value.trim().toLowerCase(),
   sev:document.getElementById('filter-sev').value, status:document.getElementById('filter-status').value,
-  assignee:document.getElementById('filter-assignee').value, hideLow:document.getElementById('filter-lowvol').checked});
+  assignee:document.getElementById('filter-assignee').value});
 
 function render(){
   if(!state) return;
@@ -1003,24 +1005,21 @@ function render(){
 }
 
 function renderStats(all,excl){
-  let activeFindings=0,supprFindings=0,verifyFindings=0,lowvol=0;
+  let activeFindings=0,supprFindings=0,verifyFindings=0;
   for(const d of all){ const r=ruleRollup(d,excl);
     if(isGlobalFix(d.fingerprint)){   // one global fix = one item, in whichever bucket it sits
       if(r.c.active>0) activeFindings++; else if(r.c.verify>0) verifyFindings++; else if(r.c.suppressed>0) supprFindings++;
-    } else { activeFindings+=r.c.active; supprFindings+=r.c.suppressed; verifyFindings+=r.c.verify; }
-    if(d.affected_pages.length<=2)lowvol++; }
+    } else { activeFindings+=r.c.active; supprFindings+=r.c.suppressed; verifyFindings+=r.c.verify; } }
   const manual=state.manualFindings||[];
   const mA11y=manual.filter(m=>m.type==='a11y'), mObs=manual.filter(m=>m.type==='other');
   const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active').length;
   const manualAdd = activeStream==='standard' ? mA11yActive : 0;   // manual findings live on the standard tab
   activeFindings+=manualAdd;
-  const unit = activeStream==='contrast' ? 'signatures' : 'rules';
   document.getElementById('stat-row').innerHTML=`
     <div class="stat headline"><div class="stat-n">${activeFindings}</div><div class="stat-l">Active ${activeStream==='contrast'?'contrast ':''}findings</div></div>
     <div class="stat"><div class="stat-n">${supprFindings}</div><div class="stat-l">Suppressed findings</div></div>
     <div class="stat"><div class="stat-n">${verifyFindings}</div><div class="stat-l">Fixed (verify next scan)</div></div>
-    <div class="stat"><div class="stat-n">${mA11y.length}<span style="font-size:.9rem">·${mObs.length}</span></div><div class="stat-l">Manual a11y · observations</div></div>
-    <div class="stat"><div class="stat-n">${lowvol}</div><div class="stat-l">Low-volume ${unit} (≤2 pages)</div></div>`;
+    <div class="stat"><div class="stat-n">${mA11y.length}<span style="font-size:.9rem">·${mObs.length}</span></div><div class="stat-l">Manual a11y · observations</div></div>`;
 }
 
 function sortRules(list,excl){
@@ -1125,19 +1124,18 @@ function renderTable(all,excl){
   const ordered=order.map(fp=>byFp[fp]).filter(Boolean);
   for(const d of all) if(!order.includes(d.fingerprint)) ordered.push(d);   // safety: include any new rule
   const list=ordered.filter(d=>{ if(f.search&&!d.rule_title.toLowerCase().includes(f.search))return false;
-    if(f.sev&&(gradeOf(d)||'').toUpperCase()!==f.sev.toUpperCase())return false; if(f.hideLow&&d.affected_pages.length<=2)return false;
-    const pairs=d.affected_pages.map(u=>({fp:d.fingerprint,url:u}));
+    if(f.sev&&(gradeOf(d)||'').toUpperCase()!==f.sev.toUpperCase())return false;    const pairs=d.affected_pages.map(u=>({fp:d.fingerprint,url:u}));
     if(!matchStatus(pairs,excl,f))return false; if(!matchAssignee(pairs,excl,f))return false; return true; });
   document.getElementById('result-count').textContent=`${list.length} of ${all.length} rules`;
   const tb=document.getElementById('defects-tbody');
   tb.innerHTML=list.map(d=>{
-    const fp=d.fingerprint, g=gradeOf(d), low=d.affected_pages.length<=2;
+    const fp=d.fingerprint, g=gradeOf(d);
     const r=ruleRollup(d,excl), did=`det-${cssId(fp)}`;
     const ruleDef=state.dispositions[fp];
     return `<tr class="rule-row ${r.untriaged?'rule-todo':'rule-done'}" data-fp="${esc(fp)}">
       <td class="clickable" data-toggle="${did}" style="max-width:280px"><button type="button" class="caret-btn" data-toggle="${did}" aria-controls="${did}" aria-expanded="false" aria-label="Toggle detail rows for ${esc(d.rule_title)}"><span class="caret" id="c-${cssId(fp)}"></span></button>${r.untriaged?'':'<span class="done-tick" aria-hidden="true">✓</span>'}<strong>${esc(d.rule_title)}</strong>${r.untriaged?`<span class="todo-badge">${r.untriaged} left</span>`:''}${(state.dispositions[fp]||{}).notes?'<span title="Has a rule note" aria-label="Has a rule note" style="margin-left:6px">📝</span>':''}${isGlobalFix(fp)?'<span title="Single global fix — one place fixes all pages" aria-label="Single global fix" style="margin-left:6px">🌐</span>':''}
         ${d.description?`<div class="rule-desc">${esc(d.description.slice(0,110))}${d.description.length>110?'…':''}</div>`:''}</td>
-      <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(g)}">${esc(g||'—')}</span>${low?'<span class="pill lowvol">low-vol</span>':''}</td>
+      <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(g)}">${esc(g||'—')}</span></td>
       <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.activePages}</strong> / ${r.totalPages}</td>
       <td class="clickable" data-toggle="${did}" style="text-align:center;font-weight:600">${d.instance_count}</td>
       <td><div class="roll">${r.label}</div>
@@ -1385,9 +1383,7 @@ function renderByPage(excl){
   for(const p of pagesMap.values()) if(!order.includes(p.url)) ordered.push(p);
   const list=ordered.filter(p=>{
     if(f.search && !p.url.toLowerCase().includes(f.search) && !p.elements.some(e=>e.label.toLowerCase().includes(f.search))) return false;
-    if(f.sev && !p.elements.some(e=>(gradeOf(e)||'').toUpperCase()===f.sev.toUpperCase())) return false;
-    if(f.hideLow && p.elements.length<=2) return false;
-    const pairs=p.elements.map(e=>({fp:e.fp,url:p.url}));
+    if(f.sev && !p.elements.some(e=>(gradeOf(e)||'').toUpperCase()===f.sev.toUpperCase())) return false;    const pairs=p.elements.map(e=>({fp:e.fp,url:p.url}));
     if(!matchStatus(pairs,excl,f)) return false; if(!matchAssignee(pairs,excl,f)) return false;
     return true; });
   document.getElementById('result-count').textContent=`${list.length} of ${pagesMap.size} pages`;
@@ -1597,8 +1593,8 @@ function downloadRows(rows, name, cols){
 }
 
 /* ── Export work list (CSV) — actionable items, page-level, shareable.
-   Two sections via a Section column: "Work List" (to-do) and "Deferred" (backlog). ── */
-const WORKLIST_STATUSES=['need_fix','in_progress','needs_approval','deferred'];
+   Two sections via a Section column: "Work List" (to-do), "Deferred" (backlog) and "Question" (unsure). ── */
+const WORKLIST_STATUSES=['need_fix','in_progress','needs_approval','deferred','question'];
 const ACTIVE_TODO=new Set(['need_fix','in_progress','needs_approval']);
 function collectWorkList(){
   const rows=[], excl=excludedUrls();
@@ -1633,13 +1629,13 @@ function collectWorkList(){
 function exportWorkList(){
   if(!state) return;
   const rows=collectWorkList();
-  if(!rows.length){ toast('No items in a work-list status (Need to Fix / In progress / Needs approval / Deferred).','error'); return; }
+  if(!rows.length){ toast('No items in a work-list status (Need to Fix / In progress / Needs approval / Deferred / Question).','error'); return; }
   const cols=['Section','Rule / Element','Stream','Page URL','Category / Severity','Instances','Status','Assignee','Note','Fix Instructions','Sample HTML'];
-  const flat=rows.map(r=>({ 'Section': ACTIVE_TODO.has(r._s)?'Work List':'Deferred', 'Rule / Element':r.item, 'Stream':r.stream,
+  const flat=rows.map(r=>({ 'Section': ACTIVE_TODO.has(r._s)?'Work List':r._s==='question'?'Question':'Deferred', 'Rule / Element':r.item, 'Stream':r.stream,
     'Page URL':r.url, 'Category / Severity':r.grade, 'Instances':r.instances, 'Status':r.status, 'Assignee':r.assignee, 'Note':r.note, 'Fix Instructions':r.fix, 'Sample HTML':r.html }));
   downloadRows(flat, `${state.source} - work list.csv`, cols);
-  const nDef=rows.filter(r=>r._s==='deferred').length;
-  toast(`Exported ${rows.length-nDef} to-do + ${nDef} deferred (Section column).`);
+  const nDef=rows.filter(r=>r._s==='deferred').length, nQ=rows.filter(r=>r._s==='question').length;
+  toast(`Exported ${rows.length-nDef-nQ} to-do + ${nDef} deferred + ${nQ} question (Section column).`);
 }
 
 /* ── Back up triage (CSV) — every decision, not just the actionable ones.
@@ -1685,7 +1681,7 @@ document.getElementById('head-row').addEventListener('keydown', e=>{
 
 document.addEventListener('DOMContentLoaded', init);
 async function init(){
-  ['filter-search','filter-sev','filter-status','filter-assignee','filter-lowvol'].forEach(id=>document.getElementById(id).addEventListener('input',render));
+  ['filter-search','filter-sev','filter-status','filter-assignee'].forEach(id=>document.getElementById(id).addEventListener('input',render));
   document.querySelectorAll('.tab[data-stream]').forEach(t=>t.addEventListener('click',()=>{ if(!t.disabled) switchStream(t.dataset.stream); }));
   document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.addEventListener('click',()=>setGroupBy(b.dataset.groupby)));
   document.getElementById('btn-add-manual').addEventListener('click',()=>openManualForm(''));
