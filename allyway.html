@@ -1463,6 +1463,7 @@ function buildDetail(fp){
       <select data-bf="cat" aria-label="Category for selected pages"><option value="">Category…</option>${CATS.map(c=>`<option value="${c.v}">${esc(c.label)}</option>`).join('')}</select>
       <input type="text" data-bf="note" placeholder="Note (replaces existing)…" aria-label="Note for selected pages">
       ${canEditFix()?`<button type="button" class="pages-btn" data-role="bulkfix" data-fp="${esc(fp)}">Fix instructions…</button>`:''}
+      <button type="button" class="pages-btn" data-role="bulksame" data-fp="${esc(fp)}">↪ Same as…</button>
       <button type="button" class="btn-primary" data-role="bulkapply" data-fp="${esc(fp)}">Apply to selected</button>
     </span></div>`;
   return noteBar+fixBar+aiBar+bulkBar+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -1511,7 +1512,7 @@ function buildPageDetail(url){
       <td><span class="pill ${gradePill(e.category)}">${esc(e.category||'—')}</span></td>
       <td style="text-align:center">${e.instances}</td>
       <td>${e.html?`<code>${esc(e.html.slice(0,180))}${e.html.length>180?'…':''}</code>`:''}</td>
-      <td>${statusSelect(e.fp,url,rp.status)}${subField(e.fp,url,rp)}${via?'<div class="stat-sub">(via page out-of-scope)</div>':''}</td>
+      <td>${rp._linked?linkedStatus(rp,e.fp,url):statusSelect(e.fp,url,rp.status)+subField(e.fp,url,rp)+(via?'<div class="stat-sub">(via page out-of-scope)</div>':'')+`<button type="button" class="pages-btn" data-role="samebtn" data-fp="${esc(e.fp)}" data-url="${esc(url)}" aria-label="Mark ${esc(e.label)} on ${esc(url)} as the same finding as another contrast item">↪ Same as…</button>`}</td>
       <td><input class="notes-input" type="text" value="${esc(pageNotes(e.fp,url))}" data-role="notes" data-fp="${esc(e.fp)}" data-url="${esc(url)}" aria-label="Note">
         <div style="margin-top:5px">${fixBtn(e.fp,url,true)}</div></td></tr>`;
   }).join('');
@@ -1685,8 +1686,12 @@ function renderSameList(){
   const q=document.getElementById('same-q').value.trim().toLowerCase();
   const defs = activeStream==='contrast' ? (state.contrast||{}) : state.defects;
   const hits=[]; let total=0;
-  for(const d of Object.values(defs)) for(const u of d.affected_pages){
-    if(d.fingerprint===_sameFrom.fp && u===_sameFrom.url) continue;
+  const bulk=_sameFrom.urls.length>1;
+  // This rule's own pages first: the usual target is a sibling page. Self is excluded only for a single
+  // link; in bulk the target may be one of the selected pages (it simply isn't linked to itself).
+  const ordered=Object.values(defs).sort((a,b)=>(b.fingerprint===_sameFrom.fp)-(a.fingerprint===_sameFrom.fp));
+  for(const d of ordered) for(const u of d.affected_pages){
+    if(!bulk && d.fingerprint===_sameFrom.fp && u===_sameFrom.urls[0]) continue;
     if(q && !d.rule_title.toLowerCase().includes(q) && !u.toLowerCase().includes(q)) continue;
     total++; if(hits.length<50) hits.push({fp:d.fingerprint,title:d.rule_title,url:u});
   }
@@ -1694,19 +1699,26 @@ function renderSameList(){
   document.getElementById('same-list').innerHTML=hits.map((c,i)=>`<li><button type="button" data-pick="${i}"><strong>${esc(c.title)}</strong><span class="same-url">${esc(c.url)}</span></button></li>`).join('');
   document.getElementById('same-count').textContent = total ? `${total} page${total===1?'':'s'}${total>hits.length?` — showing the first ${hits.length}, type to narrow`:''}` : 'No matching pages.';
 }
-function openSame(fp,url){
-  _sameFrom={fp,url}; const dlg=document.getElementById('same-dialog');
-  document.getElementById('same-sub').textContent=`This page: ${url}`;
+function openSame(fp,urls){   // urls: one page URL, or an array for a bulk link
+  urls=[].concat(urls); _sameFrom={fp,urls}; const dlg=document.getElementById('same-dialog');
+  document.getElementById('same-sub').textContent = urls.length>1 ? `${urls.length} selected pages will follow the page you pick` : `This page: ${urls[0]}`;
   document.getElementById('same-q').value=''; renderSameList();
   if(typeof dlg.showModal==='function') dlg.showModal(); else dlg.setAttribute('open','');
   document.getElementById('same-q').focus();
 }
 function pickSame(i){
   const c=_sameHits[i]; if(!c||!_sameFrom) return;
-  const fromKey=`${_sameFrom.fp}|||${_sameFrom.url}`, targetKey=`${c.fp}|||${c.url}`;
-  if(wouldLoop(fromKey,targetKey)){ toast('That page already follows this one — pick a different page.','error'); return; }
-  (state.dispositions[fromKey]||(state.dispositions[fromKey]={})).sameAs=targetKey;
-  document.getElementById('same-dialog').close(); _sameFrom=null; persist(); render(); toast('Linked — this page now follows that page’s status.');
+  const targetKey=`${c.fp}|||${c.url}`, bulk=_sameFrom.urls.length>1, excl=excludedUrls();
+  let linked=0, loops=0, outOfScope=0;
+  for(const u of _sameFrom.urls){ const fromKey=`${_sameFrom.fp}|||${u}`;
+    if(fromKey===targetKey) continue;                          // the target itself stays as it is
+    if(bulk && excl.has(u)){ outOfScope++; continue; }          // out-of-scope pages (e.g. redirects) stay out
+    if(wouldLoop(fromKey,targetKey)){ loops++; continue; }
+    (state.dispositions[fromKey]||(state.dispositions[fromKey]={})).sameAs=targetKey; linked++; }
+  if(!linked && loops){ toast('That page already follows this one — pick a different page.','error'); return; }
+  document.getElementById('same-dialog').close(); _sameFrom=null; persist(); render();
+  const skip=[outOfScope&&`${outOfScope} out-of-scope`, loops&&`${loops} would loop`].filter(Boolean);
+  toast(`Linked ${linked} page${linked===1?'':'s'} to follow that page’s status${skip.length?' — skipped '+skip.join(', '):''}.`);
 }
 function unlinkSame(fp,url){ const key=`${fp}|||${url}`, d=state.dispositions[key]; if(!d) return;
   delete d.sameAs; if(Object.keys(d).length===0) delete state.dispositions[key]; persist(); render(); toast('Unlinked.'); }
@@ -1748,6 +1760,7 @@ document.addEventListener('click', e=>{
   const ul=e.target.closest('[data-role=unlink]'); if(ul){ unlinkSame(ul.dataset.fp,ul.dataset.url); return; }
   const sp=e.target.closest('[data-pick]'); if(sp){ pickSame(+sp.dataset.pick); return; }
   const ba=e.target.closest('[data-role=bulkapply]'); if(ba){ applyBulk(ba.dataset.fp); return; }
+  const bs=e.target.closest('[data-role=bulksame]'); if(bs){ const urls=selectedPages(bs.dataset.fp); if(urls.length) openSame(bs.dataset.fp,urls); return; }
   const bf=e.target.closest('[data-role=bulkfix]'); if(bf){ const urls=selectedPages(bf.dataset.fp); if(urls.length) openFix({fp:bf.dataset.fp,urls}); return; }
   const fe=e.target.closest('[data-role=fixedit]'); if(fe){ openFix(fe.dataset.mid?{mid:fe.dataset.mid}:{fp:fe.dataset.fp,url:fe.dataset.url||''}); return; }
   const ft=e.target.closest('.fix-tab'); if(ft){ fixTab(ft.dataset.tab); return; }
