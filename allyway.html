@@ -804,7 +804,7 @@ async function loadSources(){
 }
 /* Canonical dashboard-summary math — BOTH streams + active manual a11y. Shared by sourceStats + saveNow.
    Global-fix rules collapse to one item here exactly as in renderStats, so card and tab agree. */
-const SUMMARY_V = 2;   // bump when this math changes — older persisted summaries are ignored, then recomputed
+const SUMMARY_V = 3;   // bump when this math changes — older persisted summaries are ignored, then recomputed
 function computeSummary(defects, contrast, dispositions, manual){
   const excl=new Set(); for(const [k,v] of Object.entries(dispositions)){ if(v.status==='out_of_scope'&&k.includes('|||')) excl.add(k.split('|||')[1]); }
   const res=(fp,url)=>{ if(excl.has(url))return 'out_of_scope';
@@ -812,16 +812,16 @@ function computeSummary(defects, contrast, dispositions, manual){
     const pg=dispositions[`${fp}|||${url}`]; if(pg&&pg.status)return pg.status; const rd=dispositions[fp]; if(rd&&rd.status)return rd.status; return 'untriaged'; };
   let active=0,suppressed=0,verify=0,untriaged=0,total=0;
   for(const defs of [defects||{}, contrast||{}]) for(const d of Object.values(defs)){
-    const c={active:0,suppressed:0,verify:0}; let nUntriaged=0;
-    for(const url of d.affected_pages){ const st=res(d.fingerprint,url); c[SMAP[st]?.bucket||'active']++; if(st==='untriaged')nUntriaged++; }
+    const c={active:0,suppressed:0,verify:0,deferred:0}; let nUntriaged=0;
+    for(const url of d.affected_pages){ const st=res(d.fingerprint,url); c[st==='deferred'?'deferred':(SMAP[st]?.bucket||'active')]++; if(st==='untriaged')nUntriaged++; }
     if((dispositions[d.fingerprint]||{}).globalFix){   // one global fix = one item, in whichever bucket it sits
       const b = c.active ? 'active' : c.verify ? 'verify' : c.suppressed ? 'suppressed' : '';
-      if(!b) continue;                                 // no pages at all — the rule contributes nothing
+      if(!b){ if(c.deferred){ total++; if(nUntriaged)untriaged++; } continue; }   // all deferred: counts as triaged, not active
       total++; if(b==='active')active++; else if(b==='verify')verify++; else suppressed++;
       if(nUntriaged)untriaged++;                       // any untriaged page → the collapsed item isn't triaged
     } else { total+=d.affected_pages.length; active+=c.active; suppressed+=c.suppressed; verify+=c.verify; untriaged+=nUntriaged; }
   }
-  active += (manual||[]).filter(m=>m.type==='a11y' && (SMAP[m.status||'untriaged']?.bucket||'active')==='active').length;
+  active += (manual||[]).filter(m=>m.type==='a11y' && m.status!=='deferred' && (SMAP[m.status||'untriaged']?.bucket||'active')==='active').length;
   return {active, suppressed, verify, untriaged, total, triagedPct: total?Math.round(100*(total-untriaged)/total):0};
 }
 // Persist a source's summary so the dashboard reads ONE small record instead of the whole scan. Non-critical: swallow errors.
@@ -1057,8 +1057,8 @@ function rollupHtml(by,total){
 
 /* Rollup of a rule across its pages → {counts by bucket, label} */
 function ruleRollup(d,excl){
-  const c={active:0,suppressed:0,verify:0}; const byStatus={};
-  for(const url of d.affected_pages){ const st=resolvePage(d.fingerprint,url,excl).status; c[bucket(st)]++; byStatus[st]=(byStatus[st]||0)+1; }
+  const c={active:0,suppressed:0,verify:0,deferred:0}; const byStatus={};
+  for(const url of d.affected_pages){ const st=resolvePage(d.fingerprint,url,excl).status; c[st==='deferred'?'deferred':bucket(st)]++; byStatus[st]=(byStatus[st]||0)+1; }
   const total=d.affected_pages.length;
   return {c,label:rollupHtml(byStatus,total),untriaged:byStatus.untriaged||0,activePages:c.active,totalPages:total};
 }
@@ -1107,7 +1107,7 @@ function renderStats(all,excl){
     } else { activeFindings+=r.c.active; supprFindings+=r.c.suppressed; verifyFindings+=r.c.verify; } }
   const manual=state.manualFindings||[];
   const mA11y=manual.filter(m=>m.type==='a11y'), mObs=manual.filter(m=>m.type==='other');
-  const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active'&&(!activeCat||m.cat===activeCat)).length;
+  const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active'&&m.status!=='deferred'&&(!activeCat||m.cat===activeCat)).length;
   const manualAdd = activeStream==='standard' ? mA11yActive : 0;   // manual findings live on the standard tabs, by category
   activeFindings+=manualAdd;
   document.getElementById('stat-row').innerHTML=`
@@ -1145,8 +1145,8 @@ function contrastPages(){
       instances:d.page_instances[url]||0,html:(d.page_html[url]||[])[0]||''}); } }
   return pages;
 }
-function pageRollup(p,excl){ const c={active:0,suppressed:0,verify:0}; const by={};
-  for(const e of p.elements){ const st=resolvePage(e.fp,p.url,excl).status; c[bucket(st)]++; by[st]=(by[st]||0)+1; }
+function pageRollup(p,excl){ const c={active:0,suppressed:0,verify:0,deferred:0}; const by={};
+  for(const e of p.elements){ const st=resolvePage(e.fp,p.url,excl).status; c[st==='deferred'?'deferred':bucket(st)]++; by[st]=(by[st]||0)+1; }
   c.label=rollupHtml(by,p.elements.length); c.untriaged=by.untriaged||0;
   let worst=null,wr=99; for(const e of p.elements){ const g=gradeOf(e),r=gradeRank(g); if(r<wr){wr=r;worst=g;} } c.worst=worst||'—'; return c; }
 function sortPages(list,excl){ const val=p=>{ if(sortKey==='url')return p.url.toLowerCase();
