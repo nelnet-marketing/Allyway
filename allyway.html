@@ -489,7 +489,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
           <button class="btn-primary" id="btn-add-manual" type="button" style="margin-bottom:12px">＋ Add finding</button>
           <div id="manual-form" hidden></div>
           <div class="tbl-wrap"><table class="defects"><thead><tr>
-            <th>Title</th><th>Page</th><th>Type</th><th>Severity</th><th>Status</th><th>Assignee</th><th>Note</th><th>Fix</th><th></th>
+            <th>Title</th><th>Page</th><th>Type</th><th>Severity</th><th>Category</th><th>Status</th><th>Assignee</th><th>Note</th><th>Fix</th><th></th>
           </tr></thead><tbody id="manual-tbody"></tbody></table></div>
         </div>
       </details>
@@ -1077,6 +1077,7 @@ function refreshCatTabs(){
   const n=Object.fromEntries(CATS.map(c=>[c.v,0]));
   for(const [fp,d] of Object.entries(state.defects||{})){ const seen=new Set();
     for(const u of d.affected_pages){ const c=effCat(fp,u); if(c&&n[c]!==undefined&&!seen.has(c)){ seen.add(c); n[c]++; } } }
+  for(const m of (state.manualFindings||[])) if(m.cat&&n[m.cat]!==undefined) n[m.cat]++;   // manual findings count toward their tab too
   for(const c of CATS) document.getElementById('tab-cat-'+c.v).textContent=`${c.label} (${n[c.v]})`;
 }
 function renderStats(all,excl){
@@ -1087,8 +1088,8 @@ function renderStats(all,excl){
     } else { activeFindings+=r.c.active; supprFindings+=r.c.suppressed; verifyFindings+=r.c.verify; } }
   const manual=state.manualFindings||[];
   const mA11y=manual.filter(m=>m.type==='a11y'), mObs=manual.filter(m=>m.type==='other');
-  const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active').length;
-  const manualAdd = activeStream==='standard' && !activeCat ? mA11yActive : 0;   // manual findings live on the All tab
+  const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active'&&(!activeCat||m.cat===activeCat)).length;
+  const manualAdd = activeStream==='standard' ? mA11yActive : 0;   // manual findings live on the standard tabs, by category
   activeFindings+=manualAdd;
   document.getElementById('stat-row').innerHTML=`
     <div class="stat headline"><div class="stat-n">${activeFindings}</div><div class="stat-l">Active ${activeStream==='contrast'?'contrast ':''}findings</div></div>
@@ -1562,7 +1563,8 @@ function renderSuppressed(all,excl){
 /* ── Manual findings & observations ─────────────────────────── */
 const genId=()=>'m_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 function renderManual(){
-  const list=state.manualFindings||[];
+  const everything=state.manualFindings||[];
+  const list = activeStream==='standard' && activeCat ? everything.filter(m=>m.cat===activeCat) : everything;   // a category tab shows its own findings
   document.getElementById('manual-summary').textContent=`Manual findings & observations (${list.length})`;
   const tb=document.getElementById('manual-tbody');
   tb.innerHTML=list.map(m=>{
@@ -1573,13 +1575,14 @@ function renderManual(){
       <td>${m.url?`<a href="${esc(m.url)}" target="_blank" rel="noopener noreferrer">${esc(m.url)}</a>`:'—'}</td>
       <td><span class="pill ${m.type==='a11y'?'sev-high':'lowvol'}">${m.type==='a11y'?'A11y · counts':'Observation'}</span></td>
       <td><span class="pill sev-${sev}">${esc(m.severity||'—')}</span></td>
+      <td><select class="subfield" data-role="mcat" data-id="${esc(m.id)}" aria-label="Category for ${esc(m.title)}"><option value="">—</option>${CATS.map(c=>`<option value="${c.v}"${c.v===m.cat?' selected':''}>${esc(c.label)}</option>`).join('')}</select></td>
       <td><select class="status-sel ${statusClass(st)}" data-role="mstatus" data-id="${esc(m.id)}" aria-label="Status">${opts}</select></td>
       <td>${SMAP[st]&&SMAP[st].field==='assignee' ? `<input class="subfield" type="text" value="${esc(m.assignee||'')}" data-role="massignee" data-id="${esc(m.id)}" placeholder="Assignee…" aria-label="Assignee for ${esc(m.title)}">` : (m.assignee?`<span class="stat-sub">${esc(m.assignee)}</span>`:'')}</td>
       <td><input class="notes-input" type="text" value="${esc(m.note||'')}" data-role="mnote" data-id="${esc(m.id)}" aria-label="Note"></td>
       <td>${fixBtnManual(m)}</td>
       <td style="white-space:nowrap"><button class="pages-btn" type="button" data-role="medit" data-id="${esc(m.id)}" aria-label="Edit finding ${esc(m.title)}">Edit</button>
         <button class="pages-btn" type="button" data-role="mremove" data-id="${esc(m.id)}" aria-label="Remove finding ${esc(m.title)}">✕</button></td></tr>`;
-  }).join('')||`<tr><td colspan="9" style="text-align:center;color:var(--gray);padding:16px">No manual findings yet — use “＋ Add finding”, or “＋ finding” on a page in any drill-down.</td></tr>`;
+  }).join('')||`<tr><td colspan="10" style="text-align:center;color:var(--gray);padding:16px">No manual findings yet — use “＋ Add finding”, or “＋ finding” on a page in any drill-down.</td></tr>`;
 }
 let _editingManual=null;
 function openManualForm(url='', editId=''){
@@ -1596,6 +1599,7 @@ function openManualForm(url='', editId=''){
     <label ${stackLbl}>Type <select id="mf-type" ${selSty}><option value="a11y"${sel('a11y',curType)}>Accessibility (scanner missed) — counts</option><option value="other"${sel('other',curType)}>Other observation — not counted</option></select></label>
     <label ${stackLbl}>Severity <select id="mf-sev" ${selSty}>${['CRITICAL','HIGH','MEDIUM','LOW','BEST PRACTICE'].map(s=>`<option${sel(s,curSev)}>${s}</option>`).join('')}</select></label>
     <label ${stackLbl}>Status <select id="mf-status" ${selSty}>${STATUSES.filter(s=>!s.pageOnly).map(s=>`<option value="${s.v}"${sel(s.v,curStatus)}>${esc(s.label)}</option>`).join('')}</select></label>
+    <label ${stackLbl}>Category <select id="mf-cat" ${selSty}><option value="">—</option>${CATS.map(c=>`<option value="${c.v}"${sel(c.v,m?m.cat:'')}>${esc(c.label)}</option>`).join('')}</select></label>
     <label ${stackLbl}>Note <input id="mf-note" class="notes-input" type="text" value="${esc(curNote)}" placeholder="optional (e.g. redirects to our other site)"></label>
     <div style="grid-column:1/3;display:flex;gap:8px">
       <button class="btn-primary" id="mf-save" type="button">${m?'Update finding':'Save finding'}</button>
@@ -1610,6 +1614,7 @@ function saveManual(){
   const fields={ url:document.getElementById('mf-url').value.trim(), title,
     type:document.getElementById('mf-type').value, severity:document.getElementById('mf-sev').value,
     status:document.getElementById('mf-status').value, note:document.getElementById('mf-note').value.trim() };
+  fields.cat=document.getElementById('mf-cat').value;   // '' clears it on edit
   const wasEdit=!!_editingManual;
   if(wasEdit){ const m=(state.manualFindings||[]).find(x=>x.id===_editingManual); if(m) Object.assign(m, fields); }   // keeps id/assignee/fix
   else (state.manualFindings||(state.manualFindings=[])).push({id:genId(), ...fields});
@@ -1748,6 +1753,7 @@ document.addEventListener('change', e=>{
   const el=e.target, fp=el.dataset.fp, url=el.dataset.url||'';
   if(el.dataset.role==='pgsel'){ updateBulkBar(fp); return; }
   if(el.dataset.role==='pgselall'){ document.querySelectorAll('[data-role=pgsel]').forEach(c=>{ if(c.dataset.fp===fp) c.checked=el.checked; }); updateBulkBar(fp); return; }
+  if(el.dataset.role==='mcat'){ const m=state.manualFindings.find(x=>x.id===el.dataset.id); if(m){m.cat=el.value;persist();render();} return; }
   if(el.dataset.role==='mstatus'){ const m=state.manualFindings.find(x=>x.id===el.dataset.id); if(m){m.status=el.value;persist();render();} return; }
   if(el.dataset.role==='globalfix'){ let d=state.dispositions[fp];
     if(el.checked){ if(!d) d=state.dispositions[fp]={}; d.globalFix=true; }
@@ -1844,7 +1850,7 @@ function collectWorkList(){
   }
   for(const m of (state.manualFindings||[])){ if(!WORKLIST_STATUSES.includes(m.status)) continue;
     rows.push({ _s:m.status, item:m.title, stream:'manual ('+(m.type==='a11y'?'a11y':'obs')+')', url:m.url||'',
-      grade:m.severity||'', instances:'', status:SMAP[m.status].label, assignee:m.assignee||'', note:m.note||'', fix:m.fix||'', html:'', cat:'' }); }
+      grade:m.severity||'', instances:'', status:SMAP[m.status].label, assignee:m.assignee||'', note:m.note||'', fix:m.fix||'', html:'', cat:m.cat||'' }); }
   return rows;
 }
 function exportWorkList(){
@@ -1871,7 +1877,7 @@ function collectTriage(){
       xcat:d.xcat||'', cat:d.cat||'', assignee:d.assignee||'', globalFix:d.globalFix?'yes':'', notes:d.notes||'', fix:d.fix||'' });
   for(const m of (state.manualFindings||[]))   // hand-authored, so worth keeping at any status
     rows.push({ kind:'manual', source:state.source, dkey:m.id, status:m.status||'',
-      assignee:m.assignee||'', notes:m.note||'', fix:m.fix||'',
+      assignee:m.assignee||'', notes:m.note||'', fix:m.fix||'', cat:m.cat||'',
       title:m.title||'', url:m.url||'', type:m.type||'', severity:m.severity||'' });
   rows.push({ kind:'config', source:'_site', dkey:'xcats', notes:(state.xcats||[]).join(' | ') });
   return rows;
