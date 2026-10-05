@@ -434,6 +434,10 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
     <div id="tracker-area" hidden>
       <div class="tabs" role="tablist">
         <button class="tab" role="tab" aria-selected="true" id="tab-standard" data-stream="standard">Standard rules</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-cat-html" data-stream="cat:html">HTML</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-cat-js" data-stream="cat:js">JavaScript</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-cat-widget" data-stream="cat:widget">Third-party</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-cat-other" data-stream="cat:other">Other</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-contrast" data-stream="contrast" disabled title="Load an export with a Contrast Detail sheet">Contrast</button>
       </div>
       <div id="contrast-groupby" role="group" aria-label="Group contrast findings by" style="display:none;align-items:center;gap:8px;margin-bottom:14px;font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;color:var(--dark-gray)">
@@ -625,10 +629,23 @@ let statsCache = {};                              // src -> last computed dashbo
 let sortKey = 'sev', sortDir = 1;
 let activeStream = 'standard';                    // 'standard' | 'contrast'
 let contrastGroupBy = 'signature';                // contrast tab: 'signature' | 'page'
+/* Implementation category — which kind of code change fixes a page. Set per rule or per page (page wins);
+   Color/Visual is the Contrast tab, so it isn't a value here. A category tab shows only its pages. */
+const CATS = [{v:'html',label:'HTML'},{v:'js',label:'JavaScript'},{v:'widget',label:'Third-party'},{v:'other',label:'Other'}];
+const CMAP = Object.fromEntries(CATS.map(c=>[c.v,c]));
+let activeCat = '';                               // standard stream only: '' = all pages, else a CATS value
 const orders = { standard: [], contrast: [], contrastPage: [] };   // frozen display order per view
-const currentDefects = () => activeStream==='contrast' ? (state.contrast||{}) : state.defects;
+const effCat = (fp,url) => { const pd=url?state.dispositions[`${fp}|||${url}`]:null; if(pd&&pd.cat) return pd.cat;
+  const rd=state.dispositions[fp]; return (rd&&rd.cat)||''; };
+// A category tab sees each rule trimmed to the pages in that category; rules with none drop out.
+function catView(defs,cat){ const out={};
+  for(const [fp,d] of Object.entries(defs)){ const pages=d.affected_pages.filter(u=>effCat(fp,u)===cat);
+    if(pages.length) out[fp]={...d, affected_pages:pages, instance_count:pages.reduce((n,u)=>n+(d.page_instances[u]||0),0)}; }
+  return out; }
+const currentDefects = () => activeStream==='contrast' ? (state.contrast||{}) : activeCat ? catView(state.defects,activeCat) : state.defects;
 const pageView = () => activeStream==='contrast' && contrastGroupBy==='page';
-const orderKey = () => pageView() ? 'contrastPage' : activeStream;
+const orderKey = () => { const k = pageView() ? 'contrastPage' : (activeStream==='standard' && activeCat) ? 'cat:'+activeCat : activeStream;
+  return orders[k] ? k : (orders[k]=[], k); };
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const cssId = s => String(s).replace(/[^a-zA-Z0-9_-]/g,'_');
@@ -852,11 +869,11 @@ async function loadSource(src, localScan){
 }
 function activateSource(){
   const {source:src, scanDate, defects, contrast}=state;
-  activeStream='standard'; contrastGroupBy='signature'; sortKey='sev'; sortDir=1;
+  activeStream='standard'; activeCat=''; contrastGroupBy='signature'; sortKey='sev'; sortDir=1;
   syncGroupByButtons();   // the reset above must reach the pills, not just the variable
-  orders.standard=[]; orders.contrast=[]; orders.contrastPage=[];
+  for(const k of Object.keys(orders)) orders[k]=[];
   const ct=document.getElementById('tab-contrast'); const cCount=Object.keys(contrast).length;
-  document.querySelector('.tab[data-stream=standard]').setAttribute('aria-selected','true');
+  document.querySelectorAll('.tab[data-stream]').forEach(t=>t.setAttribute('aria-selected',String(t.dataset.stream==='standard')));
   ct.setAttribute('aria-selected','false');
   ct.disabled=!cCount; ct.textContent=cCount?'Contrast':'Contrast (none)';
   document.getElementById('picker-area').hidden=true;
@@ -1004,13 +1021,20 @@ function render(){
   const all=Object.values(currentDefects());
   renderStats(all,excl);
   if(pageView()) renderByPage(excl); else renderTable(all,excl);
-  refreshStatusFilter(); refreshAssigneeFilter();
+  refreshStatusFilter(); refreshAssigneeFilter(); refreshCatTabs();
   renderSuppressed(all,excl);
   renderManual();
   document.getElementById('contrast-groupby').style.display = activeStream==='contrast' ? 'flex' : 'none';
   openIds.forEach(id=>{ if(document.getElementById(id)) toggleDetail(id); });   // preserve expanded rows
 }
 
+// Rules with at least one page in each category, so an empty tab is obvious before you click it.
+function refreshCatTabs(){
+  const n=Object.fromEntries(CATS.map(c=>[c.v,0]));
+  for(const [fp,d] of Object.entries(state.defects||{})){ const seen=new Set();
+    for(const u of d.affected_pages){ const c=effCat(fp,u); if(c&&n[c]!==undefined&&!seen.has(c)){ seen.add(c); n[c]++; } } }
+  for(const c of CATS) document.getElementById('tab-cat-'+c.v).textContent=`${c.label} (${n[c.v]})`;
+}
 function renderStats(all,excl){
   let activeFindings=0,supprFindings=0,verifyFindings=0;
   for(const d of all){ const r=ruleRollup(d,excl);
@@ -1020,7 +1044,7 @@ function renderStats(all,excl){
   const manual=state.manualFindings||[];
   const mA11y=manual.filter(m=>m.type==='a11y'), mObs=manual.filter(m=>m.type==='other');
   const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active').length;
-  const manualAdd = activeStream==='standard' ? mA11yActive : 0;   // manual findings live on the standard tab
+  const manualAdd = activeStream==='standard' && !activeCat ? mA11yActive : 0;   // manual findings live on the All tab
   activeFindings+=manualAdd;
   document.getElementById('stat-row').innerHTML=`
     <div class="stat headline"><div class="stat-n">${activeFindings}</div><div class="stat-l">Active ${activeStream==='contrast'?'contrast ':''}findings</div></div>
@@ -1069,7 +1093,7 @@ function sortPages(list,excl){ const val=p=>{ if(sortKey==='url')return p.url.to
 function recomputeOrder(){
   const excl=excludedUrls();
   if(pageView()) orders.contrastPage=sortPages([...contrastPages().values()],excl).map(p=>p.url);
-  else orders[activeStream]=sortRules(Object.values(currentDefects()),excl).map(d=>d.fingerprint);
+  else orders[orderKey()]=sortRules(Object.values(currentDefects()),excl).map(d=>d.fingerprint);
 }
 function updateFilterOptions(){
   const sel=document.getElementById('filter-sev'); const cur=sel.value;
@@ -1091,10 +1115,12 @@ function refreshAssigneeFilter(){
     +(names.length?'<optgroup label="People">'+names.map(n=>`<option value="${esc(n)}"${n===acur?' selected':''}>${esc(n)}</option>`).join('')+'</optgroup>':'');
   asel.value=names.includes(acur)||['','__any','__none'].includes(acur)?acur:'';   // keep selection if still valid
 }
-function switchStream(s){
-  if(s===activeStream || !state) return;
+function switchStream(s){   // s: 'standard' | 'contrast' | 'cat:<value>'
+  if(!state) return;
+  const stream = s==='contrast' ? 'contrast' : 'standard', cat = s.startsWith('cat:') ? s.slice(4) : '';
+  if(stream===activeStream && cat===activeCat) return;
   if(s==='contrast' && Object.keys(state.contrast||{}).length===0) return;
-  activeStream=s; sortKey='sev'; sortDir=1;
+  activeStream=stream; activeCat=cat; sortKey='sev'; sortDir=1;
   document.querySelectorAll('.tab[data-stream]').forEach(t=>t.setAttribute('aria-selected',String(t.dataset.stream===s)));
   updateFilterOptions();
   if(!orders[orderKey()].length) recomputeOrder();
@@ -1127,7 +1153,7 @@ function renderTable(all,excl){
   setHead(sigCols());
   const f=filters();
   const byFp=Object.fromEntries(all.map(d=>[d.fingerprint,d]));
-  const order=orders[activeStream];
+  const order=orders[orderKey()];
   const ordered=order.map(fp=>byFp[fp]).filter(Boolean);
   for(const d of all) if(!order.includes(d.fingerprint)) ordered.push(d);   // safety: include any new rule
   const list=ordered.filter(d=>{ if(f.search&&!d.rule_title.toLowerCase().includes(f.search))return false;
@@ -1148,7 +1174,9 @@ function renderTable(all,excl){
       <td><div class="roll">${r.label}</div>
         <select class="bulk-sel" data-role="bulk" data-fp="${esc(fp)}" aria-label="Set all pages for ${esc(d.rule_title)}">
           <option value="">↳ Set all pages…</option>${STATUSES.filter(s=>!s.pageOnly).map(s=>`<option value="${s.v}">${esc(s.label)}</option>`).join('')}</select>
-        ${ruleDef?subField(fp,'',ruleDef):''}</td>
+        ${ruleDef?subField(fp,'',ruleDef):''}
+        <select class="bulk-sel" data-role="bulkcat" data-fp="${esc(fp)}" aria-label="Set category for ${activeCat?'the pages shown':'all pages'} of ${esc(d.rule_title)}">
+          <option value="">↳ Category${activeCat?' (shown pages)':' (all pages)'}…</option>${CATS.map(c=>`<option value="${c.v}">${esc(c.label)}</option>`).join('')}${activeCat?'':'<option value="__none">No category</option>'}</select></td>
     </tr>
     <tr class="detail-row hidden" id="${did}" data-built="0"><td colspan="5"></td></tr>`;
   }).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--gray);padding:24px">No rules match the filters.</td></tr>`;
@@ -1359,6 +1387,7 @@ function buildDetail(fp){
       <td>${esc(comps)}</td>
       <td>${html?`<code>${esc(html.slice(0,180))}${html.length>180?'…':''}</code>`:''}</td>
       <td>${statusSelect(fp,url,rp.status)}${subField(fp,url,rp)}${via?'<div class="stat-sub">(via page out-of-scope)</div>':''}</td>
+      <td>${catSelect(fp,url)}</td>
       <td><input class="notes-input" type="text" value="${esc(pageNotes(fp,url))}" data-role="notes" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Notes for ${esc(url)}">
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px"><button class="pages-btn" type="button" data-add-url="${esc(url)}" aria-label="Add a manual finding on ${esc(url)}">＋ finding</button>${fixBtn(fp,url,true)}</div></td></tr>`;
   }).join('');
@@ -1380,7 +1409,10 @@ function buildDetail(fp){
       <div class="ai-note">AI-generated guidance — verify against the WCAG spec before acting.</div>
     </div></div>`;
   const fixBar=`<div class="fix-bar">${fixBtn(fp,'',false)}</div>`;
-  return noteBar+fixBar+aiBar+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return noteBar+fixBar+aiBar+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function catSelect(fp,url){ const cur=effCat(fp,url);
+  return `<select class="subfield" data-role="cat" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Category for ${esc(url)}"><option value="">—</option>${CATS.map(c=>`<option value="${c.v}"${c.v===cur?' selected':''}>${esc(c.label)}</option>`).join('')}</select>`;
 }
 /* ── Contrast PAGE view — one row per page, expand to the contrast elements on it ── */
 function renderByPage(excl){
@@ -1530,13 +1562,26 @@ function setBulk(fp,val){ // apply a status to the whole rule
     if(!k.startsWith(fp+'|||')) continue;
     const d=state.dispositions[k];
     if(d.assignee){   // page has its own owner → carry it onto the new status, drop other overrides
-      const kept={status:val,assignee:d.assignee}; if(d.notes) kept.notes=d.notes; if(d.fix) kept.fix=d.fix; ensureField(kept,val); state.dispositions[k]=kept;
-    } else {          // no page owner → inherit rule-level status + assignee; keep only a note/fix if present
-      const kept={}; if(d.notes) kept.notes=d.notes; if(d.fix) kept.fix=d.fix;
+      const kept={status:val,assignee:d.assignee}; if(d.notes) kept.notes=d.notes; if(d.fix) kept.fix=d.fix; if(d.cat) kept.cat=d.cat; ensureField(kept,val); state.dispositions[k]=kept;
+    } else {          // no page owner → inherit rule-level status + assignee; keep only a note/fix/category if present
+      const kept={}; if(d.notes) kept.notes=d.notes; if(d.fix) kept.fix=d.fix; if(d.cat) kept.cat=d.cat;
       if(Object.keys(kept).length) state.dispositions[k]=kept; else delete state.dispositions[k];
     }
   }
   persist();
+}
+function setCat(fp,url,val){   // '' removes the override (the page then inherits the rule's category)
+  const key=url?`${fp}|||${url}`:fp; let d=state.dispositions[key];
+  if(val){ if(!d) d=state.dispositions[key]={}; d.cat=val; }
+  else if(d){ delete d.cat; if(Object.keys(d).length===0) delete state.dispositions[key]; }
+  persist();
+}
+// Bulk: on the All tab it sets the rule's category and clears page overrides; on a category tab it
+// moves only the pages shown, since the rest of the rule's pages aren't on screen.
+function setCatBulk(fp,val){
+  const v = val==='__none' ? '' : val;
+  if(!activeCat){ for(const k of Object.keys(state.dispositions)){ if(k.startsWith(fp+'|||')) setCat(fp,k.slice(fp.length+3),''); } setCat(fp,'',v); return; }
+  for(const u of currentDefects()[fp].affected_pages) setCat(fp,u,v);
 }
 function setNotes(fp,url,val){
   const key=url?`${fp}|||${url}`:fp; let d=state.dispositions[key];
@@ -1554,6 +1599,8 @@ document.addEventListener('change', e=>{
     persist(); render(); return; }
   if(el.dataset.role==='status'){ setStatus(fp,url,el.value); render(); }
   else if(el.dataset.role==='bulk'){ if(el.value){ setBulk(fp,el.value); render(); } }
+  else if(el.dataset.role==='bulkcat'){ if(el.value){ setCatBulk(fp,el.value); render(); } }
+  else if(el.dataset.role==='cat'){ setCat(fp,url,el.value); render(); }
   else if(el.dataset.role==='bulkpage'){ if(el.value){ const p=contrastPages().get(el.dataset.url); if(p){ for(const e of p.elements) setStatus(e.fp,el.dataset.url,el.value); render(); } } }
   else if(el.dataset.role==='sub'){
     const key=url?`${fp}|||${url}`:fp; const d=state.dispositions[key]; if(!d)return;
@@ -1616,7 +1663,7 @@ function collectWorkList(){
         rows.push({ _s:st, item:d.rule_title, stream, url:`(global fix — ${d.affected_pages.length} pages)`,
           grade: stream==='contrast' ? (d.category||'') : (d.severity||''),
           instances:d.instance_count||'', status:SMAP[st].label, assignee:effAssignee(d.fingerprint,''),
-          note:rd.notes||'', fix:rd.fix||'', html:sample });
+          note:rd.notes||'', fix:rd.fix||'', html:sample, cat:effCat(d.fingerprint,'') });
         continue;
       }
       for(const url of d.affected_pages){
@@ -1626,20 +1673,20 @@ function collectWorkList(){
         instances:d.page_instances[url]||'', status:SMAP[rp.status].label, assignee:effAssignee(d.fingerprint,url),
         note:pageNotes(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).notes||'',
         fix:fixOf(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).fix||'',
-        html:(d.page_html[url]||[])[0]||'' }); } }
+        html:(d.page_html[url]||[])[0]||'', cat:stream==='contrast'?'':effCat(d.fingerprint,url) }); } }
   }
   for(const m of (state.manualFindings||[])){ if(!WORKLIST_STATUSES.includes(m.status)) continue;
     rows.push({ _s:m.status, item:m.title, stream:'manual ('+(m.type==='a11y'?'a11y':'obs')+')', url:m.url||'',
-      grade:m.severity||'', instances:'', status:SMAP[m.status].label, assignee:m.assignee||'', note:m.note||'', fix:m.fix||'', html:'' }); }
+      grade:m.severity||'', instances:'', status:SMAP[m.status].label, assignee:m.assignee||'', note:m.note||'', fix:m.fix||'', html:'', cat:'' }); }
   return rows;
 }
 function exportWorkList(){
   if(!state) return;
   const rows=collectWorkList();
   if(!rows.length){ toast('No items in a work-list status (Need to Fix / In progress / Needs approval / Deferred / Question).','error'); return; }
-  const cols=['Section','Rule / Element','Stream','Page URL','Category / Severity','Instances','Status','Assignee','Note','Fix Instructions','Sample HTML'];
+  const cols=['Section','Rule / Element','Stream','Page URL','Category / Severity','Instances','Status','Assignee','Category','Note','Fix Instructions','Sample HTML'];
   const flat=rows.map(r=>({ 'Section': ACTIVE_TODO.has(r._s)?'Work List':r._s==='question'?'Question':'Deferred', 'Rule / Element':r.item, 'Stream':r.stream,
-    'Page URL':r.url, 'Category / Severity':r.grade, 'Instances':r.instances, 'Status':r.status, 'Assignee':r.assignee, 'Note':r.note, 'Fix Instructions':r.fix, 'Sample HTML':r.html }));
+    'Page URL':r.url, 'Category / Severity':r.grade, 'Instances':r.instances, 'Status':r.status, 'Assignee':r.assignee, 'Category':r.stream==='contrast'?'Color/Visual':(CMAP[r.cat]?CMAP[r.cat].label:''), 'Note':r.note, 'Fix Instructions':r.fix, 'Sample HTML':r.html }));
   downloadRows(flat, `${state.source} - work list.csv`, cols);
   const nDef=rows.filter(r=>r._s==='deferred').length, nQ=rows.filter(r=>r._s==='question').length;
   toast(`Exported ${rows.length-nDef-nQ} to-do + ${nDef} deferred + ${nQ} question (Section column).`);
@@ -1654,7 +1701,7 @@ function collectTriage(){
   const rows=[];
   for(const [dkey,d] of Object.entries(state.dispositions||{}))
     rows.push({ kind:'disp', source:state.source, dkey, status:d.status||'', reason:d.reason||'',
-      xcat:d.xcat||'', assignee:d.assignee||'', globalFix:d.globalFix?'yes':'', notes:d.notes||'', fix:d.fix||'' });
+      xcat:d.xcat||'', cat:d.cat||'', assignee:d.assignee||'', globalFix:d.globalFix?'yes':'', notes:d.notes||'', fix:d.fix||'' });
   for(const m of (state.manualFindings||[]))   // hand-authored, so worth keeping at any status
     rows.push({ kind:'manual', source:state.source, dkey:m.id, status:m.status||'',
       assignee:m.assignee||'', notes:m.note||'', fix:m.fix||'',
