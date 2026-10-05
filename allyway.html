@@ -900,7 +900,7 @@ async function loadSource(src, localScan){
 }
 function activateSource(){
   const {source:src, scanDate, defects, contrast}=state;
-  activeStream='standard'; activeCat=''; contrastGroupBy='signature'; sortKey='sev'; sortDir=1;
+  activeStream='standard'; activeCat=''; contrastGroupBy='signature'; sortKey='sev'; sortDir=1; _pin=null;
   syncGroupByButtons();   // the reset above must reach the pills, not just the variable
   for(const k of Object.keys(orders)) orders[k]=[];
   const ct=document.getElementById('tab-contrast'); const cCount=Object.keys(contrast).length;
@@ -1020,6 +1020,16 @@ function statusesInUse(){ if(!state) return []; const excl=excludedUrls(); const
     for(const u of d.affected_pages) set.add(resolvePage(d.fingerprint,u,excl).status);
   for(const m of (state.manualFindings||[])) set.add(m.status||'untriaged');
   return STATUSES.filter(s=>set.has(s.v)).map(s=>s.v); }
+/* Rows stay put after an edit: the Status/Assignee filter is evaluated once, when its value changes, and
+   that set of pages is held until the filter changes again — updating a finding never makes it vanish. */
+let _pin=null;
+function pinFor(excl,f){ if(!f.status&&!f.assignee){ _pin=null; return null; }
+  const key=f.status+'|'+f.assignee; if(_pin&&_pin.key===key) return _pin;
+  const keys=new Set();
+  for(const defs of [state.defects||{},state.contrast||{}]) for(const d of Object.values(defs)) for(const u of d.affected_pages){
+    const pr=[{fp:d.fingerprint,url:u}]; if(matchStatus(pr,excl,f)&&matchAssignee(pr,excl,f)) keys.add(d.fingerprint+'|||'+u); }
+  return _pin={key,status:f.status,assignee:f.assignee,keys}; }
+function matchPairs(pairs,excl,f){ const p=pinFor(excl,f); return !p || pairs.some(x=>p.keys.has(x.fp+'|||'+x.url)); }
 function matchStatus(pairs,excl,f){
   if(!f.status) return true;
   return pairs.some(p=>resolvePage(p.fp,p.url,excl).status===f.status);
@@ -1149,13 +1159,15 @@ function updateFilterOptions(){
 }
 // Rebuild the status dropdown from statuses in use; called on load and each render.
 function refreshStatusFilter(){
-  const sel=document.getElementById('filter-status'); const cur=sel.value; const vs=statusesInUse();
+  const sel=document.getElementById('filter-status'); const cur=sel.value; let vs=statusesInUse();
+  if(cur && !vs.includes(cur) && _pin && _pin.status===cur) vs=STATUSES.filter(s=>s.v===cur||vs.includes(s.v)).map(s=>s.v);   // keep a pinned filter selectable
   sel.innerHTML='<option value="">All</option>'+vs.map(v=>`<option value="${v}"${v===cur?' selected':''}>${esc(SMAP[v].label)}</option>`).join('');
   sel.value=vs.includes(cur)?cur:'';   // clear a selection that no longer exists
 }
 // Rebuild the assignee dropdown from names in use; called on load and each render so new names appear.
 function refreshAssigneeFilter(){
   const asel=document.getElementById('filter-assignee'); const acur=asel.value; const names=allAssignees();
+  if(acur && !['__any','__none'].includes(acur) && !names.includes(acur) && _pin && _pin.assignee===acur) names.push(acur);   // keep a pinned filter selectable
   asel.innerHTML='<option value="">All</option><option value="__any">Assigned (any)</option><option value="__none">Unassigned</option>'
     +(names.length?'<optgroup label="People">'+names.map(n=>`<option value="${esc(n)}"${n===acur?' selected':''}>${esc(n)}</option>`).join('')+'</optgroup>':'');
   asel.value=names.includes(acur)||['','__any','__none'].includes(acur)?acur:'';   // keep selection if still valid
@@ -1203,7 +1215,7 @@ function renderTable(all,excl){
   for(const d of all) if(!order.includes(d.fingerprint)) ordered.push(d);   // safety: include any new rule
   const list=ordered.filter(d=>{ if(f.search&&!d.rule_title.toLowerCase().includes(f.search))return false;
     if(f.sev&&(gradeOf(d)||'').toUpperCase()!==f.sev.toUpperCase())return false;    const pairs=d.affected_pages.map(u=>({fp:d.fingerprint,url:u}));
-    if(!matchStatus(pairs,excl,f))return false; if(!matchAssignee(pairs,excl,f))return false; return true; });
+    return matchPairs(pairs,excl,f); });
   document.getElementById('result-count').textContent=`${list.length} of ${all.length} rules`;
   const tb=document.getElementById('defects-tbody');
   tb.innerHTML=list.map(d=>{
@@ -1434,7 +1446,7 @@ async function draftFixWithAI(){ if(!_fixTarget || !window.NelnetAI || !canEditF
 }
 function buildDetail(fp){
   const d=currentDefects()[fp]; const excl=excludedUrls();
-  const f=filters(), shown=d.affected_pages.filter(u=>{ const pr=[{fp,url:u}]; return matchStatus(pr,excl,f)&&matchAssignee(pr,excl,f); });   // honour the Status/Assignee filters
+  const f=filters(), shown=d.affected_pages.filter(u=>{ return matchPairs([{fp,url:u}],excl,f); });   // honour the Status/Assignee filters
   const rows=shown.slice().sort((a,b)=>(d.page_instances[b]-d.page_instances[a])).map(url=>{
     const rp=resolvePage(fp,url,excl); const via=rp._viaPage&&!state.dispositions[`${fp}|||${url}`];
     const html=(d.page_html[url]||[])[0]||''; const comps=(d.page_components[url]||[]).join('; ');
@@ -1502,7 +1514,7 @@ function renderByPage(excl){
   const list=ordered.filter(p=>{
     if(f.search && !p.url.toLowerCase().includes(f.search) && !p.elements.some(e=>e.label.toLowerCase().includes(f.search))) return false;
     if(f.sev && !p.elements.some(e=>(gradeOf(e)||'').toUpperCase()===f.sev.toUpperCase())) return false;    const pairs=p.elements.map(e=>({fp:e.fp,url:p.url}));
-    if(!matchStatus(pairs,excl,f)) return false; if(!matchAssignee(pairs,excl,f)) return false;
+    if(!matchPairs(pairs,excl,f)) return false;
     return true; });
   document.getElementById('result-count').textContent=`${list.length} of ${pagesMap.size} pages`;
   const tb=document.getElementById('defects-tbody');
@@ -1519,7 +1531,7 @@ function renderByPage(excl){
 }
 function buildPageDetail(url){
   const p=contrastPages().get(url); if(!p) return ''; const excl=excludedUrls();
-  const f=filters(), shownEls=p.elements.filter(e=>{ const pr=[{fp:e.fp,url}]; return matchStatus(pr,excl,f)&&matchAssignee(pr,excl,f); });   // honour the Status/Assignee filters
+  const f=filters(), shownEls=p.elements.filter(e=>{ return matchPairs([{fp:e.fp,url}],excl,f); });   // honour the Status/Assignee filters
   const rows=shownEls.slice().sort((a,b)=>b.instances-a.instances).map(e=>{
     const rp=resolvePage(e.fp,url,excl); const via=rp._viaPage&&!state.dispositions[`${e.fp}|||${url}`];
     return `<tr class="${bucket(rp.status)==='suppressed'?'pg-excluded':''}">
