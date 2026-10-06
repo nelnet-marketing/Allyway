@@ -63,6 +63,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .toolbar input[type=search]{min-width:200px;}
 .toolbar .chk{display:flex;align-items:center;gap:6px;font-weight:500;font-size:13px;}
 .toolbar .spacer{margin-left:auto;font-size:12.5px;color:var(--gray);}
+.toolbar label[hidden]{display:none;}   /* the flex rule above would otherwise override [hidden] */
+.btn-export{padding:9px 16px;background:var(--secondary);color:var(--white);border:none;border-radius:8px;font-family:'Red Hat Display',sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 3px 10px rgba(14,114,154,.25);transition:all .15s;}
+.btn-export:hover{background:var(--secondary-dark);transform:translateY(-1px);}
 .tbl-wrap{overflow-x:auto;border-radius:var(--r);border:1px solid var(--hairline);}
 table.defects{width:100%;border-collapse:collapse;font-size:13.5px;}
 table.defects th{background:var(--soft-fill);color:var(--green-ink);font-family:'Red Hat Display',sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:9px 10px;text-align:left;border-bottom:1px solid #d6e3b8;white-space:nowrap;}
@@ -114,8 +117,8 @@ table.defects tr.rule-todo td{background:var(--row-todo);}
 .pages-btn{min-height:24px;min-width:24px;padding:3px 9px;background:var(--white);border:1.5px solid var(--field-border);border-radius:6px;font-family:'Red Hat Display',sans-serif;font-size:12px;font-weight:600;color:var(--dark-gray);cursor:pointer;}
 .pages-btn:hover{background:var(--soft-fill);color:var(--green-ink);}
 .ai-bar{margin:2px 0 12px;}
-.ai-explain-btn{display:inline-flex;align-items:center;gap:7px;min-height:30px;padding:7px 15px;background:var(--secondary);border:none;border-radius:6px;font-family:'Red Hat Display',sans-serif;font-size:12.5px;font-weight:600;color:var(--white);cursor:pointer;}
-.ai-explain-btn:hover{background:var(--secondary-dark);}
+.ai-explain-btn{display:inline-flex;align-items:center;gap:7px;min-height:30px;padding:6px 14px;background:#FFFFFF;border:2px solid var(--secondary);border-radius:6px;font-family:'Red Hat Display',sans-serif;font-size:12.5px;font-weight:600;color:var(--secondary-dark);cursor:pointer;}   /* light: blue text/border on white, ≥7:1 / ≥5.4:1 */
+.ai-explain-btn:hover{background:var(--soft-fill);}
 .ai-caret{display:inline-block;width:0;height:0;border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .15s;}
 .ai-explain-btn[aria-expanded=true] .ai-caret{transform:rotate(90deg);}
 .ai-explain-btn[aria-busy=true]{opacity:.7;cursor:progress;}
@@ -140,7 +143,8 @@ table.defects tr.rule-todo td{background:var(--row-todo);}
 .fix-bar{margin:6px 0 10px;}
 .fix-btn{min-height:28px;padding:5px 12px;background:var(--white);border:1.5px solid var(--field-border);border-radius:6px;font-family:'Red Hat Display',sans-serif;font-size:12px;font-weight:600;color:var(--dark-gray);cursor:pointer;}
 .fix-btn:hover{background:var(--soft-fill);color:var(--green-ink);}
-.fix-btn.has-fix{border-color:var(--secondary);color:var(--secondary);}
+.fix-btn.has-fix{background:var(--secondary);border-color:var(--secondary);color:var(--white);}   /* white on #0e729a ≥5.4:1 */
+.fix-btn.has-fix:hover{background:var(--secondary-dark);border-color:var(--secondary-dark);color:var(--white);}
 .fix-dialog{width:min(760px,92vw);margin:auto;border:none;border-radius:var(--rl);padding:0;box-shadow:var(--shadow-md);color:var(--dark-gray);background:var(--white);}
 .fix-dialog::backdrop{background:rgba(20,30,20,.45);}
 .fix-form{display:flex;flex-direction:column;max-height:86vh;}
@@ -164,8 +168,8 @@ table.defects tr.rule-todo td{background:var(--row-todo);}
 .md-body p{margin:0 0 10px;}
 .md-body .md-list{margin:0 0 10px 22px;}.md-body .md-list li{margin:3px 0;}
 .md-body code{font-family:Consolas,'SF Mono',monospace;font-size:13px;background:var(--off-white);border:1px solid var(--hairline);border-radius:4px;padding:1px 5px;}
-.md-body pre.md-code{background:var(--off-white);border:1px solid var(--hairline);border-radius:8px;padding:12px 14px;overflow-x:auto;margin:0 0 12px;}
-.md-body pre.md-code code{background:none;border:none;padding:0;font-size:13px;line-height:1.5;white-space:pre;color:var(--dark-gray);}
+.md-body pre.md-code{background:var(--off-white);border:1px solid var(--hairline);border-radius:8px;padding:12px 14px;margin:0 0 12px;}   /* wraps instead of scrolling sideways (1.4.10 Reflow) */
+.md-body pre.md-code code{background:none;border:none;padding:0;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dark-gray);}
 .md-body a{color:var(--secondary);text-decoration:underline;word-break:break-word;}
 .detail-tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px;}
 .detail-tbl th{text-align:left;font-size:10.5px;color:var(--gray);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;background:none;border:none;}
@@ -264,7 +268,11 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 :root[data-theme="dark"] .btn-primary:hover{background:#4FB33D;}
 :root[data-theme="dark"] .tab[aria-selected=true],
 :root[data-theme="dark"] .tab[aria-pressed=true]{color:#10230F;box-shadow:none;}
-:root[data-theme="dark"] .ai-explain-btn,
+:root[data-theme="dark"] .btn-export{color:#05202E;box-shadow:0 3px 10px rgba(0,0,0,.4);}
+:root[data-theme="dark"] .ai-explain-btn{background:#FFFFFF;border-color:#FFFFFF;color:#15181D;}   /* solid white, near-black text ≥17:1 */
+:root[data-theme="dark"] .ai-explain-btn:hover{background:#E1E5EA;}
+:root[data-theme="dark"] .fix-btn.has-fix{color:#05202E;}
+:root[data-theme="dark"] .fix-btn.has-fix:hover{color:#05202E;}
 :root[data-theme="dark"] .ai-send,
 :root[data-theme="dark"] .fix-ai-btn{color:#05202E;}
 /* Hardcoded light accents -> dark equivalents */
@@ -464,12 +472,17 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <label for="filter-status">Status
           <select id="filter-status"><option value="">All</option></select>
         </label>
+        <label for="filter-xcat" hidden>Blocked by
+          <select id="filter-xcat"><option value="">All</option></select>
+        </label>
         <label for="filter-assignee">Assignee
           <select id="filter-assignee"><option value="">All</option></select>
         </label>
-        <button class="bulk-sel" id="btn-worklist" type="button" style="margin-top:0">⬇ Export work list (CSV)</button>
-        <button class="bulk-sel" id="btn-backup" type="button" style="margin-top:0">⬇ Back up triage (CSV)</button>
         <span class="spacer" id="result-count"></span>
+      </div>
+      <div class="toolbar toolbar--export">
+        <button class="btn-export" id="btn-worklist" type="button">⬇ Export work list (CSV)</button>
+        <button class="btn-export" id="btn-backup" type="button">⬇ Back up triage (CSV)</button>
       </div>
       <div class="tbl-wrap">
         <table class="defects">
@@ -660,7 +673,7 @@ const CATS = [{v:'html',label:'HTML'},{v:'js',label:'JavaScript'},{v:'widget',la
 const CMAP = Object.fromEntries(CATS.map(c=>[c.v,c]));
 let activeCat = '';                               // standard stream only: '' = all pages, else a CATS value
 const orders = { standard: [], contrast: [], contrastPage: [] };   // frozen display order per view
-const ownCat = (fp,url) => { const pd=url?state.dispositions[`${fp}|||${url}`]:null; if(pd&&pd.cat) return pd.cat;
+const ownCat = (fp,url) => { const pd=url?state.dispositions[`${fp}|||${url}`]:null; if(pd&&pd.cat) return pd.cat==='__none'?'':pd.cat;
   const rd=state.dispositions[fp]; return (rd&&rd.cat)||''; };
 // A page that follows another ("same as") takes that page's category when it has one, else keeps its own.
 const catSource = (fp,url) => { const lk=url?linkTarget(state.dispositions,fp,url):null;
@@ -1023,12 +1036,22 @@ function statusesInUse(){ if(!state) return []; const excl=excludedUrls(); const
 /* Rows stay put after an edit: the Status/Assignee filter is evaluated once, when its value changes, and
    that set of pages is held until the filter changes again — updating a finding never makes it vanish. */
 let _pin=null;
-function pinFor(excl,f){ if(!f.status&&!f.assignee){ _pin=null; return null; }
-  const key=f.status+'|'+f.assignee; if(_pin&&_pin.key===key) return _pin;
+function pinFor(excl,f){ if(!f.status&&!f.assignee&&!f.xcat){ _pin=null; return null; }
+  const key=f.status+'|'+f.assignee+'|'+f.xcat; if(_pin&&_pin.key===key) return _pin;
   const keys=new Set();
   for(const defs of [state.defects||{},state.contrast||{}]) for(const d of Object.values(defs)) for(const u of d.affected_pages){
-    const pr=[{fp:d.fingerprint,url:u}]; if(matchStatus(pr,excl,f)&&matchAssignee(pr,excl,f)) keys.add(d.fingerprint+'|||'+u); }
-  return _pin={key,status:f.status,assignee:f.assignee,keys}; }
+    const pr=[{fp:d.fingerprint,url:u}]; if(matchStatus(pr,excl,f)&&matchAssignee(pr,excl,f)&&matchXcat(pr,excl,f)) keys.add(d.fingerprint+'|||'+u); }
+  return _pin={key,status:f.status,assignee:f.assignee,xcat:f.xcat,keys}; }
+// "Blocked by" only exists on Can't fix — third party pages, so any value implies that status.
+function matchXcat(pairs,excl,f){
+  if(!f.xcat) return true;
+  return pairs.some(p=>{ const r=resolvePage(p.fp,p.url,excl); return r.status==='cant_fix' && r.xcat===f.xcat; });
+}
+// Distinct "Blocked by" values actually set on a Can't fix page, in the configured list's order.
+function xcatsInUse(){ if(!state) return []; const excl=excludedUrls(); const set=new Set();
+  for(const defs of [state.defects||{},state.contrast||{}]) for(const d of Object.values(defs))
+    for(const u of d.affected_pages){ const r=resolvePage(d.fingerprint,u,excl); if(r.status==='cant_fix'&&r.xcat) set.add(r.xcat); }
+  return [...(state.xcats||[]).filter(c=>set.has(c)), ...[...set].filter(c=>!(state.xcats||[]).includes(c))]; }
 function matchPairs(pairs,excl,f){ const p=pinFor(excl,f); return !p || pairs.some(x=>p.keys.has(x.fp+'|||'+x.url)); }
 function matchStatus(pairs,excl,f){
   if(!f.status) return true;
@@ -1066,7 +1089,8 @@ function ruleRollup(d,excl){
 /* ── Render ─────────────────────────────────────────────────── */
 const filters = () => ({search:document.getElementById('filter-search').value.trim().toLowerCase(),
   sev:document.getElementById('filter-sev').value, status:document.getElementById('filter-status').value,
-  assignee:document.getElementById('filter-assignee').value});
+  assignee:document.getElementById('filter-assignee').value,
+  xcat:document.getElementById('filter-status').value==='cant_fix' ? document.getElementById('filter-xcat').value : ''});
 
 function render(){
   if(!state) return;
@@ -1075,7 +1099,7 @@ function render(){
   const all=Object.values(currentDefects());
   renderStats(all,excl);
   if(pageView()) renderByPage(excl); else renderTable(all,excl);
-  refreshStatusFilter(); refreshAssigneeFilter(); refreshCatTabs();
+  refreshStatusFilter(); refreshAssigneeFilter(); refreshXcatFilter(); refreshCatTabs();
   renderSuppressed(all,excl);
   renderManual();
   document.getElementById('contrast-groupby').style.display = activeStream==='contrast' ? 'flex' : 'none';
@@ -1164,7 +1188,16 @@ function updateFilterOptions(){
   document.getElementById('filter-grade-label').textContent=gradeLabel();
   const opts = activeStream==='contrast' ? ['Error','Alert','Best Practice'] : ['CRITICAL','HIGH','MEDIUM','LOW','BEST PRACTICE'];
   sel.innerHTML='<option value="">All</option>'+opts.map(o=>`<option${o.toUpperCase()===(cur||'').toUpperCase()?' selected':''}>${o}</option>`).join('');
-  refreshStatusFilter(); refreshAssigneeFilter();
+  refreshStatusFilter(); refreshAssigneeFilter(); refreshXcatFilter();
+}
+// Rebuild the "Blocked by" dropdown from third parties in use; shown only while Status is Can't fix.
+function refreshXcatFilter(){
+  const sel=document.getElementById('filter-xcat'); const on=document.getElementById('filter-status').value==='cant_fix';
+  const cur=on?sel.value:''; const vs=on?xcatsInUse():[];
+  if(cur && !vs.includes(cur) && _pin && _pin.xcat===cur) vs.push(cur);   // keep a pinned filter selectable
+  sel.innerHTML='<option value="">All</option>'+vs.map(v=>`<option value="${esc(v)}"${v===cur?' selected':''}>${esc(v)}</option>`).join('');
+  sel.value=vs.includes(cur)?cur:'';
+  sel.closest('label').hidden=!on;
 }
 // Rebuild the status dropdown from statuses in use; called on load and each render.
 function refreshStatusFilter(){
@@ -1238,11 +1271,7 @@ function renderTable(all,excl){
       <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.activePages}</strong> / ${r.totalPages}</td>
       <td class="clickable" data-toggle="${did}" style="text-align:center;font-weight:600">${d.instance_count}</td>
       <td><div class="roll">${r.label}</div>
-        <select class="bulk-sel" data-role="bulk" data-fp="${esc(fp)}" aria-label="Set all pages for ${esc(d.rule_title)}">
-          <option value="">↳ Set all pages…</option>${STATUSES.filter(s=>!s.pageOnly).map(s=>`<option value="${s.v}">${esc(s.label)}</option>`).join('')}</select>
-        ${ruleDef?subField(fp,'',ruleDef):''}
-        <select class="bulk-sel" data-role="bulkcat" data-fp="${esc(fp)}" aria-label="Set category for ${activeCat?'the pages shown':'all pages'} of ${esc(d.rule_title)}">
-          <option value="">↳ Category${activeCat?' (shown pages)':' (all pages)'}…</option>${CATS.map(c=>`<option value="${c.v}">${esc(c.label)}</option>`).join('')}${activeCat?'':'<option value="__none">No category</option>'}</select></td>
+        ${ruleDef?subField(fp,'',ruleDef):''}</td>
     </tr>
     <tr class="detail-row hidden" id="${did}" data-built="0"><td colspan="5"></td></tr>`;
   }).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--gray);padding:24px">No rules match the filters.</td></tr>`;
@@ -1658,37 +1687,13 @@ function setStatus(fp,url,val){
   else { const d={...(cur||{}),status:val}; ensureField(d,val); state.dispositions[key]=d; }
   persist();
 }
-function setBulk(fp,val){ // apply a status to the whole rule
-  if(val==='untriaged'){   // reset: clear rule default AND every per-page override (notes survive)
-    for(const k of Object.keys(state.dispositions)){ if(k.startsWith(fp+'|||')){ const d=state.dispositions[k]; clearStatus(d); delete d.sameAs; if(Object.keys(d).length===0) delete state.dispositions[k]; } }
-    const rd=state.dispositions[fp]; if(rd){ clearStatus(rd); if(Object.keys(rd).length===0) delete state.dispositions[fp]; }
-    persist(); return;
-  }
-  const rd={...(state.dispositions[fp]||{}),status:val}; ensureField(rd,val); state.dispositions[fp]=rd;
-  for(const k of Object.keys(state.dispositions)){
-    if(!k.startsWith(fp+'|||')) continue;
-    const d=state.dispositions[k];
-    if(d.assignee){   // page has its own owner → carry it onto the new status, drop other overrides
-      const kept={status:val,assignee:d.assignee}; if(d.notes) kept.notes=d.notes; if(d.fix) kept.fix=d.fix; if(d.cat) kept.cat=d.cat; if(d.sameAs) kept.sameAs=d.sameAs; ensureField(kept,val); state.dispositions[k]=kept;
-    } else {          // no page owner → inherit rule-level status + assignee; keep only a note/fix/category if present
-      const kept={}; if(d.notes) kept.notes=d.notes; if(d.fix) kept.fix=d.fix; if(d.cat) kept.cat=d.cat; if(d.sameAs) kept.sameAs=d.sameAs;
-      if(Object.keys(kept).length) state.dispositions[k]=kept; else delete state.dispositions[k];
-    }
-  }
-  persist();
-}
-function setCat(fp,url,val){   // '' removes the override (the page then inherits the rule's category)
+function setCat(fp,url,val,explicitNone){   // '' removes the override (the page then inherits the rule's category)
   const key=url?`${fp}|||${url}`:fp; let d=state.dispositions[key];
+  // A page cleared to "—" while its rule has a category needs an explicit '__none', or it inherits it back
+  if(!val && explicitNone && url){ const rd=state.dispositions[fp]; if(rd&&rd.cat) val='__none'; }
   if(val){ if(!d) d=state.dispositions[key]={}; d.cat=val; }
   else if(d){ delete d.cat; if(Object.keys(d).length===0) delete state.dispositions[key]; }
   persist();
-}
-// Bulk: on the All tab it sets the rule's category and clears page overrides; on a category tab it
-// moves only the pages shown, since the rest of the rule's pages aren't on screen.
-function setCatBulk(fp,val){
-  const v = val==='__none' ? '' : val;
-  if(!activeCat){ for(const k of Object.keys(state.dispositions)){ if(k.startsWith(fp+'|||')) setCat(fp,k.slice(fp.length+3),''); } setCat(fp,'',v); return; }
-  for(const u of currentDefects()[fp].affected_pages) setCat(fp,u,v);
 }
 /* ── Bulk edit of selected pages inside an expanded rule ── */
 const selectedPages = fp => [...document.querySelectorAll('[data-role=pgsel]:checked')].filter(el=>el.dataset.fp===fp).map(el=>el.dataset.url);
@@ -1787,9 +1792,7 @@ document.addEventListener('change', e=>{
     else if(d){ delete d.globalFix; if(Object.keys(d).length===0) delete state.dispositions[fp]; }
     persist(); render(); return; }
   if(el.dataset.role==='status'){ setStatus(fp,url,el.value); render(); }
-  else if(el.dataset.role==='bulk'){ if(el.value){ setBulk(fp,el.value); render(); } }
-  else if(el.dataset.role==='bulkcat'){ if(el.value){ setCatBulk(fp,el.value); render(); } }
-  else if(el.dataset.role==='cat'){ setCat(fp,url,el.value); render(); }
+  else if(el.dataset.role==='cat'){ setCat(fp,url,el.value,true); render(); }
   else if(el.dataset.role==='bulkpage'){ if(el.value){ const p=contrastPages().get(el.dataset.url); if(p){ for(const e of p.elements) setStatus(e.fp,el.dataset.url,el.value); render(); } } }
   else if(el.dataset.role==='sub'){
     const key=url?`${fp}|||${url}`:fp; const d=state.dispositions[key]; if(!d)return;
@@ -1935,7 +1938,7 @@ document.getElementById('head-row').addEventListener('keydown', e=>{
 
 document.addEventListener('DOMContentLoaded', init);
 async function init(){
-  ['filter-search','filter-sev','filter-status','filter-assignee'].forEach(id=>document.getElementById(id).addEventListener('input',render));
+  ['filter-search','filter-sev','filter-status','filter-assignee','filter-xcat'].forEach(id=>document.getElementById(id).addEventListener('input',render));
   document.querySelectorAll('.tab[data-stream]').forEach(t=>t.addEventListener('click',()=>{ if(!t.disabled) switchStream(t.dataset.stream); }));
   document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.addEventListener('click',()=>setGroupBy(b.dataset.groupby)));
   document.getElementById('btn-add-manual').addEventListener('click',()=>openManualForm(''));
