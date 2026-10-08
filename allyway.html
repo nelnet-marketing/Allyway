@@ -465,6 +465,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 
     <div id="tracker-area" hidden>
       <div class="tabs" role="tablist">
+        <button class="tab" role="tab" aria-selected="false" id="tab-all" data-stream="cat:*" hidden>All</button>
         <button class="tab" role="tab" aria-selected="true" id="tab-standard" data-stream="standard">Standard rules</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-cat-html" data-stream="cat:html">HTML</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-cat-js" data-stream="cat:js">JavaScript</button>
@@ -690,7 +691,8 @@ let groupBy = 'signature';                      // every tab: 'signature' (rule)
    Color/Visual is the Contrast tab, so it isn't a value here. A category tab shows only its pages. */
 const CATS = [{v:'html',label:'HTML'},{v:'js',label:'JavaScript'},{v:'widget',label:'Third-party'},{v:'cms',label:'CMS'},{v:'components',label:'Components'},{v:'other',label:'Other'}];
 const CMAP = Object.fromEntries(CATS.map(c=>[c.v,c]));
-let activeCat = '';                               // standard stream only: '' = all pages, else a CATS value
+let activeCat = '';                               // standard stream only: '' = uncategorized, ALL_CATS = every page, else a CATS value
+const ALL_CATS = '*';
 const orders = { standard: [], contrast: [] };   // frozen display order per view
 const ownCat = (fp,url) => { const pd=url?state.dispositions[`${fp}|||${url}`]:null; if(pd&&pd.cat) return pd.cat==='__none'?'':pd.cat;
   const rd=state.dispositions[fp]; return (rd&&rd.cat)||''; };
@@ -703,7 +705,7 @@ const effCat = (fp,url) => { const s=catSource(fp,url); return ownCat(s.fp,s.url
 const _catHold=new Map();   // 'fp|||url' or manual id -> category it was in when edited
 const holdCat=(key,cat)=>{ if(!_catHold.has(key)) _catHold.set(key,cat||''); };
 function catView(defs,cat,hold=true){ const out={};
-  for(const [fp,d] of Object.entries(defs)){ const pages=d.affected_pages.filter(u=>{ const h=hold&&_catHold.get(fp+'|||'+u); return (h!==undefined&&h!==false ? h : (effCat(fp,u)||''))===cat; });
+  for(const [fp,d] of Object.entries(defs)){ const pages=d.affected_pages.filter(u=>{ if(cat===ALL_CATS) return true; const h=hold&&_catHold.get(fp+'|||'+u); return (h!==undefined&&h!==false ? h : (effCat(fp,u)||''))===cat; });
     if(pages.length) out[fp]={...d, affected_pages:pages, instance_count:pages.reduce((n,u)=>n+(d.page_instances[u]||0),0)}; }
   return out; }
 // Contrast findings in a category, tagged so grading/export know they're contrast.
@@ -1133,6 +1135,7 @@ const filters = () => ({search:document.getElementById('filter-search').value.tr
 
 function render(){
   if(!state) return;
+  if(activeStream==='standard' && activeCat===ALL_CATS && !Object.values(catCounts()).some(v=>v>0)){ switchStream('standard'); return; }   // nothing left to be "All" of
   const openIds=[...document.querySelectorAll('#defects-tbody .detail-row:not(.hidden)')].map(r=>r.id);
   const excl=excludedUrls();
   const all=Object.values(currentDefects());
@@ -1154,15 +1157,23 @@ function findingsIn(defs,excl){ let total=0, active=0;
     total+=d.affected_pages.length-g.size+(g.size?1:0); if(gAct) active++; }
   return {total,active}; }
 // Finding counts on every tab, so an empty or huge one is obvious before you click it.
-function refreshCatTabs(){
-  const excl=excludedUrls(), n=Object.fromEntries(CATS.map(c=>[c.v,0]));
-  const std=findingsIn(catView(state.defects,'',false),excl), con=findingsIn(catView(state.contrast||{},'',false),excl);
-  const setTab=(id,label,count,tip)=>{ const t=document.getElementById(id); t.textContent=`${label} (${count})`; t.title=tip; };
-  setTab('tab-standard','Standard rules',std.total,`${std.active} active of ${std.total} findings`);
-  if(con.total) setTab('tab-contrast','Contrast',con.total,`${con.active} active of ${con.total} findings`);
+function catCounts(){
+  const n=Object.fromEntries(CATS.map(c=>[c.v,0]));
   for(const defs of [state.defects||{},state.contrast||{}]) for(const [fp,d] of Object.entries(defs)) for(const u of d.affected_pages){ const c=effCat(fp,u); if(c&&n[c]!==undefined) n[c]++; }
   for(const m of (state.manualFindings||[])) if(m.cat&&n[m.cat]!==undefined) n[m.cat]++;   // manual findings count toward their tab too
-  for(const c of CATS) setTab('tab-cat-'+c.v,c.label,n[c.v],`${n[c.v]} finding${n[c.v]===1?'':'s'} in this category`);
+  return n; }
+function refreshCatTabs(){
+  const excl=excludedUrls(), n=catCounts(), any=CATS.some(c=>n[c.v]>0);
+  const std=findingsIn(catView(state.defects,'',false),excl), con=findingsIn(catView(state.contrast||{},'',false),excl);
+  const all=findingsIn(catView(state.defects,ALL_CATS,false),excl), allCon=findingsIn(catView(state.contrast||{},ALL_CATS,false),excl);
+  const setTab=(id,label,count,tip)=>{ const t=document.getElementById(id); t.textContent=`${label} (${count})`; t.title=tip; };
+  // Nothing categorized: one "Standard rules" tab. Once anything is: All + Uncategorized + only the categories in use.
+  setTab('tab-standard',any?'Uncategorized':'Standard rules',std.total,`${std.active} active of ${std.total} findings`);
+  const allTab=document.getElementById('tab-all'); allTab.hidden=!any;
+  setTab('tab-all','All',all.total+allCon.total,`${all.active+allCon.active} active of ${all.total+allCon.total} findings, standard and contrast`);
+  if(con.total) setTab('tab-contrast','Contrast',con.total,`${con.active} active of ${con.total} findings`);
+  for(const c of CATS){ setTab('tab-cat-'+c.v,c.label,n[c.v],`${n[c.v]} finding${n[c.v]===1?'':'s'} in this category`);
+    document.getElementById('tab-cat-'+c.v).hidden = !n[c.v] && !(activeStream==='standard' && activeCat===c.v); }   // the open tab stays until you leave it
 }
 function renderStats(all,excl){
   let activeFindings=0,supprFindings=0,verifyFindings=0;
@@ -1174,7 +1185,7 @@ function renderStats(all,excl){
     if(gc.active>0) activeFindings++; else if(gc.verify>0) verifyFindings++; else if(gc.suppressed>0) supprFindings++; }
   const manual=state.manualFindings||[];
   const mA11y=manual.filter(m=>m.type==='a11y'), mObs=manual.filter(m=>m.type==='other');
-  const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active'&&m.status!=='deferred'&&(m.cat||'')===activeCat).length;
+  const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active'&&m.status!=='deferred'&&(activeCat===ALL_CATS||(m.cat||'')===activeCat)).length;
   const manualAdd = activeStream==='standard' ? mA11yActive : 0;   // manual findings live on the standard tabs, by category
   activeFindings+=manualAdd;
   document.getElementById('stat-row').innerHTML=`
@@ -1676,7 +1687,7 @@ function renderSuppressed(all,excl){
 const genId=()=>'m_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 // Manual findings shown on the current tab: each category tab shows only its own.
 function manualInTab(){ const everything=state.manualFindings||[];
-  return activeStream==='standard' ? everything.filter(m=>(_catHold.has('m:'+m.id)?_catHold.get('m:'+m.id):(m.cat||''))===activeCat) : everything; }
+  return activeStream==='standard' && activeCat!==ALL_CATS ? everything.filter(m=>(_catHold.has('m:'+m.id)?_catHold.get('m:'+m.id):(m.cat||''))===activeCat) : everything; }
 // Estimator for a manual finding: hours live on the finding itself (est, estGuess).
 const manualEstRow = m => `<div class="est-row"><label>Est. hours <input type="number" class="est-in" min="0" step="0.25" value="${m.est>0?m.est:''}" data-role="est" data-mid="${esc(m.id)}" aria-label="Estimated hours to fix ${esc(m.title)}"></label>
     ${tinyChecks(m.est||0,`data-mid="${esc(m.id)}"`)}
@@ -2223,7 +2234,7 @@ async function showPicker(forcePick){
     var view = 'Source picker';
     if(src) view = (typeof activeStream!=='undefined' && activeStream==='contrast')
       ? 'Contrast — grouped by '+((typeof groupBy!=='undefined' && groupBy) || 'signature')
-      : 'Standard rules'+((typeof groupBy!=='undefined' && groupBy==='page') ? ' — grouped by page' : '');
+      : (typeof activeCat!=='undefined' && activeCat==='*' ? 'All' : 'Standard rules')+((typeof groupBy!=='undefined' && groupBy==='page') ? ' — grouped by page' : '');
     return {
       source: src || '(none — home)',
       view: view,
