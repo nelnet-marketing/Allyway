@@ -194,10 +194,16 @@ table.defects tr.rule-todo td{background:var(--row-todo);}
 .same-list button{display:block;width:100%;text-align:left;padding:8px 10px;background:none;border:0;border-bottom:1px solid var(--hairline);font:inherit;color:var(--dark-gray);cursor:pointer;}
 .same-list button:hover,.same-list button:focus-visible{background:var(--soft-fill);color:var(--green-ink);}
 .same-list .same-url{display:block;font-size:12px;color:var(--gray);word-break:break-all;}
-.detail-tbl--pages th:nth-child(3),.detail-tbl--pages td:nth-child(3){width:90px;}   /* … Component(s) is near-always empty … */
 .detail-tbl th:nth-child(4),.detail-tbl td:nth-child(4){width:300px;}   /* … Sample HTML wants a whole tag … */
 .detail-tbl th:nth-child(5),.detail-tbl td:nth-child(5){width:175px;}   /* … status rides tight */
-.detail-tbl th:last-child,.detail-tbl td:last-child{min-width:300px;}
+.detail-tbl--pages th:nth-child(3),.detail-tbl--pages td:nth-child(3){width:300px;}   /* pages table has no Component(s) col, so everything after Inst shifts left one */
+.detail-tbl--pages th:nth-child(4),.detail-tbl--pages td:nth-child(4){width:175px;}
+.detail-tbl--pages th:nth-child(5),.detail-tbl--pages td:nth-child(5){width:auto;}
+.detail-tbl th:last-child,.detail-tbl td:last-child{min-width:340px;}
+textarea.notes-input{display:block;resize:none;overflow:hidden;line-height:1.4;height:calc(2.8em + 15px);}   /* clamped to 2 lines */
+textarea.notes-input.is-open{height:auto;}
+.note-more{margin-top:3px;padding:2px 0;background:none;border:0;font:600 12px 'Red Hat Display',sans-serif;color:var(--green-ink);text-decoration:underline;cursor:pointer;}
+.note-more:focus-visible{outline:2px solid currentColor;outline-offset:2px;}
 .detail-tbl .status-sel,.detail-tbl .subfield{max-width:156px;}   /* px, not %, or the select's own text re-widens the col */
 .pg-excluded td{opacity:.55;text-decoration:line-through;}
 details.suppressed-sec{margin-top:20px;border:1px solid var(--hairline);border-radius:var(--r);background:var(--white);}
@@ -239,6 +245,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .colorway-link{margin-left:auto;display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:6px 13px;background:var(--white);border:1.5px solid var(--secondary);border-radius:6px;font-family:'Red Hat Display',sans-serif;font-size:12.5px;font-weight:600;color:var(--secondary);text-decoration:none;cursor:pointer;}
 .colorway-link:hover{background:var(--off-white);}
 .colorway-link .ext{font-size:13px;line-height:1;}
+.colorway-link[hidden]{display:none;}
 /* Stale-tab bar — shown when a save fails and this tab stops writing (see goStale). */
 .stale-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;max-width:1600px;margin:0 auto;padding:13px 32px;background:var(--white);border-left:4px solid var(--error-red);box-shadow:var(--shadow-md);font-size:13.5px;line-height:1.45;}
 /* An author display: beats the UA's [hidden] rule, so anything toggled via .hidden needs this. */
@@ -463,7 +470,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <button class="tab" role="tab" aria-selected="false" id="tab-cat-other" data-stream="cat:other">Other</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-contrast" data-stream="contrast" disabled title="Load an export with a Contrast Detail sheet">Contrast</button>
       </div>
-      <div id="contrast-groupby" role="group" aria-label="Group contrast findings by" style="display:none;align-items:center;gap:8px;margin-bottom:14px;font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;color:var(--dark-gray)">
+      <div id="contrast-groupby" role="group" aria-label="Group findings by" style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;color:var(--dark-gray)">
         <span aria-hidden="true">Group by:</span>
         <button class="tab" type="button" data-groupby="page" aria-pressed="false" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Page</button>
         <button class="tab" type="button" data-groupby="signature" aria-pressed="true" style="padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid var(--hairline)">Signature</button>
@@ -673,13 +680,13 @@ let state = null;
 let statsCache = {};                              // src -> last computed dashboard stats, so re-entry shows numbers instantly
 let sortKey = 'sev', sortDir = 1;
 let activeStream = 'standard';                    // 'standard' | 'contrast'
-let contrastGroupBy = 'signature';                // contrast tab: 'signature' | 'page'
+let groupBy = 'signature';                      // every tab: 'signature' (rule) | 'page'
 /* Implementation category — which kind of code change fixes a page. Set per rule or per page (page wins);
    Color/Visual is the Contrast tab, so it isn't a value here. A category tab shows only its pages. */
 const CATS = [{v:'html',label:'HTML'},{v:'js',label:'JavaScript'},{v:'widget',label:'Third-party'},{v:'other',label:'Other'}];
 const CMAP = Object.fromEntries(CATS.map(c=>[c.v,c]));
 let activeCat = '';                               // standard stream only: '' = all pages, else a CATS value
-const orders = { standard: [], contrast: [], contrastPage: [] };   // frozen display order per view
+const orders = { standard: [], contrast: [] };   // frozen display order per view
 const ownCat = (fp,url) => { const pd=url?state.dispositions[`${fp}|||${url}`]:null; if(pd&&pd.cat) return pd.cat==='__none'?'':pd.cat;
   const rd=state.dispositions[fp]; return (rd&&rd.cat)||''; };
 // A page that follows another ("same as") takes that page's category when it has one, else keeps its own.
@@ -696,8 +703,8 @@ function conView(cat){ const v=catView(state.contrast||{},cat); for(const d of O
 // Contrast tab = uncategorized contrast pages; a category tab lists that category's standard and contrast findings together.
 const currentDefects = () => activeStream==='contrast' ? catView(state.contrast||{},'')
   : activeCat ? {...catView(state.defects,activeCat), ...conView(activeCat)} : catView(state.defects,'');
-const pageView = () => activeStream==='contrast' && contrastGroupBy==='page';
-const orderKey = () => { const k = pageView() ? 'contrastPage' : (activeStream==='standard' && activeCat) ? 'cat:'+activeCat : activeStream;
+const pageView = () => groupBy==='page';
+const orderKey = () => { const k = pageView() ? 'page:'+(activeStream==='contrast'?'contrast':activeCat) : (activeStream==='standard' && activeCat) ? 'cat:'+activeCat : activeStream;
   return orders[k] ? k : (orders[k]=[], k); };
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -926,7 +933,7 @@ async function loadSource(src, localScan){
 }
 function activateSource(){
   const {source:src, scanDate, defects, contrast}=state;
-  activeStream='standard'; activeCat=''; contrastGroupBy='signature'; sortKey='sev'; sortDir=1; _pin=null;
+  activeStream='standard'; activeCat=''; groupBy='signature'; sortKey='sev'; sortDir=1; _pin=null;
   syncGroupByButtons();   // the reset above must reach the pills, not just the variable
   for(const k of Object.keys(orders)) orders[k]=[];
   const ct=document.getElementById('tab-contrast'); const cCount=Object.keys(contrast).length;
@@ -1120,7 +1127,8 @@ function render(){
   refreshStatusFilter(); refreshAssigneeFilter(); refreshXcatFilter(); refreshCatTabs();
   renderSuppressed(all,excl);
   renderManual();
-  document.getElementById('contrast-groupby').style.display = activeStream==='contrast' ? 'flex' : 'none';
+  const sigBtn=document.querySelector('#contrast-groupby [data-groupby="signature"]'); if(sigBtn) sigBtn.textContent = activeStream==='contrast' ? 'Signature' : 'Rule';
+  document.getElementById('colorway-link').hidden = activeStream!=='contrast';
   openIds.forEach(id=>{ if(document.getElementById(id)) toggleDetail(id); });   // preserve expanded rows
 }
 
@@ -1174,26 +1182,26 @@ function sortRules(list,excl){
 // Recompute the frozen display order — only on load or a header click, so status
 // edits never reshuffle rows out from under you.
 const sigCols=()=>[['rule','Rule',''],['sev',gradeLabel(),''],['pages','Pages (active/total)','center'],['inst','Instances','center'],['status','Status (rollup / set all)','','nosort']];
-const pageCols=()=>[['url','Page URL',''],['elements','Elements (active/total)','center'],['sev','Worst '+gradeLabel().toLowerCase(),''],['status','Status (rollup / set all)','','nosort']];
+const pageCols=()=>[['url','Page URL',''],['elements',(activeStream==='contrast'?'Elements':'Rules')+' (active/total)','center'],['sev','Worst '+gradeLabel().toLowerCase(),''],['status','Status (rollup / set all)','','nosort']];
 function setHead(cols){ document.getElementById('head-row').innerHTML=cols.map(c=>{
   const align=c[2]==='center'?' style="text-align:center"':'';
   if(c[3]==='nosort') return `<th${align}>${c[1]}</th>`;   // filter this column instead of sorting it
   return `<th class="sortable" tabindex="0" data-sort="${c[0]}" aria-sort="${sortKey===c[0]?(sortDir===1?'ascending':'descending'):'none'}"${align}>${c[1]} <span class="arr">▲▼</span></th>`;
 }).join(''); }
 
-// Contrast pages: url -> { url, elements:[{fp,label,description,severity,instances,html}] }
-function contrastPages(){
+// Pages in the active tab: url -> { url, elements:[{fp,label,description,severity,instances,html}] } (one element per rule / contrast signature)
+function viewPages(){
   const pages=new Map();
-  for(const d of Object.values(catView(state.contrast||{},''))){ for(const url of d.affected_pages){
+  for(const d of Object.values(currentDefects())){ for(const url of d.affected_pages){
     let p=pages.get(url); if(!p){ p={url,elements:[]}; pages.set(url,p); }
-    p.elements.push({fp:d.fingerprint,label:d.rule_title,description:d.description,severity:d.severity,category:d.category,
-      instances:d.page_instances[url]||0,html:(d.page_html[url]||[])[0]||''}); } }
+    p.elements.push({fp:d.fingerprint,label:d.rule_title,description:d.description,severity:d.severity,category:d.category,_contrast:isCon(d),
+      instances:(d.page_instances||{})[url]||0,html:((d.page_html||{})[url]||[])[0]||''}); } }
   return pages;
 }
 function pageRollup(p,excl){ const c={active:0,suppressed:0,verify:0,deferred:0}; const by={};
   for(const e of p.elements){ const st=resolvePage(e.fp,p.url,excl).status; c[st==='deferred'?'deferred':bucket(st)]++; by[st]=(by[st]||0)+1; }
   c.label=rollupHtml(by,p.elements.length); c.untriaged=by.untriaged||0;
-  let worst=null,wr=99; for(const e of p.elements){ const g=gradeOf(e),r=gradeRank(g); if(r<wr){wr=r;worst=g;} } c.worst=worst||'—'; return c; }
+  let worst=null,wr=99,we=null; for(const e of p.elements){ const g=gradeOf(e),r=gradeRank(g); if(r<wr){wr=r;worst=g;we=e;} } c.worst=worst||'—'; c.worstEl=we; return c; }
 function sortPages(list,excl){ const val=p=>{ if(sortKey==='url')return p.url.toLowerCase();
     if(sortKey==='elements')return p.elements.length; if(sortKey==='status')return pageRollup(p,excl).active;
     return gradeRank(pageRollup(p,excl).worst); };
@@ -1201,7 +1209,7 @@ function sortPages(list,excl){ const val=p=>{ if(sortKey==='url')return p.url.to
 
 function recomputeOrder(){
   const excl=excludedUrls();
-  if(pageView()) orders.contrastPage=sortPages([...contrastPages().values()],excl).map(p=>p.url);
+  if(pageView()) orders[orderKey()]=sortPages([...viewPages().values()],excl).map(p=>p.url);
   else orders[orderKey()]=sortRules(Object.values(currentDefects()),excl).map(d=>d.fingerprint);
 }
 function updateFilterOptions(){
@@ -1247,10 +1255,10 @@ function switchStream(s){   // s: 'standard' | 'contrast' | 'cat:<value>'
   render();
 }
 function syncGroupByButtons(){
-  document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.groupby===contrastGroupBy)));
+  document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.groupby===groupBy)));
 }
 function setGroupBy(g){
-  if(g===contrastGroupBy) return; contrastGroupBy=g; sortKey='sev'; sortDir=1;
+  if(g===groupBy) return; groupBy=g; sortKey='sev'; sortDir=1;
   syncGroupByButtons();
   if(!orders[orderKey()].length) recomputeOrder();
   render();
@@ -1269,8 +1277,6 @@ function subField(fp,url,d){
   return '';
 }
 
-// A leftover rule-level status only matters while some page still inherits it; once every page has its own, hide its sub-field.
-const inheritsRuleStatus = d => d.affected_pages.some(u=>{ const pg=state.dispositions[`${d.fingerprint}|||${u}`]; return !(pg&&pg.status); });
 function renderTable(all,excl){
   setHead(sigCols());
   const f=filters();
@@ -1286,7 +1292,6 @@ function renderTable(all,excl){
   tb.innerHTML=list.map(d=>{
     const fp=d.fingerprint, g=gradeOf(d);
     const r=ruleRollup(d,excl), did=`det-${cssId(fp)}`;
-    const ruleDef=state.dispositions[fp];
     return `<tr class="rule-row ${r.untriaged?'rule-todo':'rule-done'}" data-fp="${esc(fp)}">
       <td class="clickable" data-toggle="${did}" style="max-width:280px"><button type="button" class="caret-btn" data-toggle="${did}" aria-controls="${did}" aria-expanded="false" aria-label="Toggle detail rows for ${esc(d.rule_title)}"><span class="caret" id="c-${cssId(fp)}"></span></button>${r.untriaged?'':'<span class="done-tick" aria-hidden="true">✓</span>'}<strong>${esc(d.rule_title)}</strong>${r.untriaged?`<span class="todo-badge">${r.untriaged} left</span>`:''}${(state.dispositions[fp]||{}).notes?'<span title="Has a rule note" aria-label="Has a rule note" style="margin-left:6px">📝</span>':''}${isGlobalFix(fp)?'<span title="Single global fix — one place fixes all pages" aria-label="Single global fix" style="margin-left:6px">🌐</span>':''}
         ${d.description?`<div class="rule-desc">${esc(d.description.slice(0,110))}${d.description.length>110?'…':''}</div>`:''}</td>
@@ -1294,7 +1299,7 @@ function renderTable(all,excl){
       <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.activePages}</strong> / ${r.totalPages}</td>
       <td class="clickable" data-toggle="${did}" style="text-align:center;font-weight:600">${d.instance_count}</td>
       <td><div class="roll">${r.label}</div>
-        ${ruleDef&&inheritsRuleStatus(d)?subField(fp,'',ruleDef):''}</td>
+      </td>
     </tr>
     <tr class="detail-row hidden" id="${did}" data-built="0"><td colspan="5"></td></tr>`;
   }).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--gray);padding:24px">No rules match the filters.</td></tr>`;
@@ -1508,20 +1513,31 @@ async function draftFixWithAI(){ if(!_fixTarget || !window.NelnetAI || !canEditF
 function estRow(fp,url){ const e=estOf(fp,url), at=`data-fp="${esc(fp)}" data-url="${esc(url)}"`;
   return `<div class="est-row"><label>Est. hours <input type="number" class="est-in" min="0" step="0.25" value="${e?e.h:''}" data-role="est" ${at} aria-label="Estimated hours to fix ${esc(url)}"></label>
     <label class="chk"><input type="checkbox" data-role="estguess" ${at} ${e&&e.guess?'checked':''} ${e?'':'disabled'}> Complete guess</label></div>`; }
+function noteField(val,fp,url,label){
+  return `<textarea class="notes-input" rows="2" data-role="notes" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="${esc(label)}">${esc(val)}</textarea><button type="button" class="note-more" data-role="notemore" aria-expanded="false" hidden>Show more</button>`;
+}
+/* Clamp to 2 lines; reveal the toggle only when the text overflows (or is open). Needs a visible row. */
+function fitNote(ta){
+  const btn=ta.nextElementSibling; if(!btn||btn.dataset.role!=='notemore') return;
+  const open=ta.classList.contains('is-open');
+  if(open){ ta.style.height='auto'; ta.style.height=ta.scrollHeight+2+'px'; }
+  else { ta.style.height=''; }
+  btn.hidden=!open && ta.scrollHeight<=ta.clientHeight+1;
+}
+function fitNotes(root){ root.querySelectorAll('textarea[data-role=notes]').forEach(fitNote); }
 function buildDetail(fp){
   const d=currentDefects()[fp]; const excl=excludedUrls();
   const f=filters(), shown=d.affected_pages.filter(u=>{ return matchPairs([{fp,url:u}],excl,f); });   // honour the Status/Assignee filters
   const rows=shown.slice().sort((a,b)=>(d.page_instances[b]-d.page_instances[a])).map(url=>{
     const rp=resolvePage(fp,url,excl); const via=rp._viaPage&&!state.dispositions[`${fp}|||${url}`];
-    const html=(d.page_html[url]||[])[0]||''; const comps=(d.page_components[url]||[]).join('; ');
+    const html=(d.page_html[url]||[])[0]||'';
     return `<tr class="${bucket(rp.status)==='suppressed'?'pg-excluded':''}">
       <td><label class="pg-pick"><input type="checkbox" data-role="pgsel" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Select ${esc(url)} for bulk edit"></label><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a></td>
       <td style="text-align:center">${d.page_instances[url]}</td>
-      <td>${esc(comps)}</td>
       <td>${html?`<code>${esc(html.slice(0,180))}${html.length>180?'…':''}</code>`:''}</td>
       <td>${rp._linked?linkedStatus(rp,fp,url):statusSelect(fp,url,rp.status)+subField(fp,url,rp)+(via?'<div class="stat-sub">(via page out-of-scope)</div>':'')+`<button type="button" class="pages-btn" data-role="samebtn" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Mark ${esc(url)} as the same finding as another page">↪ Same as…</button>`}</td>
       <td>${catSelect(fp,url)}</td>
-      <td><input class="notes-input" type="text" value="${esc(pageNotes(fp,url))}" data-role="notes" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Notes for ${esc(url)}">
+      <td>${noteField(pageNotes(fp,url),fp,url,`Notes for ${url}`)}
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px"><button class="pages-btn" type="button" data-add-url="${esc(url)}" aria-label="Add a manual finding on ${esc(url)}">＋ finding</button>${fixBtn(fp,url,true)}</div>${rp._linked?'':estRow(fp,url)}</td></tr>`;
   }).join('');
   const gN=globalUrls(fp,d.affected_pages).length;
@@ -1554,7 +1570,7 @@ function buildDetail(fp){
       <button type="button" class="btn-primary" data-role="bulkapply" data-fp="${esc(fp)}">Apply to selected</button>
     </span></div>`;
   const filtNote = shown.length<d.affected_pages.length ? `<p class="stat-sub" role="status">Showing ${shown.length} of ${d.affected_pages.length} pages that match the current Status/Assignee filter.</p>` : '';
-  return noteBar+aiBar+bulkBar+filtNote+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return noteBar+aiBar+bulkBar+filtNote+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Sample HTML</th><th>Status (this page)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 // Read-only status for a page that follows another ("same as") — shows where it points and offers Unlink.
 function linkedStatus(rp,fp,url){
@@ -1571,7 +1587,7 @@ function catSelect(fp,url){ const cur=effCat(fp,url);
 /* ── Contrast PAGE view — one row per page, expand to the contrast elements on it ── */
 function renderByPage(excl){
   setHead(pageCols());
-  const f=filters(); const pagesMap=contrastPages(); const order=orders.contrastPage;
+  const f=filters(); const pagesMap=viewPages(); const order=orders[orderKey()];
   const ordered=order.map(u=>pagesMap.get(u)).filter(Boolean);
   for(const p of pagesMap.values()) if(!order.includes(p.url)) ordered.push(p);
   const list=ordered.filter(p=>{
@@ -1585,29 +1601,29 @@ function renderByPage(excl){
     return `<tr class="rule-row ${r.untriaged?'rule-todo':'rule-done'}">
       <td class="clickable" data-toggle="${did}" style="max-width:380px"><button type="button" class="caret-btn" data-toggle="${did}" aria-controls="${did}" aria-expanded="false" aria-label="Toggle detail rows for ${esc(p.url)}"><span class="caret" id="c-${cssId(p.url)}"></span></button>${r.untriaged?'':'<span class="done-tick" aria-hidden="true">✓</span>'}<a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${esc(p.url)}</a>${r.untriaged?`<span class="todo-badge">${r.untriaged} left</span>`:''}</td>
       <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.active}</strong> / ${p.elements.length}</td>
-      <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(r.worst)}">${esc(r.worst)}</span></td>
+      <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(r.worst,r.worstEl)}">${esc(r.worst)}</span></td>
       <td><div class="roll">${r.label}</div>
-        <select class="bulk-sel" data-role="bulkpage" data-url="${esc(p.url)}" aria-label="Set all contrast elements on ${esc(p.url)}"><option value="">↳ Set all elements…</option>${STATUSES.map(s=>`<option value="${s.v}">${esc(s.label)}</option>`).join('')}</select></td>
+        <select class="bulk-sel" data-role="bulkpage" data-url="${esc(p.url)}" aria-label="Set all findings on ${esc(p.url)}"><option value="">↳ Set all…</option>${STATUSES.map(s=>`<option value="${s.v}">${esc(s.label)}</option>`).join('')}</select></td>
     </tr>
     <tr class="detail-row hidden" id="${did}" data-built="0"><td colspan="4"></td></tr>`;
-  }).join('')||`<tr><td colspan="4" style="text-align:center;color:var(--gray);padding:24px">No contrast pages match the filters.</td></tr>`;
+  }).join('')||`<tr><td colspan="4" style="text-align:center;color:var(--gray);padding:24px">No pages match the filters.</td></tr>`;
 }
 function buildPageDetail(url){
-  const p=contrastPages().get(url); if(!p) return ''; const excl=excludedUrls();
+  const p=viewPages().get(url); if(!p) return ''; const excl=excludedUrls();
   const f=filters(), shownEls=p.elements.filter(e=>{ return matchPairs([{fp:e.fp,url}],excl,f); });   // honour the Status/Assignee filters
   const rows=shownEls.slice().sort((a,b)=>b.instances-a.instances).map(e=>{
     const rp=resolvePage(e.fp,url,excl); const via=rp._viaPage&&!state.dispositions[`${e.fp}|||${url}`];
     return `<tr class="${bucket(rp.status)==='suppressed'?'pg-excluded':''}">
       <td style="max-width:280px"><strong>${esc(e.label)}</strong>${e.description?`<div class="rule-desc">${esc(e.description)}</div>`:''}</td>
-      <td><span class="pill ${gradePill(e.category)}">${esc(e.category||'—')}</span></td>
+      <td><span class="pill ${gradePill(gradeOf(e),e)}">${esc(gradeOf(e)||'—')}</span></td>
       <td style="text-align:center">${e.instances}</td>
       <td>${e.html?`<code>${esc(e.html.slice(0,180))}${e.html.length>180?'…':''}</code>`:''}</td>
       <td>${rp._linked?linkedStatus(rp,e.fp,url):statusSelect(e.fp,url,rp.status)+subField(e.fp,url,rp)+(via?'<div class="stat-sub">(via page out-of-scope)</div>':'')+`<button type="button" class="pages-btn" data-role="samebtn" data-fp="${esc(e.fp)}" data-url="${esc(url)}" aria-label="Mark ${esc(e.label)} on ${esc(url)} as the same finding as another contrast item">↪ Same as…</button>`}</td>
-      <td><input class="notes-input" type="text" value="${esc(pageNotes(e.fp,url))}" data-role="notes" data-fp="${esc(e.fp)}" data-url="${esc(url)}" aria-label="Note">
+      <td>${noteField(pageNotes(e.fp,url),e.fp,url,'Note')}
         <div style="margin-top:5px">${fixBtn(e.fp,url,true)}</div></td></tr>`;
   }).join('');
   const filtNote = shownEls.length<p.elements.length ? `<p class="stat-sub" role="status">Showing ${shownEls.length} of ${p.elements.length} elements that match the current Status/Assignee filter.</p>` : '';
-  return filtNote+`<table class="detail-tbl"><thead><tr><th>Element (signature)</th><th>Category</th><th>Inst</th><th>Sample HTML</th><th>Status (this element)</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return filtNote+`<table class="detail-tbl"><thead><tr><th>${activeStream==='contrast'?'Element (signature)':'Rule'}</th><th>${esc(gradeLabel())}</th><th>Inst</th><th>Sample HTML</th><th>Status (this element)</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function toggleDetail(id){
@@ -1618,11 +1634,12 @@ function toggleDetail(id){
   const caret=document.getElementById('c-'+cid); if(caret)caret.classList.toggle('open',!hidden);
   const ctrl=document.querySelector('[aria-controls="'+id+'"]'); if(ctrl)ctrl.setAttribute('aria-expanded',String(!hidden));
   if(!hidden && row.dataset.built==='0'){
-    if(isPage){ const url=[...contrastPages().keys()].find(u=>cssId(u)===cid); row.firstElementChild.innerHTML=buildPageDetail(url); }
+    if(isPage){ const url=[...viewPages().keys()].find(u=>cssId(u)===cid); row.firstElementChild.innerHTML=buildPageDetail(url); }
     else { const realFp=Object.keys(currentDefects()).find(k=>cssId(k)===cid); row.firstElementChild.innerHTML=buildDetail(realFp);
       if(_aiThreads[realFp] && _aiThreads[realFp].length) hydrateAI(realFp); }   // restore any open AI thread after a table re-render
     row.dataset.built='1';
   }
+  if(!hidden) fitNotes(row);
 }
 
 function renderSuppressed(all,excl){
@@ -1856,7 +1873,7 @@ document.addEventListener('change', e=>{
     persist(); render(); return; }
   if(el.dataset.role==='status'){ setStatus(fp,url,el.value); render(); }
   else if(el.dataset.role==='cat'){ setCat(fp,url,el.value,true); render(); }
-  else if(el.dataset.role==='bulkpage'){ if(el.value){ const p=contrastPages().get(el.dataset.url); if(p){ for(const e of p.elements) setStatus(e.fp,el.dataset.url,el.value); render(); } } }
+  else if(el.dataset.role==='bulkpage'){ if(el.value){ const p=viewPages().get(el.dataset.url); if(p){ for(const e of p.elements) setStatus(e.fp,el.dataset.url,el.value); render(); } } }
   else if(el.dataset.role==='sub'){
     const key=url?`${fp}|||${url}`:fp; const d=state.dispositions[key]; if(!d)return;
     if(el.dataset.sub==='xcat'&&el.value==='__add'){ const v=(prompt('Add a “Can’t fix — third party” reason:')||'').trim();
@@ -1869,7 +1886,10 @@ document.addEventListener('blur', e=>{
   else if(e.target.dataset.role==='mnote'){ const m=state.manualFindings.find(x=>x.id===e.target.dataset.id); if(m){m.note=e.target.value;persist();} }
   else if(e.target.dataset.role==='massignee'){ const m=state.manualFindings.find(x=>x.id===e.target.dataset.id); if(m){ const v=e.target.value.trim(); if(v)m.assignee=v; else delete m.assignee; persist(); } }
 }, true);
+document.addEventListener('input', e=>{ if(e.target.dataset&&e.target.dataset.role==='notes') fitNote(e.target); });
 document.addEventListener('click', e=>{
+  const nm=e.target.closest('[data-role=notemore]'); if(nm){ const ta=nm.previousElementSibling, open=ta.classList.toggle('is-open');
+    nm.textContent=open?'Show less':'Show more'; nm.setAttribute('aria-expanded',String(open)); fitNote(ta); return; }
   const sb=e.target.closest('[data-role=samebtn]'); if(sb){ openSame(sb.dataset.fp,sb.dataset.url); return; }
   const ul=e.target.closest('[data-role=unlink]'); if(ul){ unlinkSame(ul.dataset.fp,ul.dataset.url); return; }
   const sp=e.target.closest('[data-pick]'); if(sp){ pickSame(+sp.dataset.pick); return; }
@@ -2160,8 +2180,8 @@ async function showPicker(forcePick){
     var src = (typeof state!=='undefined' && state && state.source) ? state.source : '';
     var view = 'Source picker';
     if(src) view = (typeof activeStream!=='undefined' && activeStream==='contrast')
-      ? 'Contrast — grouped by '+((typeof contrastGroupBy!=='undefined' && contrastGroupBy) || 'signature')
-      : 'Standard rules';
+      ? 'Contrast — grouped by '+((typeof groupBy!=='undefined' && groupBy) || 'signature')
+      : 'Standard rules'+((typeof groupBy!=='undefined' && groupBy==='page') ? ' — grouped by page' : '');
     return {
       source: src || '(none — home)',
       view: view,
