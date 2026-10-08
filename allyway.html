@@ -699,8 +699,11 @@ const catSource = (fp,url) => { const lk=url?linkTarget(state.dispositions,fp,ur
   if(lk){ const [tf,tu]=lk.split('|||'); if(ownCat(tf,tu)) return {fp:tf,url:tu,shared:true}; } return {fp,url,shared:false}; };
 const effCat = (fp,url) => { const s=catSource(fp,url); return ownCat(s.fp,s.url); };
 // A category tab sees each rule trimmed to the pages in that category ('' = Standard rules: uncategorized pages); rules with none drop out.
-function catView(defs,cat){ const out={};
-  for(const [fp,d] of Object.entries(defs)){ const pages=d.affected_pages.filter(u=>(effCat(fp,u)||'')===cat);
+// A page re-categorized from this tab stays in it (like the status pin) until you switch tabs or view.
+const _catHold=new Map();   // 'fp|||url' or manual id -> category it was in when edited
+const holdCat=(key,cat)=>{ if(!_catHold.has(key)) _catHold.set(key,cat||''); };
+function catView(defs,cat,hold=true){ const out={};
+  for(const [fp,d] of Object.entries(defs)){ const pages=d.affected_pages.filter(u=>{ const h=hold&&_catHold.get(fp+'|||'+u); return (h!==undefined&&h!==false ? h : (effCat(fp,u)||''))===cat; });
     if(pages.length) out[fp]={...d, affected_pages:pages, instance_count:pages.reduce((n,u)=>n+(d.page_instances[u]||0),0)}; }
   return out; }
 // Contrast findings in a category, tagged so grading/export know they're contrast.
@@ -941,7 +944,7 @@ async function loadSource(src, localScan){
 }
 function activateSource(){
   const {source:src, scanDate, defects, contrast}=state;
-  activeStream='standard'; activeCat=''; groupBy='signature'; sortKey='sev'; sortDir=1; _pin=null;
+  activeStream='standard'; activeCat=''; groupBy='signature'; sortKey='sev'; sortDir=1; _pin=null; _catHold.clear();
   syncGroupByButtons();   // the reset above must reach the pills, not just the variable
   for(const k of Object.keys(orders)) orders[k]=[];
   const ct=document.getElementById('tab-contrast'); const cCount=Object.keys(contrast).length;
@@ -1047,15 +1050,16 @@ function allAssignees(){ const set=new Set();
   for(const m of (state.manualFindings||[])){ if(m.assignee) set.add(m.assignee); }
   return [...set].sort((a,b)=>a.localeCompare(b)); }
 // pairs: [{fp,url}] backing a row → the distinct assignee names on them (rule- + page-level).
-function pairAssignees(pairs){ const names=new Set();
+function pairAssignees(pairs,excl){ const names=new Set();
   for(const {fp,url} of pairs){
+    if(url&&excl&&resolvePage(fp,url,excl).status==='out_of_scope') continue;   // out-of-scope pages have no owner
     if(url&&linkTarget(state.dispositions,fp,url)){ const a=effAssignee(fp,url); if(a) names.add(a); continue; }   // linked pages follow their target's owner
     const rd=state.dispositions[fp]; if(rd&&rd.assignee) names.add(rd.assignee);
     const pd=url?state.dispositions[`${fp}|||${url}`]:null; if(pd&&pd.assignee) names.add(pd.assignee); }
   return names; }
 function matchAssignee(pairs,excl,f){
   if(!f.assignee) return true;
-  const names=pairAssignees(pairs);
+  const names=pairAssignees(pairs,excl);
   if(f.assignee==='__any')  return names.size>0;
   if(f.assignee==='__none') return names.size===0 && pairs.some(p=>ASSIGNEE_STATUSES.has(resolvePage(p.fp,p.url,excl).status));
   return names.has(f.assignee);
@@ -1152,7 +1156,7 @@ function findingsIn(defs,excl){ let total=0, active=0;
 // Finding counts on every tab, so an empty or huge one is obvious before you click it.
 function refreshCatTabs(){
   const excl=excludedUrls(), n=Object.fromEntries(CATS.map(c=>[c.v,0]));
-  const std=findingsIn(catView(state.defects,''),excl), con=findingsIn(catView(state.contrast||{},''),excl);
+  const std=findingsIn(catView(state.defects,'',false),excl), con=findingsIn(catView(state.contrast||{},'',false),excl);
   const setTab=(id,label,count,tip)=>{ const t=document.getElementById(id); t.textContent=`${label} (${count})`; t.title=tip; };
   setTab('tab-standard','Standard rules',std.total,`${std.active} active of ${std.total} findings`);
   if(con.total) setTab('tab-contrast','Contrast',con.total,`${con.active} active of ${con.total} findings`);
@@ -1258,7 +1262,7 @@ function switchStream(s){   // s: 'standard' | 'contrast' | 'cat:<value>'
   const stream = s==='contrast' ? 'contrast' : 'standard', cat = s.startsWith('cat:') ? s.slice(4) : '';
   if(stream===activeStream && cat===activeCat) return;
   if(s==='contrast' && Object.keys(state.contrast||{}).length===0) return;
-  activeStream=stream; activeCat=cat; sortKey='sev'; sortDir=1;
+  activeStream=stream; activeCat=cat; sortKey='sev'; sortDir=1; _catHold.clear();
   document.querySelectorAll('.tab[data-stream]').forEach(t=>t.setAttribute('aria-selected',String(t.dataset.stream===s)));
   updateFilterOptions();
   if(!orders[orderKey()].length) recomputeOrder();
@@ -1268,7 +1272,7 @@ function syncGroupByButtons(){
   document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.groupby===groupBy)));
 }
 function setGroupBy(g){
-  if(g===groupBy) return; groupBy=g; sortKey='sev'; sortDir=1;
+  if(g===groupBy) return; groupBy=g; sortKey='sev'; sortDir=1; _catHold.clear();
   syncGroupByButtons();
   if(!orders[orderKey()].length) recomputeOrder();
   render();
@@ -1520,8 +1524,12 @@ async function draftFixWithAI(){ if(!_fixTarget || !window.NelnetAI || !canEditF
   }catch(err){ toast(err&&err.code==='rate_limited'?'Daily AI limit reached — try again tomorrow.':'AI draft failed — try again.','error'); }
   finally{ btn.textContent=old; updateFixAI(); }
 }
+// Quick picks for tiny fixes: tick = 0.1 h / 0.05 h in the hours box, so totals count them like any estimate.
+const TINY_EST=[{v:0.1,label:'< 15 min'},{v:0.05,label:'< 5 min'}];
+function tinyChecks(h,at,bf){ return TINY_EST.map(t=>`<label class="chk"><input type="checkbox" ${bf?`data-bf="esttiny"`:`data-role="esttiny" ${at}`} data-val="${t.v}" ${!bf&&h===t.v?'checked':''}> ${t.label}</label>`).join(''); }
 function estRow(fp,url){ const e=estOf(fp,url), at=`data-fp="${esc(fp)}" data-url="${esc(url)}"`;
-  return `<div class="est-row"><label>Est. hours <input type="number" class="est-in" min="0" step="0.25" value="${e?e.h:''}" data-role="est" ${at} aria-label="Estimated hours to fix ${esc(url)}"></label>
+  return `<div class="est-row"><label>Est. hours <input type="number" class="est-in" min="0" step="0.05" value="${e?e.h:''}" data-role="est" ${at} aria-label="Estimated hours to fix ${esc(url)}"></label>
+    ${tinyChecks(e?e.h:0,at)}
     <label class="chk" title="Enter estimated hours first"><input type="checkbox" data-role="estguess" ${at} ${e&&e.guess?'checked':''} ${e?'':'disabled'}> Complete guess</label></div>`; }
 function noteField(val,fp,url,label){
   return `<textarea class="notes-input" rows="2" data-role="notes" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="${esc(label)}">${esc(val)}</textarea><button type="button" class="note-more" data-role="notemore" aria-expanded="false" hidden>Show more</button>`;
@@ -1572,7 +1580,8 @@ function buildDetail(fp){
       <select data-bf="assignee" aria-label="Assignee for selected pages">${peopleOptions('','Assignee…')}</select>
       <select data-bf="cat" aria-label="Category for selected pages"><option value="">Category…</option>${CATS.map(c=>`<option value="${c.v}">${esc(c.label)}</option>`).join('')}</select>
       <input type="text" data-bf="note" placeholder="Note (replaces existing)…" aria-label="Note for selected pages">
-      <input type="number" class="est-in" min="0" step="0.25" data-bf="est" placeholder="Hours…" aria-label="Estimated hours for selected pages (0 clears)">
+      <input type="number" class="est-in" min="0" step="0.05" data-bf="est" placeholder="Hours…" aria-label="Estimated hours for selected pages (0 clears)">
+      ${tinyChecks(0,'',true)}
       <label class="chk"><input type="checkbox" data-bf="estguess"> Complete guess</label>
       <select data-bf="gfix" aria-label="Single global fix, for selected pages"><option value="">Global fix…</option><option value="on">Group as single global fix</option><option value="off">Ungroup from global fix</option></select>
       ${canEditFix()?`<button type="button" class="pages-btn" data-role="bulkfix" data-fp="${esc(fp)}">Fix instructions…</button>`:''}
@@ -1665,9 +1674,15 @@ function renderSuppressed(all,excl){
 
 /* ── Manual findings & observations ─────────────────────────── */
 const genId=()=>'m_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+// Manual findings shown on the current tab: each category tab shows only its own.
+function manualInTab(){ const everything=state.manualFindings||[];
+  return activeStream==='standard' ? everything.filter(m=>(_catHold.has('m:'+m.id)?_catHold.get('m:'+m.id):(m.cat||''))===activeCat) : everything; }
+// Estimator for a manual finding: hours live on the finding itself (est, estGuess).
+const manualEstRow = m => `<div class="est-row"><label>Est. hours <input type="number" class="est-in" min="0" step="0.25" value="${m.est>0?m.est:''}" data-role="est" data-mid="${esc(m.id)}" aria-label="Estimated hours to fix ${esc(m.title)}"></label>
+    ${tinyChecks(m.est||0,`data-mid="${esc(m.id)}"`)}
+    <label class="chk" title="Enter estimated hours first"><input type="checkbox" data-role="estguess" data-mid="${esc(m.id)}" ${m.est>0&&m.estGuess?'checked':''} ${m.est>0?'':'disabled'}> Complete guess</label></div>`;
 function renderManual(){
-  const everything=state.manualFindings||[];
-  const list = activeStream==='standard' ? everything.filter(m=>(m.cat||'')===activeCat) : everything;   // each tab shows only its own findings
+  const list=manualInTab();
   document.getElementById('manual-summary').textContent=`Manual findings & observations (${list.length})`;
   const tb=document.getElementById('manual-tbody');
   tb.innerHTML=list.map(m=>{
@@ -1681,7 +1696,7 @@ function renderManual(){
       <td><select class="subfield" data-role="mcat" data-id="${esc(m.id)}" aria-label="Category for ${esc(m.title)}"><option value="">—</option>${CATS.map(c=>`<option value="${c.v}"${c.v===m.cat?' selected':''}>${esc(c.label)}</option>`).join('')}</select></td>
       <td><select class="status-sel ${statusClass(st)}" data-role="mstatus" data-id="${esc(m.id)}" aria-label="Status">${opts}</select></td>
       <td>${SMAP[st]&&SMAP[st].field==='assignee' ? `<select class="subfield" data-role="massignee" data-id="${esc(m.id)}" aria-label="Assignee for ${esc(m.title)}">${peopleOptions(m.assignee||'')}</select>` : (m.assignee?`<span class="stat-sub">${esc(m.assignee)}</span>`:'')}</td>
-      <td><input class="notes-input" type="text" value="${esc(m.note||'')}" data-role="mnote" data-id="${esc(m.id)}" aria-label="Note"></td>
+      <td><input class="notes-input" type="text" value="${esc(m.note||'')}" data-role="mnote" data-id="${esc(m.id)}" aria-label="Note">${ACTIVE_TODO.has(st)?manualEstRow(m):''}</td>
       <td>${fixBtnManual(m)}</td>
       <td style="white-space:nowrap"><button class="pages-btn" type="button" data-role="medit" data-id="${esc(m.id)}" aria-label="Edit finding ${esc(m.title)}">Edit</button>
         <button class="pages-btn" type="button" data-role="mremove" data-id="${esc(m.id)}" aria-label="Remove finding ${esc(m.title)}">✕</button></td></tr>`;
@@ -1736,7 +1751,7 @@ function clearStatus(d){ delete d.status; delete d.assignee; delete d.reason; de
 function setStatus(fp,url,val){
   const key=url?`${fp}|||${url}`:fp; const cur=state.dispositions[key];
   if(val==='untriaged'){ if(cur){ clearStatus(cur); if(Object.keys(cur).length===0) delete state.dispositions[key]; } }
-  else { const d={...(cur||{}),status:val}; ensureField(d,val); state.dispositions[key]=d; }
+  else { const d={...(cur||{}),status:val}; if(val==='out_of_scope') delete d.assignee; ensureField(d,val); state.dispositions[key]=d; }
   persist();
 }
 function setCat(fp,url,val,explicitNone){   // '' removes the override (the page then inherits the rule's category)
@@ -1779,7 +1794,7 @@ function applyBulk(fp){
       else if(ASSIGNEE_STATUSES.has(st)){ const key=`${fp}|||${u}`; (state.dispositions[key]||(state.dispositions[key]={})).assignee=assignee; }
       else noOwner++;
     }
-    if(cat) setCat(fp,u,cat);
+    if(cat){ holdCat(`${fp}|||${u}`,effCat(fp,u)); setCat(fp,u,cat); }
     if(note) setNotes(fp,u,note);
     if(est!==''||guess){ const cur=estOf(fp,u); setEst(fp,u,est!==''?(parseFloat(est)||0):(cur?cur.h:0),guess); }   // a lone "guess" tick only flags pages that already have hours
   }
@@ -1850,6 +1865,10 @@ function estimateSummary(){
     if(gp.length) units.push(gp);
     for(const us of units){ if(!us.some(u=>matchPairs([{fp,url:u}],excl,f))) continue;
       add(effAssignee(fp,us[0])||'Unassigned', us.map(u=>estOf(fp,u)).find(Boolean)||null); } }
+  for(const m of manualInTab()){ const st=m.status||'untriaged'; if(!ACTIVE_TODO.has(st)) continue;
+    if(f.status&&f.status!==st) continue;
+    if(f.assignee&&!(f.assignee==='__any'?m.assignee:f.assignee==='__none'?!m.assignee:m.assignee===f.assignee)) continue;
+    add(m.assignee||'Unassigned', m.est>0?{h:m.est,guess:!!m.estGuess}:null); }
   return by; }
 function renderEstimate(){
   const el=document.getElementById('est-summary'); if(!el||!state) return;
@@ -1877,19 +1896,25 @@ document.addEventListener('change', e=>{
     const v=el.value==='__add'?addPerson():el.value; if(v)m.assignee=v; else delete m.assignee; persist(); render(); return; }
   if(el.dataset.bf==='xcat'){ if(el.value==='__add'){ const v=(prompt('Add a “Can’t fix — third party” reason:')||'').trim();
       if(v&&!state.xcats.includes(v)){ state.xcats.push(v); persist(); } el.innerHTML=xcatOptions(v||state.xcats[0]); } return; }
-  if(el.dataset.role==='est'||el.dataset.role==='estguess'){   // update just the total — a full render would drop focus
+  if(el.dataset.bf==='esttiny'){ const bar=el.closest('.bulk-fields'), n=bar.querySelector('[data-bf=est]');
+    bar.querySelectorAll('[data-bf=esttiny]').forEach(c=>{ if(c!==el) c.checked=false; }); n.value=el.checked?el.dataset.val:''; return; }
+  if(el.dataset.role==='est'||el.dataset.role==='estguess'||el.dataset.role==='esttiny'){   // update just the total — a full render would drop focus
     const row=el.closest('.est-row'), n=row.querySelector('[data-role=est]'), g=row.querySelector('[data-role=estguess]');
-    setEst(fp,url,parseFloat(n.value)||0,g.checked); g.disabled=!(parseFloat(n.value)>0); if(g.disabled) g.checked=false; renderEstimate(); return; }
+    if(el.dataset.role==='esttiny') n.value=el.checked?el.dataset.val:'';
+    row.querySelectorAll('[data-role=esttiny]').forEach(c=>{ c.checked=parseFloat(n.value)===parseFloat(c.dataset.val); });
+    if(el.dataset.mid){ const m=state.manualFindings.find(x=>x.id===el.dataset.mid); if(!m) return; const h=parseFloat(n.value)||0;
+      if(h>0){ m.est=h; if(g.checked) m.estGuess=true; else delete m.estGuess; } else { delete m.est; delete m.estGuess; } persist(); }
+    else setEst(fp,url,parseFloat(n.value)||0,g.checked); g.disabled=!(parseFloat(n.value)>0); if(g.disabled) g.checked=false; renderEstimate(); return; }
   if(el.dataset.role==='pgsel'){ updateBulkBar(fp); return; }
   if(el.dataset.role==='pgselall'){ document.querySelectorAll('[data-role=pgsel]').forEach(c=>{ if(c.dataset.fp===fp) c.checked=el.checked; }); updateBulkBar(fp); return; }
-  if(el.dataset.role==='mcat'){ const m=state.manualFindings.find(x=>x.id===el.dataset.id); if(m){m.cat=el.value;persist();render();} return; }
+  if(el.dataset.role==='mcat'){ const m=state.manualFindings.find(x=>x.id===el.dataset.id); if(m){holdCat('m:'+m.id,m.cat);m.cat=el.value;persist();render();} return; }
   if(el.dataset.role==='mstatus'){ const m=state.manualFindings.find(x=>x.id===el.dataset.id); if(m){m.status=el.value;persist();render();} return; }
   if(el.dataset.role==='globalfix'){ let d=state.dispositions[fp];
     if(el.checked){ if(!d) d=state.dispositions[fp]={}; d.globalFix=true; }
     else if(d){ delete d.globalFix; if(Object.keys(d).length===0) delete state.dispositions[fp]; }
     persist(); render(); return; }
   if(el.dataset.role==='status'){ setStatus(fp,url,el.value); render(); }
-  else if(el.dataset.role==='cat'){ setCat(fp,url,el.value,true); render(); }
+  else if(el.dataset.role==='cat'){ holdCat(`${fp}|||${url}`,effCat(fp,url)); setCat(fp,url,el.value,true); render(); }
   else if(el.dataset.role==='bulkpage'){ if(el.value){ const p=viewPages().get(el.dataset.url); if(p){ for(const e of p.elements) setStatus(e.fp,el.dataset.url,el.value); render(); } } }
   else if(el.dataset.role==='sub'){
     const key=url?`${fp}|||${url}`:fp; const d=state.dispositions[key]; if(!d)return;
@@ -1982,7 +2007,7 @@ function collectWorkList(){
   }
   for(const m of (state.manualFindings||[])){ if(!WORKLIST_STATUSES.includes(m.status)) continue;
     rows.push({ _s:m.status, item:m.title, stream:'manual ('+(m.type==='a11y'?'a11y':'obs')+')', url:m.url||'',
-      grade:m.severity||'', instances:'', status:SMAP[m.status].label, assignee:m.assignee||'', note:m.note||'', fix:m.fix||'', html:'', cat:m.cat||'' }); }
+      grade:m.severity||'', instances:'', status:SMAP[m.status].label, assignee:m.assignee||'', note:m.note||'', fix:m.fix||'', html:'', cat:m.cat||'', est:m.est>0?{h:m.est,guess:!!m.estGuess}:null }); }
   return rows;
 }
 function exportWorkList(){
