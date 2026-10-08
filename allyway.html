@@ -183,6 +183,12 @@ table.defects tr.rule-todo td{background:var(--row-todo);}
 .bulk-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 10px;padding:8px 10px;border:1px solid var(--hairline);border-radius:var(--r);background:var(--off-white);font-size:13px;}
 .bulk-bar .bulk-fields{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
 .bulk-bar .bulk-fields[hidden]{display:none;}
+.est-in{width:76px;}
+.est-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:12px;}
+.est-sum{margin:0 0 12px;}
+.est-sum summary{cursor:pointer;padding:6px 0;}
+.est-sum summary:focus-visible{outline:2px solid currentColor;outline-offset:2px;}
+.est-sum .detail-tbl{margin-top:6px;max-width:640px;}
 .bulk-count{font-weight:600;color:var(--dark-gray);}
 .same-list{list-style:none;margin:0 0 10px;padding:0;max-height:300px;overflow:auto;border:1px solid var(--hairline);border-radius:var(--r);}
 .same-list button{display:block;width:100%;text-align:left;padding:8px 10px;background:none;border:0;border-bottom:1px solid var(--hairline);font:inherit;color:var(--dark-gray);cursor:pointer;}
@@ -484,6 +490,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <button class="btn-export" id="btn-worklist" type="button">⬇ Export work list (CSV)</button>
         <button class="btn-export" id="btn-backup" type="button">⬇ Back up triage (CSV)</button>
       </div>
+      <div id="est-summary" class="est-sum" role="status" aria-live="polite"></div>
       <div class="tbl-wrap">
         <table class="defects">
           <thead><tr id="head-row">
@@ -649,7 +656,7 @@ const STATUSES = [
   {v:'in_progress',    label:'In progress',             bucket:'active', field:'assignee'},
   {v:'needs_approval', label:'Needs approval',          bucket:'active', field:'assignee'},
   {v:'deferred',       label:'Deferred / backlog',      bucket:'active'},
-  {v:'question',       label:'Question',                 bucket:'active'},
+  {v:'question',       label:'Question',                 bucket:'active', field:'assignee'},
   {v:'fixed',          label:'Fixed',                   bucket:'verify', field:'assignee'},
   {v:'ok_ignore',      label:'OK to ignore',            bucket:'suppressed', field:'reason'},
   {v:'not_issue',      label:'Not really an issue',     bucket:'suppressed'},
@@ -679,12 +686,16 @@ const ownCat = (fp,url) => { const pd=url?state.dispositions[`${fp}|||${url}`]:n
 const catSource = (fp,url) => { const lk=url?linkTarget(state.dispositions,fp,url):null;
   if(lk){ const [tf,tu]=lk.split('|||'); if(ownCat(tf,tu)) return {fp:tf,url:tu,shared:true}; } return {fp,url,shared:false}; };
 const effCat = (fp,url) => { const s=catSource(fp,url); return ownCat(s.fp,s.url); };
-// A category tab sees each rule trimmed to the pages in that category; rules with none drop out.
+// A category tab sees each rule trimmed to the pages in that category ('' = Standard rules: uncategorized pages); rules with none drop out.
 function catView(defs,cat){ const out={};
-  for(const [fp,d] of Object.entries(defs)){ const pages=d.affected_pages.filter(u=>effCat(fp,u)===cat);
+  for(const [fp,d] of Object.entries(defs)){ const pages=d.affected_pages.filter(u=>(effCat(fp,u)||'')===cat);
     if(pages.length) out[fp]={...d, affected_pages:pages, instance_count:pages.reduce((n,u)=>n+(d.page_instances[u]||0),0)}; }
   return out; }
-const currentDefects = () => activeStream==='contrast' ? (state.contrast||{}) : activeCat ? catView(state.defects,activeCat) : state.defects;
+// Contrast findings in a category, tagged so grading/export know they're contrast.
+function conView(cat){ const v=catView(state.contrast||{},cat); for(const d of Object.values(v)) d._contrast=true; return v; }
+// Contrast tab = uncategorized contrast pages; a category tab lists that category's standard and contrast findings together.
+const currentDefects = () => activeStream==='contrast' ? catView(state.contrast||{},'')
+  : activeCat ? {...catView(state.defects,activeCat), ...conView(activeCat)} : catView(state.defects,'');
 const pageView = () => activeStream==='contrast' && contrastGroupBy==='page';
 const orderKey = () => { const k = pageView() ? 'contrastPage' : (activeStream==='standard' && activeCat) ? 'cat:'+activeCat : activeStream;
   return orders[k] ? k : (orders[k]=[], k); };
@@ -825,14 +836,16 @@ function computeSummary(defects, contrast, dispositions, manual){
     const pg=dispositions[`${fp}|||${url}`]; if(pg&&pg.status)return pg.status; const rd=dispositions[fp]; if(rd&&rd.status)return rd.status; return 'untriaged'; };
   let active=0,suppressed=0,verify=0,untriaged=0,total=0;
   for(const defs of [defects||{}, contrast||{}]) for(const d of Object.values(defs)){
-    const c={active:0,suppressed:0,verify:0,deferred:0}; let nUntriaged=0;
-    for(const url of d.affected_pages){ const st=res(d.fingerprint,url); c[st==='deferred'?'deferred':(SMAP[st]?.bucket||'active')]++; if(st==='untriaged')nUntriaged++; }
-    if((dispositions[d.fingerprint]||{}).globalFix){   // one global fix = one item, in whichever bucket it sits
-      const b = c.active ? 'active' : c.verify ? 'verify' : c.suppressed ? 'suppressed' : '';
-      if(!b){ if(c.deferred){ total++; if(nUntriaged)untriaged++; } continue; }   // all deferred: counts as triaged, not active
-      total++; if(b==='active')active++; else if(b==='verify')verify++; else suppressed++;
-      if(nUntriaged)untriaged++;                       // any untriaged page → the collapsed item isn't triaged
-    } else { total+=d.affected_pages.length; active+=c.active; suppressed+=c.suppressed; verify+=c.verify; untriaged+=nUntriaged; }
+    const g=new Set(globalUrls(d.fingerprint,d.affected_pages,dispositions));
+    const c={active:0,suppressed:0,verify:0,deferred:0}, gc={active:0,suppressed:0,verify:0,deferred:0}; let nUntriaged=0, gUntriaged=0;
+    for(const url of d.affected_pages){ const st=res(d.fingerprint,url), t=g.has(url)?gc:c;
+      t[st==='deferred'?'deferred':(SMAP[st]?.bucket||'active')]++; if(st==='untriaged'){ if(g.has(url))gUntriaged++; else nUntriaged++; } }
+    total+=d.affected_pages.length-g.size; active+=c.active; suppressed+=c.suppressed; verify+=c.verify; untriaged+=nUntriaged;
+    if(g.size){   // the global-fix pages = one item, in whichever bucket it sits
+      const b = gc.active ? 'active' : gc.verify ? 'verify' : gc.suppressed ? 'suppressed' : '';
+      total++; if(gUntriaged)untriaged++;              // any untriaged page → the collapsed item isn't triaged
+      if(b==='active')active++; else if(b==='verify')verify++; else if(b==='suppressed')suppressed++;   // all deferred: triaged, not active
+    }
   }
   active += (manual||[]).filter(m=>m.type==='a11y' && m.status!=='deferred' && (SMAP[m.status||'untriaged']?.bucket||'active')==='active').length;
   return {active, suppressed, verify, untriaged, total, triagedPct: total?Math.round(100*(total-untriaged)/total):0};
@@ -1006,6 +1019,9 @@ function effAssignee(fp,url){ const lk=url?linkTarget(state.dispositions,fp,url)
   if(pd&&pd.assignee) return pd.assignee; const rd=state.dispositions[fp]; return (rd&&rd.assignee)||''; }
 // A rule flagged as one global fix (e.g. a shared nav) — counts as 1 and exports as a single row.
 const isGlobalFix = fp => !!(state.dispositions[fp]||{}).globalFix;
+// Pages of a rule collapsed into its one global fix: the chosen pages, or every page for the legacy rule-wide flag.
+function globalUrls(fp,pages,disp){ const rd=(disp||state.dispositions)[fp]||{};
+  if(rd.globalFix) return pages; const sel=rd.globalPages; return sel&&sel.length?pages.filter(u=>sel.includes(u)):[]; }
 /* ── Filter helpers (assignee + status) ────────────────────────
    Assignee/status live on dispositions at BOTH rule level (fp) and page level (fp|||url).
    A row matches if ANY backing page carries the value. The rule-level assignee counts even
@@ -1061,10 +1077,12 @@ const bucket = st => SMAP[st]?.bucket || 'active';
 const statusClass = st => st==='untriaged' ? 'b-untriaged' : st==='deferred' ? 'b-deferred' : st==='question' ? 'b-question' : 'b-'+bucket(st);
 // "Grade" = severity for standard rules, category (Error/Alert) for contrast (severity is flat there).
 const CAT_RANK = {ERROR:0,ALERT:1,'BEST PRACTICE':2};
-const gradeOf = d => activeStream==='contrast' ? (d.category||'') : (d.severity||'');
-const gradeRank = g => activeStream==='contrast' ? (CAT_RANK[(g||'').toUpperCase()]??99) : (SEV_RANK[(g||'').toUpperCase()]??99);
-const gradeLabel = () => activeStream==='contrast' ? 'Category' : 'Severity';
-const gradePill = g => { const k=(g||'').toUpperCase(); return activeStream==='contrast'
+// A category tab mixes standard and contrast findings; contrast ones carry _contrast (see conView).
+const isCon = d => activeStream==='contrast' || !!(d&&d._contrast);
+const gradeOf = d => isCon(d) ? (d.category||'') : (d.severity||'');
+const gradeRank = g => { const k=(g||'').toUpperCase(), a=activeStream==='contrast'?CAT_RANK:SEV_RANK, b=activeStream==='contrast'?SEV_RANK:CAT_RANK; return a[k]??b[k]??99; };
+const gradeLabel = () => activeStream==='contrast' ? 'Category' : activeCat ? 'Severity / Category' : 'Severity';
+const gradePill = (g,d) => { const k=(g||'').toUpperCase(); return isCon(d)
   ? 'cat-'+(k==='ERROR'?'error':k==='ALERT'?'alert':'bp')
   : 'sev-'+((g||'other').toLowerCase().replace(/\s+/g,'-')); };
 
@@ -1097,7 +1115,7 @@ function render(){
   const openIds=[...document.querySelectorAll('#defects-tbody .detail-row:not(.hidden)')].map(r=>r.id);
   const excl=excludedUrls();
   const all=Object.values(currentDefects());
-  renderStats(all,excl);
+  renderStats(all,excl); renderEstimate();
   if(pageView()) renderByPage(excl); else renderTable(all,excl);
   refreshStatusFilter(); refreshAssigneeFilter(); refreshXcatFilter(); refreshCatTabs();
   renderSuppressed(all,excl);
@@ -1108,30 +1126,33 @@ function render(){
 
 // Findings (rule × page) in a stream: a global-fix rule counts once, like the stats tiles. Also how many are still active.
 function findingsIn(defs,excl){ let total=0, active=0;
-  for(const d of Object.values(defs||{})){ const r=ruleRollup(d,excl);
-    if(isGlobalFix(d.fingerprint)){ if(d.affected_pages.length){ total++; if(r.c.active>0) active++; } }
-    else { total+=d.affected_pages.length; active+=r.c.active; } }
+  for(const d of Object.values(defs||{})){ const g=new Set(globalUrls(d.fingerprint,d.affected_pages)); let gAct=false;
+    for(const u of d.affected_pages){ const a=bucket(resolvePage(d.fingerprint,u,excl).status)==='active'&&resolvePage(d.fingerprint,u,excl).status!=='deferred';
+      if(g.has(u)){ if(a) gAct=true; } else if(a) active++; }
+    total+=d.affected_pages.length-g.size+(g.size?1:0); if(gAct) active++; }
   return {total,active}; }
 // Finding counts on every tab, so an empty or huge one is obvious before you click it.
 function refreshCatTabs(){
   const excl=excludedUrls(), n=Object.fromEntries(CATS.map(c=>[c.v,0]));
-  const std=findingsIn(state.defects,excl), con=findingsIn(state.contrast,excl);
+  const std=findingsIn(catView(state.defects,''),excl), con=findingsIn(catView(state.contrast||{},''),excl);
   const setTab=(id,label,count,tip)=>{ const t=document.getElementById(id); t.textContent=`${label} (${count})`; t.title=tip; };
   setTab('tab-standard','Standard rules',std.total,`${std.active} active of ${std.total} findings`);
   if(con.total) setTab('tab-contrast','Contrast',con.total,`${con.active} active of ${con.total} findings`);
-  for(const [fp,d] of Object.entries(state.defects||{})) for(const u of d.affected_pages){ const c=effCat(fp,u); if(c&&n[c]!==undefined) n[c]++; }
+  for(const defs of [state.defects||{},state.contrast||{}]) for(const [fp,d] of Object.entries(defs)) for(const u of d.affected_pages){ const c=effCat(fp,u); if(c&&n[c]!==undefined) n[c]++; }
   for(const m of (state.manualFindings||[])) if(m.cat&&n[m.cat]!==undefined) n[m.cat]++;   // manual findings count toward their tab too
   for(const c of CATS) setTab('tab-cat-'+c.v,c.label,n[c.v],`${n[c.v]} finding${n[c.v]===1?'':'s'} in this category`);
 }
 function renderStats(all,excl){
   let activeFindings=0,supprFindings=0,verifyFindings=0;
-  for(const d of all){ const r=ruleRollup(d,excl);
-    if(isGlobalFix(d.fingerprint)){   // one global fix = one item, in whichever bucket it sits
-      if(r.c.active>0) activeFindings++; else if(r.c.verify>0) verifyFindings++; else if(r.c.suppressed>0) supprFindings++;
-    } else { activeFindings+=r.c.active; supprFindings+=r.c.suppressed; verifyFindings+=r.c.verify; } }
+  for(const d of all){ const g=new Set(globalUrls(d.fingerprint,d.affected_pages));
+    const c={active:0,suppressed:0,verify:0}, gc={active:0,suppressed:0,verify:0};
+    for(const u of d.affected_pages){ const st=resolvePage(d.fingerprint,u,excl).status; if(st==='deferred') continue; (g.has(u)?gc:c)[bucket(st)]++; }
+    activeFindings+=c.active; supprFindings+=c.suppressed; verifyFindings+=c.verify;
+    // the global-fix pages = one item, in whichever bucket it sits
+    if(gc.active>0) activeFindings++; else if(gc.verify>0) verifyFindings++; else if(gc.suppressed>0) supprFindings++; }
   const manual=state.manualFindings||[];
   const mA11y=manual.filter(m=>m.type==='a11y'), mObs=manual.filter(m=>m.type==='other');
-  const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active'&&m.status!=='deferred'&&(!activeCat||m.cat===activeCat)).length;
+  const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active'&&m.status!=='deferred'&&(m.cat||'')===activeCat).length;
   const manualAdd = activeStream==='standard' ? mA11yActive : 0;   // manual findings live on the standard tabs, by category
   activeFindings+=manualAdd;
   document.getElementById('stat-row').innerHTML=`
@@ -1163,7 +1184,7 @@ function setHead(cols){ document.getElementById('head-row').innerHTML=cols.map(c
 // Contrast pages: url -> { url, elements:[{fp,label,description,severity,instances,html}] }
 function contrastPages(){
   const pages=new Map();
-  for(const d of Object.values(state.contrast||{})){ for(const url of d.affected_pages){
+  for(const d of Object.values(catView(state.contrast||{},''))){ for(const url of d.affected_pages){
     let p=pages.get(url); if(!p){ p={url,elements:[]}; pages.set(url,p); }
     p.elements.push({fp:d.fingerprint,label:d.rule_title,description:d.description,severity:d.severity,category:d.category,
       instances:d.page_instances[url]||0,html:(d.page_html[url]||[])[0]||''}); } }
@@ -1186,7 +1207,7 @@ function recomputeOrder(){
 function updateFilterOptions(){
   const sel=document.getElementById('filter-sev'); const cur=sel.value;
   document.getElementById('filter-grade-label').textContent=gradeLabel();
-  const opts = activeStream==='contrast' ? ['Error','Alert','Best Practice'] : ['CRITICAL','HIGH','MEDIUM','LOW','BEST PRACTICE'];
+  const opts = activeStream==='contrast' ? ['Error','Alert','Best Practice'] : activeCat ? ['CRITICAL','HIGH','MEDIUM','LOW','BEST PRACTICE','Error','Alert'] : ['CRITICAL','HIGH','MEDIUM','LOW','BEST PRACTICE'];
   sel.innerHTML='<option value="">All</option>'+opts.map(o=>`<option${o.toUpperCase()===(cur||'').toUpperCase()?' selected':''}>${o}</option>`).join('');
   refreshStatusFilter(); refreshAssigneeFilter(); refreshXcatFilter();
 }
@@ -1248,6 +1269,8 @@ function subField(fp,url,d){
   return '';
 }
 
+// A leftover rule-level status only matters while some page still inherits it; once every page has its own, hide its sub-field.
+const inheritsRuleStatus = d => d.affected_pages.some(u=>{ const pg=state.dispositions[`${d.fingerprint}|||${u}`]; return !(pg&&pg.status); });
 function renderTable(all,excl){
   setHead(sigCols());
   const f=filters();
@@ -1267,11 +1290,11 @@ function renderTable(all,excl){
     return `<tr class="rule-row ${r.untriaged?'rule-todo':'rule-done'}" data-fp="${esc(fp)}">
       <td class="clickable" data-toggle="${did}" style="max-width:280px"><button type="button" class="caret-btn" data-toggle="${did}" aria-controls="${did}" aria-expanded="false" aria-label="Toggle detail rows for ${esc(d.rule_title)}"><span class="caret" id="c-${cssId(fp)}"></span></button>${r.untriaged?'':'<span class="done-tick" aria-hidden="true">✓</span>'}<strong>${esc(d.rule_title)}</strong>${r.untriaged?`<span class="todo-badge">${r.untriaged} left</span>`:''}${(state.dispositions[fp]||{}).notes?'<span title="Has a rule note" aria-label="Has a rule note" style="margin-left:6px">📝</span>':''}${isGlobalFix(fp)?'<span title="Single global fix — one place fixes all pages" aria-label="Single global fix" style="margin-left:6px">🌐</span>':''}
         ${d.description?`<div class="rule-desc">${esc(d.description.slice(0,110))}${d.description.length>110?'…':''}</div>`:''}</td>
-      <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(g)}">${esc(g||'—')}</span></td>
+      <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(g,d)}">${esc(g||'—')}</span></td>
       <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.activePages}</strong> / ${r.totalPages}</td>
       <td class="clickable" data-toggle="${did}" style="text-align:center;font-weight:600">${d.instance_count}</td>
       <td><div class="roll">${r.label}</div>
-        ${ruleDef?subField(fp,'',ruleDef):''}</td>
+        ${ruleDef&&inheritsRuleStatus(d)?subField(fp,'',ruleDef):''}</td>
     </tr>
     <tr class="detail-row hidden" id="${did}" data-built="0"><td colspan="5"></td></tr>`;
   }).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--gray);padding:24px">No rules match the filters.</td></tr>`;
@@ -1482,6 +1505,9 @@ async function draftFixWithAI(){ if(!_fixTarget || !window.NelnetAI || !canEditF
   }catch(err){ toast(err&&err.code==='rate_limited'?'Daily AI limit reached — try again tomorrow.':'AI draft failed — try again.','error'); }
   finally{ btn.textContent=old; updateFixAI(); }
 }
+function estRow(fp,url){ const e=estOf(fp,url), at=`data-fp="${esc(fp)}" data-url="${esc(url)}"`;
+  return `<div class="est-row"><label>Est. hours <input type="number" class="est-in" min="0" step="0.25" value="${e?e.h:''}" data-role="est" ${at} aria-label="Estimated hours to fix ${esc(url)}"></label>
+    <label class="chk"><input type="checkbox" data-role="estguess" ${at} ${e&&e.guess?'checked':''} ${e?'':'disabled'}> Complete guess</label></div>`; }
 function buildDetail(fp){
   const d=currentDefects()[fp]; const excl=excludedUrls();
   const f=filters(), shown=d.affected_pages.filter(u=>{ return matchPairs([{fp,url:u}],excl,f); });   // honour the Status/Assignee filters
@@ -1496,14 +1522,10 @@ function buildDetail(fp){
       <td>${rp._linked?linkedStatus(rp,fp,url):statusSelect(fp,url,rp.status)+subField(fp,url,rp)+(via?'<div class="stat-sub">(via page out-of-scope)</div>':'')+`<button type="button" class="pages-btn" data-role="samebtn" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Mark ${esc(url)} as the same finding as another page">↪ Same as…</button>`}</td>
       <td>${catSelect(fp,url)}</td>
       <td><input class="notes-input" type="text" value="${esc(pageNotes(fp,url))}" data-role="notes" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Notes for ${esc(url)}">
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px"><button class="pages-btn" type="button" data-add-url="${esc(url)}" aria-label="Add a manual finding on ${esc(url)}">＋ finding</button>${fixBtn(fp,url,true)}</div></td></tr>`;
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px"><button class="pages-btn" type="button" data-add-url="${esc(url)}" aria-label="Add a manual finding on ${esc(url)}">＋ finding</button>${fixBtn(fp,url,true)}</div>${rp._linked?'':estRow(fp,url)}</td></tr>`;
   }).join('');
-  const ruleNote=(state.dispositions[fp]||{}).notes||'';
-  const lblSty="font-family:'Red Hat Display',sans-serif;font-size:12px;font-weight:600;color:var(--dark-gray)";
-  const noteBar=`<div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-    <label style="${lblSty}" for="rn-${cssId(fp)}">Rule note (applies to all pages)</label>
-    <input id="rn-${cssId(fp)}" class="notes-input" type="text" value="${esc(ruleNote)}" data-role="notes" data-fp="${esc(fp)}" data-url="" placeholder="e.g. content redo Q4 will clear these" style="max-width:440px" aria-label="Rule-level note">
-    <label class="chk" style="${lblSty};margin-left:12px"><input type="checkbox" data-role="globalfix" data-fp="${esc(fp)}" ${isGlobalFix(fp)?'checked':''}> Single global fix (one place fixes all ${d.affected_pages.length} pages) — export as one row</label></div>`;
+  const gN=globalUrls(fp,d.affected_pages).length;
+  const noteBar=gN?`<p class="stat-sub" style="margin:0 0 10px" role="status">${gN} page${gN===1?'':'s'} grouped as a single global fix — exported as one row.</p>`:'';
   const aiId=`ai-out-${cssId(fp)}`;
   const aiBar=`<div class="ai-bar">
     <button type="button" class="ai-explain-btn" data-role="explain" data-fp="${esc(fp)}" aria-controls="${aiId}" aria-expanded="false"><span class="ai-caret" aria-hidden="true"></span>Why does this fail WCAG?</button>
@@ -1515,7 +1537,6 @@ function buildDetail(fp){
         <button type="submit" class="ai-send">Send</button></form>
       <div class="ai-note">AI-generated guidance — verify against the WCAG spec before acting.</div>
     </div></div>`;
-  const fixBar=`<div class="fix-bar">${fixBtn(fp,'',false)}</div>`;
   const bulkBar=`<div class="bulk-bar" role="group" aria-label="Apply to selected pages of ${esc(d.rule_title)}" data-fp="${esc(fp)}">
     <label class="chk"><input type="checkbox" data-role="pgselall" data-fp="${esc(fp)}"> Select all</label>
     <span class="bulk-count" role="status" aria-live="polite">0 selected</span>
@@ -1525,12 +1546,15 @@ function buildDetail(fp){
       <input type="text" data-bf="assignee" placeholder="Assignee…" aria-label="Assignee for selected pages">
       <select data-bf="cat" aria-label="Category for selected pages"><option value="">Category…</option>${CATS.map(c=>`<option value="${c.v}">${esc(c.label)}</option>`).join('')}</select>
       <input type="text" data-bf="note" placeholder="Note (replaces existing)…" aria-label="Note for selected pages">
+      <input type="number" class="est-in" min="0" step="0.25" data-bf="est" placeholder="Hours…" aria-label="Estimated hours for selected pages (0 clears)">
+      <label class="chk"><input type="checkbox" data-bf="estguess"> Complete guess</label>
+      <select data-bf="gfix" aria-label="Single global fix, for selected pages"><option value="">Global fix…</option><option value="on">Group as single global fix</option><option value="off">Ungroup from global fix</option></select>
       ${canEditFix()?`<button type="button" class="pages-btn" data-role="bulkfix" data-fp="${esc(fp)}">Fix instructions…</button>`:''}
       <button type="button" class="pages-btn" data-role="bulksame" data-fp="${esc(fp)}">↪ Same as…</button>
       <button type="button" class="btn-primary" data-role="bulkapply" data-fp="${esc(fp)}">Apply to selected</button>
     </span></div>`;
   const filtNote = shown.length<d.affected_pages.length ? `<p class="stat-sub" role="status">Showing ${shown.length} of ${d.affected_pages.length} pages that match the current Status/Assignee filter.</p>` : '';
-  return noteBar+fixBar+aiBar+bulkBar+filtNote+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return noteBar+aiBar+bulkBar+filtNote+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Component(s)</th><th>Sample HTML</th><th>Status (this page)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 // Read-only status for a page that follows another ("same as") — shows where it points and offers Unlink.
 function linkedStatus(rp,fp,url){
@@ -1615,7 +1639,7 @@ function renderSuppressed(all,excl){
 const genId=()=>'m_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 function renderManual(){
   const everything=state.manualFindings||[];
-  const list = activeStream==='standard' && activeCat ? everything.filter(m=>m.cat===activeCat) : everything;   // a category tab shows its own findings
+  const list = activeStream==='standard' ? everything.filter(m=>(m.cat||'')===activeCat) : everything;   // each tab shows only its own findings
   document.getElementById('manual-summary').textContent=`Manual findings & observations (${list.length})`;
   const tb=document.getElementById('manual-tbody');
   tb.innerHTML=list.map(m=>{
@@ -1704,11 +1728,16 @@ function updateBulkBar(fp){ const bar=bulkBarFor(fp); if(!bar) return;
   const n=selectedPages(fp).length; bar.querySelector('.bulk-count').textContent=`${n} selected`; bar.querySelector('.bulk-fields').hidden=!n; }
 // Only the fields you fill in are applied. Pages that follow another page ("same as") keep their link,
 // so status/assignee are skipped for them.
+// Add/remove pages from a rule's global-fix group; a legacy rule-wide flag is expanded to an explicit page list first.
+function setGlobalPages(fp,urls,on){ const d=state.defects[fp]||(state.contrast||{})[fp]; const rd=state.dispositions[fp]||(state.dispositions[fp]={});
+  const cur=new Set(rd.globalFix?(d?d.affected_pages:[]):(rd.globalPages||[])); delete rd.globalFix;
+  for(const u of urls) on?cur.add(u):cur.delete(u);
+  if(cur.size) rd.globalPages=[...cur]; else { delete rd.globalPages; if(!Object.keys(rd).length) delete state.dispositions[fp]; } }
 function applyBulk(fp){
   const bar=bulkBarFor(fp), urls=selectedPages(fp); if(!bar||!urls.length) return;
   const v=k=>bar.querySelector(`[data-bf=${k}]`).value.trim();
-  const status=v('status'), assignee=v('assignee'), cat=v('cat'), note=v('note'), xcat=v('xcat');
-  if(!status&&!assignee&&!cat&&!note){ toast('Fill in at least one field to apply.','error'); return; }
+  const status=v('status'), assignee=v('assignee'), cat=v('cat'), note=v('note'), xcat=v('xcat'), gfix=v('gfix'), est=v('est'), guess=bar.querySelector('[data-bf=estguess]').checked;
+  if(!status&&!assignee&&!cat&&!note&&!gfix&&est===''&&!guess){ toast('Fill in at least one field to apply.','error'); return; }
   const excl=excludedUrls(); let linked=0, noOwner=0;
   for(const u of urls){
     const isLinked=!!linkTarget(state.dispositions,fp,u);
@@ -1721,7 +1750,9 @@ function applyBulk(fp){
     }
     if(cat) setCat(fp,u,cat);
     if(note) setNotes(fp,u,note);
+    if(est!==''||guess){ const cur=estOf(fp,u); setEst(fp,u,est!==''?(parseFloat(est)||0):(cur?cur.h:0),guess); }   // a lone "guess" tick only flags pages that already have hours
   }
+  if(gfix) setGlobalPages(fp,urls,gfix==='on');
   persist(); render();
   const skip=[linked&&`${linked} linked page${linked===1?'':'s'} keep following their target`, noOwner&&`${noOwner} without an owner status skipped for assignee`].filter(Boolean);
   toast(`Updated ${urls.length} page${urls.length===1?'':'s'}${skip.length?' — '+skip.join('; '):''}.`);
@@ -1771,6 +1802,35 @@ function pickSame(i){
 }
 function unlinkSame(fp,url){ const key=`${fp}|||${url}`, d=state.dispositions[key]; if(!d) return;
   delete d.sameAs; if(Object.keys(d).length===0) delete state.dispositions[key]; persist(); render(); toast('Unlinked.'); }
+/* ── Effort estimates: hours per page, stored on the page's disposition (est, estGuess) ── */
+const estOf = (fp,url) => { const d=state.dispositions[`${fp}|||${url}`]; return d&&d.est>0 ? {h:d.est,guess:!!d.estGuess} : null; };
+function setEst(fp,url,hrs,guess){ const key=`${fp}|||${url}`; let d=state.dispositions[key];
+  if(hrs>0){ if(!d) d=state.dispositions[key]={}; d.est=hrs; if(guess) d.estGuess=true; else delete d.estGuess; }
+  else if(d){ delete d.est; delete d.estGuess; if(Object.keys(d).length===0) delete state.dispositions[key]; }
+  persist(); }
+// Hours still to do in this tab, by assignee. Honors the Status/Assignee filters; a global-fix group and a
+// "same as" page each count once, so shared work isn't double-counted.
+function estimateSummary(){
+  const excl=excludedUrls(), f=filters(), by={};
+  const add=(who,e)=>{ const b=by[who]||(by[who]={h:0,g:0,n:0,u:0}); if(e){ b.h+=e.h; if(e.guess) b.g+=e.h; b.n++; } else b.u++; };
+  for(const d of Object.values(currentDefects())){ const fp=d.fingerprint, gset=new Set(globalUrls(fp,d.affected_pages)), units=[], gp=[];
+    for(const u of d.affected_pages){ const rp=resolvePage(fp,u,excl); if(rp._linked||!ACTIVE_TODO.has(rp.status)) continue;
+      if(gset.has(u)) gp.push(u); else units.push([u]); }
+    if(gp.length) units.push(gp);
+    for(const us of units){ if(!us.some(u=>matchPairs([{fp,url:u}],excl,f))) continue;
+      add(effAssignee(fp,us[0])||'Unassigned', us.map(u=>estOf(fp,u)).find(Boolean)||null); } }
+  return by; }
+function renderEstimate(){
+  const el=document.getElementById('est-summary'); if(!el||!state) return;
+  const open=!!(el.querySelector('details')||{}).open, by=estimateSummary(), names=Object.keys(by).sort((a,b)=>a.localeCompare(b));
+  const T=names.reduce((t,n)=>({h:t.h+by[n].h,g:t.g+by[n].g,n:t.n+by[n].n,u:t.u+by[n].u}),{h:0,g:0,n:0,u:0});
+  if(!T.n&&!T.u){ el.innerHTML=''; return; }
+  const fmt=h=>`${Math.round(h*100)/100} h`;
+  el.innerHTML=`<details${open?' open':''}><summary>Estimated effort: <strong>${fmt(T.h)}</strong> across ${T.n} item${T.n===1?'':'s'} (${fmt(T.g)} of it guessed) · ${T.u} not estimated</summary>
+    <table class="detail-tbl"><caption class="stat-sub" style="text-align:left">Need to fix, in progress and needs approval — follows the filters above.</caption>
+    <thead><tr><th scope="col">Assignee</th><th scope="col">Estimated</th><th scope="col">Guessed</th><th scope="col">Estimated items</th><th scope="col">Not estimated</th></tr></thead>
+    <tbody>${names.map(n=>`<tr><th scope="row">${esc(n)}</th><td>${fmt(by[n].h)}</td><td>${fmt(by[n].g)}</td><td>${by[n].n}</td><td>${by[n].u}</td></tr>`).join('')}</tbody></table></details>`;
+}
 function setNotes(fp,url,val){
   const key=url?`${fp}|||${url}`:fp; let d=state.dispositions[key];
   if(val){ if(!d) d=state.dispositions[key]={}; d.notes=val; }
@@ -1783,6 +1843,9 @@ document.addEventListener('change', e=>{
   if(el.dataset.bf==='status'){ const x=el.closest('.bulk-fields').querySelector('[data-bf=xcat]'); x.hidden = SMAP[el.value]?.field!=='xcat'; return; }   // "Blocked by" only for Can't fix
   if(el.dataset.bf==='xcat'){ if(el.value==='__add'){ const v=(prompt('Add a “Can’t fix — third party” reason:')||'').trim();
       if(v&&!state.xcats.includes(v)){ state.xcats.push(v); persist(); } el.innerHTML=xcatOptions(v||state.xcats[0]); } return; }
+  if(el.dataset.role==='est'||el.dataset.role==='estguess'){   // update just the total — a full render would drop focus
+    const row=el.closest('.est-row'), n=row.querySelector('[data-role=est]'), g=row.querySelector('[data-role=estguess]');
+    setEst(fp,url,parseFloat(n.value)||0,g.checked); g.disabled=!(parseFloat(n.value)>0); if(g.disabled) g.checked=false; renderEstimate(); return; }
   if(el.dataset.role==='pgsel'){ updateBulkBar(fp); return; }
   if(el.dataset.role==='pgselall'){ document.querySelectorAll('[data-role=pgsel]').forEach(c=>{ if(c.dataset.fp===fp) c.checked=el.checked; }); updateBulkBar(fp); return; }
   if(el.dataset.role==='mcat'){ const m=state.manualFindings.find(x=>x.id===el.dataset.id); if(m){m.cat=el.value;persist();render();} return; }
@@ -1857,26 +1920,28 @@ function collectWorkList(){
   const rows=[], excl=excludedUrls();
   for(const [stream,defs] of [['standard',state.defects],['contrast',state.contrast||{}]]){
     for(const d of Object.values(defs)){
-      if(isGlobalFix(d.fingerprint)){   // collapse the whole rule to a single actionable row
-        const rd=state.dispositions[d.fingerprint]||{};
-        const wl=d.affected_pages.map(u=>resolvePage(d.fingerprint,u,excl).status).filter(s=>WORKLIST_STATUSES.includes(s));
-        if(!wl.length) continue;
-        const st=WORKLIST_STATUSES.includes(rd.status)?rd.status:wl.sort((a,b)=>WORKLIST_STATUSES.indexOf(a)-WORKLIST_STATUSES.indexOf(b))[0];
-        const sample=d.affected_pages.map(u=>(d.page_html[u]||[])[0]).find(Boolean)||'';
-        rows.push({ _s:st, item:d.rule_title, stream, url:`(global fix — ${d.affected_pages.length} pages)`,
-          grade: stream==='contrast' ? (d.category||'') : (d.severity||''),
-          instances:d.instance_count||'', status:SMAP[st].label, assignee:effAssignee(d.fingerprint,''),
-          note:rd.notes||'', fix:rd.fix||'', html:sample, cat:effCat(d.fingerprint,'') });
-        continue;
+      const gset=new Set(globalUrls(d.fingerprint,d.affected_pages));
+      if(gset.size){   // collapse the chosen pages to a single actionable row
+        const gp=d.affected_pages.filter(u=>gset.has(u)), rd=state.dispositions[d.fingerprint]||{};
+        const wl=gp.map(u=>resolvePage(d.fingerprint,u,excl).status).filter(s=>WORKLIST_STATUSES.includes(s));
+        if(wl.length){
+          const st=WORKLIST_STATUSES.includes(rd.status)?rd.status:wl.sort((a,b)=>WORKLIST_STATUSES.indexOf(a)-WORKLIST_STATUSES.indexOf(b))[0];
+          const sample=gp.map(u=>(d.page_html[u]||[])[0]).find(Boolean)||'';
+          const nu=gp.find(u=>pageNotes(d.fingerprint,u)), fu=gp.find(u=>fixOf(d.fingerprint,u));
+          rows.push({ _s:st, item:d.rule_title, stream, url:`(global fix — ${gp.length} pages)`,
+            grade: stream==='contrast' ? (d.category||'') : (d.severity||''),
+            instances:d.instance_count||'', status:SMAP[st].label, assignee:effAssignee(d.fingerprint,gp[0]),
+            note:(nu?pageNotes(d.fingerprint,nu):rd.notes)||'', fix:(fu?fixOf(d.fingerprint,fu):rd.fix)||'', html:sample, cat:effCat(d.fingerprint,gp[0]), est:gp.map(u=>estOf(d.fingerprint,u)).find(Boolean)||null });
+        }
       }
-      for(const url of d.affected_pages){
+      for(const url of d.affected_pages){ if(gset.has(url)) continue;
       const rp=resolvePage(d.fingerprint,url,excl); if(!WORKLIST_STATUSES.includes(rp.status)) continue;
       rows.push({ _s:rp.status, item:d.rule_title, stream, url,
         grade: stream==='contrast' ? (d.page_category?.[url]||d.category||'') : (d.severity||''),
         instances:d.page_instances[url]||'', status:SMAP[rp.status].label, assignee:effAssignee(d.fingerprint,url),
         note:sameAsNote(d.fingerprint,url)+(pageNotes(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).notes||''),
         fix:fixOf(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).fix||'',
-        html:(d.page_html[url]||[])[0]||'', cat:stream==='contrast'?'':effCat(d.fingerprint,url) }); } }
+        html:(d.page_html[url]||[])[0]||'', cat:effCat(d.fingerprint,url), est:estOf(d.fingerprint,url) }); } }
   }
   for(const m of (state.manualFindings||[])){ if(!WORKLIST_STATUSES.includes(m.status)) continue;
     rows.push({ _s:m.status, item:m.title, stream:'manual ('+(m.type==='a11y'?'a11y':'obs')+')', url:m.url||'',
@@ -1887,9 +1952,9 @@ function exportWorkList(){
   if(!state) return;
   const rows=collectWorkList();
   if(!rows.length){ toast('No items in a work-list status (Need to Fix / In progress / Needs approval / Deferred / Question).','error'); return; }
-  const cols=['Section','Rule / Element','Stream','Page URL','Category / Severity','Instances','Status','Assignee','Category','Note','Fix Instructions','Sample HTML'];
+  const cols=['Section','Rule / Element','Stream','Page URL','Category / Severity','Instances','Status','Assignee','Category','Note','Fix Instructions','Estimate (hrs)','Estimate type','Sample HTML'];
   const flat=rows.map(r=>({ 'Section': ACTIVE_TODO.has(r._s)?'Work List':r._s==='question'?'Question':'Deferred', 'Rule / Element':r.item, 'Stream':r.stream,
-    'Page URL':r.url, 'Category / Severity':r.grade, 'Instances':r.instances, 'Status':r.status, 'Assignee':r.assignee, 'Category':r.stream==='contrast'?'Color/Visual':(CMAP[r.cat]?CMAP[r.cat].label:''), 'Note':r.note, 'Fix Instructions':r.fix, 'Sample HTML':r.html }));
+    'Page URL':r.url, 'Category / Severity':r.grade, 'Instances':r.instances, 'Status':r.status, 'Assignee':r.assignee, 'Category':r.stream==='contrast'?'Color/Visual':(CMAP[r.cat]?CMAP[r.cat].label:''), 'Note':r.note, 'Fix Instructions':r.fix, 'Estimate (hrs)':r.est?r.est.h:'', 'Estimate type':r.est?(r.est.guess?'Complete guess':'Estimate'):'', 'Sample HTML':r.html }));
   downloadRows(flat, `${state.source} - work list.csv`, cols);
   const nDef=rows.filter(r=>r._s==='deferred').length, nQ=rows.filter(r=>r._s==='question').length;
   toast(`Exported ${rows.length-nDef-nQ} to-do + ${nDef} deferred + ${nQ} question (Section column).`);
@@ -1904,7 +1969,7 @@ function collectTriage(){
   const rows=[];
   for(const [dkey,d] of Object.entries(state.dispositions||{}))
     rows.push({ kind:'disp', source:state.source, dkey, status:d.status||'', reason:d.reason||'',
-      xcat:d.xcat||'', cat:d.cat||'', assignee:d.assignee||'', globalFix:d.globalFix?'yes':'', notes:d.notes||'', fix:d.fix||'' });
+      xcat:d.xcat||'', cat:d.cat||'', assignee:d.assignee||'', est:d.est||'', estGuess:d.estGuess?'yes':'', globalFix:d.globalFix?'yes':(d.globalPages?d.globalPages.length+' pages':''), notes:d.notes||'', fix:d.fix||'' });
   for(const m of (state.manualFindings||[]))   // hand-authored, so worth keeping at any status
     rows.push({ kind:'manual', source:state.source, dkey:m.id, status:m.status||'',
       assignee:m.assignee||'', notes:m.note||'', fix:m.fix||'', cat:m.cat||'',
