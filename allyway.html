@@ -469,6 +469,8 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <button class="tab" role="tab" aria-selected="false" id="tab-cat-html" data-stream="cat:html">HTML</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-cat-js" data-stream="cat:js">JavaScript</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-cat-widget" data-stream="cat:widget">Third-party</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-cat-cms" data-stream="cat:cms">CMS</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-cat-components" data-stream="cat:components">Components</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-cat-other" data-stream="cat:other">Other</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-contrast" data-stream="contrast" disabled title="Load an export with a Contrast Detail sheet">Contrast</button>
       </div>
@@ -675,6 +677,7 @@ const STATUSES = [
 const SMAP = Object.fromEntries(STATUSES.map(s=>[s.v,s]));
 const REASONS = ['Best Practice','Low value / low risk'];
 const DEFAULT_XCATS = ['YouTube Video Player','Gravity Forms','HubSpot Form'];
+const DEFAULT_PEOPLE = ['Teisha','Jose','Ryan'];
 const XCAT_RENAME = {'HubSpot':'HubSpot Form'};   // one-time normalization of saved data
 const SEV_RANK = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3,'BEST PRACTICE':4};
 
@@ -685,7 +688,7 @@ let activeStream = 'standard';                    // 'standard' | 'contrast'
 let groupBy = 'signature';                      // every tab: 'signature' (rule) | 'page'
 /* Implementation category — which kind of code change fixes a page. Set per rule or per page (page wins);
    Color/Visual is the Contrast tab, so it isn't a value here. A category tab shows only its pages. */
-const CATS = [{v:'html',label:'HTML'},{v:'js',label:'JavaScript'},{v:'widget',label:'Third-party'},{v:'other',label:'Other'}];
+const CATS = [{v:'html',label:'HTML'},{v:'js',label:'JavaScript'},{v:'widget',label:'Third-party'},{v:'cms',label:'CMS'},{v:'components',label:'Components'},{v:'other',label:'Other'}];
 const CMAP = Object.fromEntries(CATS.map(c=>[c.v,c]));
 let activeCat = '';                               // standard stream only: '' = all pages, else a CATS value
 const orders = { standard: [], contrast: [] };   // frozen display order per view
@@ -734,11 +737,12 @@ function goStale(why){
   bar.hidden=false;
 }
 // Baseline of what's already in storage, so a save writes ONLY changed rows (Rideshare caps writes per viewer/day).
-let _savedDisp={}, _savedManual={}, _savedXcats='';
+let _savedDisp={}, _savedManual={}, _savedXcats='', _savedPeople='';
 function snapshotSaved(){
   _savedDisp={}; for(const [k,v] of Object.entries((state&&state.dispositions)||{})) _savedDisp[k]=JSON.stringify(v);
   _savedManual={}; for(const m of ((state&&state.manualFindings)||[])) _savedManual[m.id]=JSON.stringify(m);
   _savedXcats=JSON.stringify((state&&state.xcats)||[]);
+  _savedPeople=JSON.stringify((state&&state.people)||[]);
 }
 async function saveNow(){
   if(!state || _stale) return;   // the freeze is checked here too: persist() isn't the only way in
@@ -750,7 +754,7 @@ async function saveNow(){
   // Snapshot current state up front, so edits made DURING the async write stay 'dirty' for the next save.
   const curDisp={}; for(const [k,v] of Object.entries(state.dispositions)) curDisp[k]=JSON.stringify(v);
   const curMan={}; for(const m of (state.manualFindings||[])) curMan[m.id]=JSON.stringify(m);
-  const curXcats=JSON.stringify(state.xcats||[]);
+  const curXcats=JSON.stringify(state.xcats||[]), curPeople=JSON.stringify(state.people||[]);
   const dChanged=Object.keys(curDisp).filter(k=>curDisp[k]!==_savedDisp[k]);
   const dCleared=Object.keys(_savedDisp).filter(k=>!(k in curDisp));
   const mChanged=Object.keys(curMan).filter(id=>curMan[id]!==_savedManual[id]);
@@ -764,9 +768,10 @@ async function saveNow(){
     for(const id of mChanged){ const m=state.manualFindings.find(x=>x.id===id); await NS().putRecords([{kind:'manual',source:src,mid:id,...m}], {replaceWhere:{kind:'manual',source:src,mid:id}}); }
     for(const id of mCleared) await NS().putRecords([{kind:'manual',source:src,mid:id}], {replaceWhere:{kind:'manual',source:src,mid:id}});      // tombstone
     if(curXcats!==_savedXcats) await NS().putRecords([{kind:'config',source:'_site',ckey:'xcats',list:state.xcats}], {replaceWhere:{kind:'config',source:'_site',ckey:'xcats'}});
+    if(curPeople!==_savedPeople) await NS().putRecords([{kind:'config',source:'_site',ckey:'people',list:state.people}], {replaceWhere:{kind:'config',source:'_site',ckey:'people'}});
     invalidateRows();   // rows just changed — drop the snapshot before anything reads it back
     if(dChanged.length||dCleared.length||mChanged.length||mCleared.length){ const sm=computeSummary(state.defects, state.contrast, state.dispositions, state.manualFindings); statsCache[src]=sm; writeSummary(src, sm); }
-    _savedDisp=curDisp; _savedManual=curMan; _savedXcats=curXcats;   // commit only what we captured up front
+    _savedDisp=curDisp; _savedManual=curMan; _savedXcats=curXcats; _savedPeople=curPeople;   // commit only what we captured up front
     if(!_stale) setSave('saved');   // never advertise a save on a tab that has since frozen
   }catch(e){ console.error('[allyway] save failed:', e); goStale(errText(e)); }
   finally{ _saving=false; }
@@ -909,7 +914,7 @@ async function loadSource(src, localScan){
   const _spin = !!NS();                              // only Rideshare's multi-query load lags; skip flash in local preview
   if(_spin) showLoading('Loading '+src+'…');
   try{
-  let scan, dispositions={}, manualFindings=[], xcats=DEFAULT_XCATS.slice();
+  let scan, dispositions={}, manualFindings=[], xcats=DEFAULT_XCATS.slice(), people=DEFAULT_PEOPLE.slice();
   if(NS()){
     // scan / disp / manual / config are independent — fetch concurrently instead of one-after-another
     const [scanRows,dispRows,manualRows,cfgRows]=await Promise.all([
@@ -919,14 +924,15 @@ async function loadSource(src, localScan){
     for(const it of scanRows){ const d=it.data; (d.stream==='contrast'?scan.contrast:scan.standard).push(d); if(d.scanDate)scan.scanDate=d.scanDate; }
     for(const [k,disp] of newestByKey(dispRows,'dkey')) if(disp) dispositions[k]=disp;
     for(const [id,m] of newestByKey(manualRows,'mid')) if(m) manualFindings.push({id,...m});
-    const cfg=cfgRows[0];
-    if(cfg&&Array.isArray(cfg.data.list)&&cfg.data.list.length) xcats=cfg.data.list;
+    const cfgOf=k=>cfgRows.find(r=>r.data.ckey===k), cx=cfgOf('xcats')||cfgRows.find(r=>!r.data.ckey), cp=cfgOf('people');
+    if(cx&&Array.isArray(cx.data.list)&&cx.data.list.length) xcats=cx.data.list;
+    if(cp&&Array.isArray(cp.data.list)&&cp.data.list.length) people=cp.data.list;
   } else scan=localScan;   // local preview: no stored dispositions — start empty
   const defects={}, contrast={};
   for(const sd of (scan.standard||[])) defects[sd.fingerprint]=defectFromScan(sd);
   for(const sd of (scan.contrast||[])) contrast[sd.fingerprint]=defectFromScan(sd);
 
-  state={source:src, scanDate:scan.scanDate||'', defects, contrast, dispositions, xcats, manualFindings};
+  state={source:src, scanDate:scan.scanDate||'', defects, contrast, dispositions, xcats, people, manualFindings};
   snapshotSaved();   // baseline = what we just loaded from storage; saves now write only changes
   migrateXcats();
   activateSource();
@@ -1042,7 +1048,9 @@ function allAssignees(){ const set=new Set();
   return [...set].sort((a,b)=>a.localeCompare(b)); }
 // pairs: [{fp,url}] backing a row → the distinct assignee names on them (rule- + page-level).
 function pairAssignees(pairs){ const names=new Set();
-  for(const {fp,url} of pairs){ const rd=state.dispositions[fp]; if(rd&&rd.assignee) names.add(rd.assignee);
+  for(const {fp,url} of pairs){
+    if(url&&linkTarget(state.dispositions,fp,url)){ const a=effAssignee(fp,url); if(a) names.add(a); continue; }   // linked pages follow their target's owner
+    const rd=state.dispositions[fp]; if(rd&&rd.assignee) names.add(rd.assignee);
     const pd=url?state.dispositions[`${fp}|||${url}`]:null; if(pd&&pd.assignee) names.add(pd.assignee); }
   return names; }
 function matchAssignee(pairs,excl,f){
@@ -1273,7 +1281,7 @@ function statusSelect(fp,url,cur){
 function subField(fp,url,d){
   const st=SMAP[d.status]; if(!st||!st.field) return '';
   const attrs=`data-role="sub" data-sub="${st.field}" data-fp="${esc(fp)}" data-url="${esc(url||'')}"`;
-  if(st.field==='assignee') return `<input class="subfield" type="text" placeholder="Assignee…" value="${esc(effAssignee(fp,url))}" ${attrs} aria-label="Assignee">`;
+  if(st.field==='assignee') return `<select class="subfield" ${attrs} aria-label="Assignee">${peopleOptions(effAssignee(fp,url))}</select>`;
   if(st.field==='reason') return `<select class="subfield" ${attrs} aria-label="Reason">${REASONS.map(r=>`<option ${d.reason===r?'selected':''}>${esc(r)}</option>`).join('')}</select>`;
   if(st.field==='xcat') return `<select class="subfield" ${attrs} aria-label="Blocked by">${state.xcats.map(c=>`<option ${d.xcat===c?'selected':''}>${esc(c)}</option>`).join('')}<option value="__add">➕ Add…</option></select>`;
   return '';
@@ -1561,7 +1569,7 @@ function buildDetail(fp){
     <span class="bulk-fields" hidden>
       <select data-bf="status" aria-label="Status for selected pages"><option value="">Status…</option>${STATUSES.map(s=>`<option value="${s.v}">${esc(s.label)}</option>`).join('')}</select>
       <select data-bf="xcat" hidden aria-label="Blocked by, for selected pages">${xcatOptions()}</select>
-      <input type="text" data-bf="assignee" placeholder="Assignee…" aria-label="Assignee for selected pages">
+      <select data-bf="assignee" aria-label="Assignee for selected pages">${peopleOptions('','Assignee…')}</select>
       <select data-bf="cat" aria-label="Category for selected pages"><option value="">Category…</option>${CATS.map(c=>`<option value="${c.v}">${esc(c.label)}</option>`).join('')}</select>
       <input type="text" data-bf="note" placeholder="Note (replaces existing)…" aria-label="Note for selected pages">
       <input type="number" class="est-in" min="0" step="0.25" data-bf="est" placeholder="Hours…" aria-label="Estimated hours for selected pages (0 clears)">
@@ -1621,11 +1629,12 @@ function buildPageDetail(url){
       <td style="text-align:center">${e.instances}</td>
       <td>${e.html?`<code>${esc(e.html.slice(0,180))}${e.html.length>180?'…':''}</code>`:''}</td>
       <td>${rp._linked?linkedStatus(rp,e.fp,url):statusSelect(e.fp,url,rp.status)+subField(e.fp,url,rp)+(via?'<div class="stat-sub">(via page out-of-scope)</div>':'')+`<button type="button" class="pages-btn" data-role="samebtn" data-fp="${esc(e.fp)}" data-url="${esc(url)}" aria-label="Mark ${esc(e.label)} on ${esc(url)} as the same finding as another contrast item">↪ Same as…</button>`}</td>
+      <td>${catSelect(e.fp,url)}</td>
       <td>${noteField(pageNotes(e.fp,url),e.fp,url,'Note')}
-        <div style="margin-top:5px">${fixBtn(e.fp,url,true)}</div></td></tr>`;
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px"><button class="pages-btn" type="button" data-add-url="${esc(url)}" aria-label="Add a manual finding on ${esc(url)}">＋ finding</button>${fixBtn(e.fp,url,true)}</div>${rp._linked?'':estRow(e.fp,url)}</td></tr>`;
   }).join('');
   const filtNote = shownEls.length<p.elements.length ? `<p class="stat-sub" role="status">Showing ${shownEls.length} of ${p.elements.length} elements that match the current Status/Assignee filter.</p>` : '';
-  return filtNote+`<table class="detail-tbl"><thead><tr><th>${activeStream==='contrast'?'Element (signature)':'Rule'}</th><th>${esc(gradeLabel())}</th><th>Inst</th><th>Sample HTML</th><th>Status (this element)</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return filtNote+`<table class="detail-tbl"><thead><tr><th>${activeStream==='contrast'?'Element (signature)':'Rule'}</th><th>${esc(gradeLabel())}</th><th>Inst</th><th>Sample HTML</th><th>Status (this element)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function toggleDetail(id){
@@ -1671,7 +1680,7 @@ function renderManual(){
       <td><span class="pill sev-${sev}">${esc(m.severity||'—')}</span></td>
       <td><select class="subfield" data-role="mcat" data-id="${esc(m.id)}" aria-label="Category for ${esc(m.title)}"><option value="">—</option>${CATS.map(c=>`<option value="${c.v}"${c.v===m.cat?' selected':''}>${esc(c.label)}</option>`).join('')}</select></td>
       <td><select class="status-sel ${statusClass(st)}" data-role="mstatus" data-id="${esc(m.id)}" aria-label="Status">${opts}</select></td>
-      <td>${SMAP[st]&&SMAP[st].field==='assignee' ? `<input class="subfield" type="text" value="${esc(m.assignee||'')}" data-role="massignee" data-id="${esc(m.id)}" placeholder="Assignee…" aria-label="Assignee for ${esc(m.title)}">` : (m.assignee?`<span class="stat-sub">${esc(m.assignee)}</span>`:'')}</td>
+      <td>${SMAP[st]&&SMAP[st].field==='assignee' ? `<select class="subfield" data-role="massignee" data-id="${esc(m.id)}" aria-label="Assignee for ${esc(m.title)}">${peopleOptions(m.assignee||'')}</select>` : (m.assignee?`<span class="stat-sub">${esc(m.assignee)}</span>`:'')}</td>
       <td><input class="notes-input" type="text" value="${esc(m.note||'')}" data-role="mnote" data-id="${esc(m.id)}" aria-label="Note"></td>
       <td>${fixBtnManual(m)}</td>
       <td style="white-space:nowrap"><button class="pages-btn" type="button" data-role="medit" data-id="${esc(m.id)}" aria-label="Edit finding ${esc(m.title)}">Edit</button>
@@ -1742,6 +1751,9 @@ function setCat(fp,url,val,explicitNone){   // '' removes the override (the page
 const selectedPages = fp => [...document.querySelectorAll('[data-role=pgsel]:checked')].filter(el=>el.dataset.fp===fp).map(el=>el.dataset.url);
 const bulkBarFor = fp => [...document.querySelectorAll('.bulk-bar')].find(b=>b.dataset.fp===fp);
 // Options for the "Blocked by" (Can't fix — third party) picker, shared by the bulk bar and its Add… entry.
+// Assignee dropdown; keeps any legacy free-text name selectable so it isn't silently dropped.
+const peopleOptions = (sel,blank='—') => `<option value="">${esc(blank)}</option>`+[...(state.people||[]),...(sel&&!(state.people||[]).includes(sel)?[sel]:[])].map(n=>`<option${n===sel?' selected':''}>${esc(n)}</option>`).join('')+'<option value="__add">➕ Add person…</option>';
+function addPerson(){ const v=(prompt('Add a person:')||'').trim(); if(v&&!state.people.includes(v)){ state.people.push(v); persist(); } return v; }
 const xcatOptions = sel => state.xcats.map(c=>`<option${c===sel?' selected':''}>${esc(c)}</option>`).join('')+'<option value="__add">➕ Add…</option>';
 function updateBulkBar(fp){ const bar=bulkBarFor(fp); if(!bar) return;
   const n=selectedPages(fp).length; bar.querySelector('.bulk-count').textContent=`${n} selected`; bar.querySelector('.bulk-fields').hidden=!n; }
@@ -1860,6 +1872,9 @@ function setNotes(fp,url,val){
 document.addEventListener('change', e=>{
   const el=e.target, fp=el.dataset.fp, url=el.dataset.url||'';
   if(el.dataset.bf==='status'){ const x=el.closest('.bulk-fields').querySelector('[data-bf=xcat]'); x.hidden = SMAP[el.value]?.field!=='xcat'; return; }   // "Blocked by" only for Can't fix
+  if(el.dataset.bf==='assignee'){ if(el.value==='__add'){ const v=addPerson(); el.innerHTML=peopleOptions(v,'Assignee…'); } return; }
+  if(el.dataset.role==='massignee'){ const m=state.manualFindings.find(x=>x.id===el.dataset.id); if(!m) return;
+    const v=el.value==='__add'?addPerson():el.value; if(v)m.assignee=v; else delete m.assignee; persist(); render(); return; }
   if(el.dataset.bf==='xcat'){ if(el.value==='__add'){ const v=(prompt('Add a “Can’t fix — third party” reason:')||'').trim();
       if(v&&!state.xcats.includes(v)){ state.xcats.push(v); persist(); } el.innerHTML=xcatOptions(v||state.xcats[0]); } return; }
   if(el.dataset.role==='est'||el.dataset.role==='estguess'){   // update just the total — a full render would drop focus
@@ -1880,13 +1895,13 @@ document.addEventListener('change', e=>{
     const key=url?`${fp}|||${url}`:fp; const d=state.dispositions[key]; if(!d)return;
     if(el.dataset.sub==='xcat'&&el.value==='__add'){ const v=(prompt('Add a “Can’t fix — third party” reason:')||'').trim();
       if(v&&!state.xcats.includes(v))state.xcats.push(v); d.xcat=v||state.xcats[0]; persist(); render(); return; }
+    if(el.dataset.sub==='assignee'&&el.value==='__add'){ d.assignee=addPerson()||d.assignee||''; persist(); render(); return; }
     d[el.dataset.sub]=el.value; persist(); render();
   }
 });
 document.addEventListener('blur', e=>{
   if(e.target.dataset.role==='notes'){ setNotes(e.target.dataset.fp,e.target.dataset.url||'',e.target.value); }
   else if(e.target.dataset.role==='mnote'){ const m=state.manualFindings.find(x=>x.id===e.target.dataset.id); if(m){m.note=e.target.value;persist();} }
-  else if(e.target.dataset.role==='massignee'){ const m=state.manualFindings.find(x=>x.id===e.target.dataset.id); if(m){ const v=e.target.value.trim(); if(v)m.assignee=v; else delete m.assignee; persist(); } }
 }, true);
 document.addEventListener('input', e=>{ if(e.target.dataset&&e.target.dataset.role==='notes') fitNote(e.target); });
 document.addEventListener('click', e=>{
