@@ -185,6 +185,8 @@ table.defects tr.rule-todo td{background:var(--row-todo);}
 .bulk-bar .bulk-fields[hidden]{display:none;}
 .est-in{width:76px;}
 .est-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:12px;}
+.est-row .chk:has(input:disabled){opacity:.55;cursor:not-allowed;}
+.est-row .chk input:disabled{cursor:not-allowed;}
 .est-sum{margin:0 0 12px;}
 .est-sum summary{cursor:pointer;padding:6px 0;}
 .est-sum summary:focus-visible{outline:2px solid currentColor;outline-offset:2px;}
@@ -200,7 +202,7 @@ table.defects tr.rule-todo td{background:var(--row-todo);}
 .detail-tbl--pages th:nth-child(4),.detail-tbl--pages td:nth-child(4){width:175px;}
 .detail-tbl--pages th:nth-child(5),.detail-tbl--pages td:nth-child(5){width:auto;}
 .detail-tbl th:last-child,.detail-tbl td:last-child{min-width:340px;}
-textarea.notes-input{display:block;resize:none;overflow:hidden;line-height:1.4;height:calc(2.8em + 15px);}   /* clamped to 2 lines */
+textarea.notes-input{word-break:normal;overflow-wrap:break-word;display:block;resize:none;overflow:hidden;line-height:1.4;height:calc(2.8em + 15px);}   /* clamped to 2 lines */
 textarea.notes-input.is-open{height:auto;}
 .note-more{margin-top:3px;padding:2px 0;background:none;border:0;font:600 12px 'Red Hat Display',sans-serif;color:var(--green-ink);text-decoration:underline;cursor:pointer;}
 .note-more:focus-visible{outline:2px solid currentColor;outline-offset:2px;}
@@ -1512,7 +1514,7 @@ async function draftFixWithAI(){ if(!_fixTarget || !window.NelnetAI || !canEditF
 }
 function estRow(fp,url){ const e=estOf(fp,url), at=`data-fp="${esc(fp)}" data-url="${esc(url)}"`;
   return `<div class="est-row"><label>Est. hours <input type="number" class="est-in" min="0" step="0.25" value="${e?e.h:''}" data-role="est" ${at} aria-label="Estimated hours to fix ${esc(url)}"></label>
-    <label class="chk"><input type="checkbox" data-role="estguess" ${at} ${e&&e.guess?'checked':''} ${e?'':'disabled'}> Complete guess</label></div>`; }
+    <label class="chk" title="Enter estimated hours first"><input type="checkbox" data-role="estguess" ${at} ${e&&e.guess?'checked':''} ${e?'':'disabled'}> Complete guess</label></div>`; }
 function noteField(val,fp,url,label){
   return `<textarea class="notes-input" rows="2" data-role="notes" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="${esc(label)}">${esc(val)}</textarea><button type="button" class="note-more" data-role="notemore" aria-expanded="false" hidden>Show more</button>`;
 }
