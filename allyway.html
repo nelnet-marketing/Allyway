@@ -111,6 +111,7 @@ table.defects tr.rule-todo td{background:var(--row-todo);}
 .status-sel.b-suppressed{border-color:#e6c9d5;color:var(--error-red);background:#fdf3f7;}
 .status-sel.b-verify{border-color:#8fd0a5;color:#1A6B3A;background:#eefaf1;}
 .bulk-sel{margin-top:5px;font-size:11.5px;max-width:170px;padding:4px 6px;border:1px dashed var(--field-border);border-radius:6px;color:var(--dark-gray);background:var(--white);cursor:pointer;font-family:'Red Hat Display',sans-serif;min-height:24px;}
+a.bulk-sel{display:inline-flex;align-items:center;text-decoration:none;}
 .subfield{margin-top:5px;width:100%;max-width:170px;padding:4px 6px;border:1.5px solid var(--field-border);border-radius:6px;font-size:12px;font-family:'Open Sans',sans-serif;min-height:24px;background:var(--white);color:var(--dark-gray);}
 .notes-input{width:100%;min-width:120px;padding:6px 8px;border:1.5px solid var(--field-border);border-radius:6px;font-size:13px;font-family:'Open Sans',sans-serif;min-height:24px;background:var(--white);color:var(--dark-gray);}
 .notes-input:focus,.subfield:focus{border-color:var(--dark-green);outline:none;box-shadow:0 0 0 3px rgba(17,137,28,.09);}
@@ -163,6 +164,13 @@ table.defects tr.rule-todo td{background:var(--row-todo);}
 .md-body{margin:12px 20px 0;overflow-y:auto;font-size:14px;line-height:1.6;color:var(--dark-gray);}
 .fix-hint{padding:8px 20px 0;font-size:11.5px;color:var(--gray);}
 .fix-foot{display:flex;gap:10px;padding:16px 20px;margin-top:auto;}
+.exp-body{padding:6px 20px 0;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.exp-set{border:1px solid var(--hairline);border-radius:8px;padding:8px 12px 10px;min-width:0;}
+.exp-set legend{padding:0 6px;font-family:'Red Hat Display',sans-serif;font-size:11.5px;font-weight:600;color:var(--gray);text-transform:uppercase;letter-spacing:.04em;}
+.exp-set .chk{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:500;margin:5px 0;}
+.exp-set .subfield{margin-top:4px;max-width:none;width:100%;}
+.exp-wide{grid-column:1/3;}
+@media (max-width:640px){.exp-body{grid-template-columns:1fr;}.exp-wide{grid-column:1;}}
 .md-body .md-h{font-family:'Red Hat Display',sans-serif;margin:14px 0 6px;line-height:1.3;}
 .md-body h3.md-h{font-size:15px;}.md-body h4.md-h{font-size:14px;}.md-body h5.md-h,.md-body h6.md-h{font-size:13.5px;}
 .md-body p{margin:0 0 10px;}
@@ -499,7 +507,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <span class="spacer" id="result-count"></span>
       </div>
       <div class="toolbar toolbar--export">
-        <button class="btn-export" id="btn-worklist" type="button">⬇ Export work list (CSV)</button>
+        <button class="btn-export" id="btn-worklist" type="button" title="Choose who and what to include">⬇ Export work list…</button>
         <button class="btn-export" id="btn-backup" type="button">⬇ Back up triage (CSV)</button>
       </div>
       <div id="est-summary" class="est-sum" role="status" aria-live="polite"></div>
@@ -578,6 +586,75 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
     <ul id="same-list" class="same-list"></ul>
     <p class="fix-hint">This page will follow the status and assignee of the page you pick. Its own note, fix and category stay separate.</p>
     <div class="fix-foot"><button type="submit" value="cancel" class="bulk-sel" style="margin-top:0">Cancel</button></div>
+  </form>
+</dialog>
+
+<dialog id="exp-dialog" class="fix-dialog" aria-labelledby="exp-title">
+  <form method="dialog" class="fix-form">
+    <div class="fix-head">
+      <h2 id="exp-title">Export work list</h2>
+      <button type="submit" value="cancel" class="fix-x" aria-label="Close without exporting">✕</button>
+    </div>
+    <p id="exp-sub" class="fix-sub" role="status"></p>
+    <div class="exp-body">
+      <fieldset class="exp-set" id="exp-people"><legend>Assignee</legend></fieldset>
+      <fieldset class="exp-set">
+        <legend>Category</legend>
+        <label for="exp-cat" class="sr-only">Implementation category to include</label>
+        <select id="exp-cat" class="subfield"></select>
+      </fieldset>
+      <fieldset class="exp-set" id="exp-statuses"><legend>Statuses</legend></fieldset>
+      <fieldset class="exp-set">
+        <legend>Streams</legend>
+        <label class="chk"><input type="checkbox" data-exp="stream" value="standard" checked> Standard rules</label>
+        <label class="chk"><input type="checkbox" data-exp="stream" value="contrast" checked> Contrast</label>
+        <label class="chk"><input type="checkbox" data-exp="stream" value="manual" checked> Manual findings</label>
+      </fieldset>
+      <fieldset class="exp-set exp-wide" id="exp-cols">
+        <legend>Columns (CSV)</legend>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0 14px">
+          <label class="chk"><input type="checkbox" data-exp="col" value="instances" checked> Instances</label>
+          <label class="chk"><input type="checkbox" data-exp="col" value="est" checked> Estimate</label>
+          <label class="chk"><input type="checkbox" data-exp="col" value="note" checked> Note</label>
+          <label class="chk"><input type="checkbox" data-exp="col" value="fix" checked> Fix instructions</label>
+          <label class="chk"><input type="checkbox" data-exp="col" value="html" checked> Sample HTML</label>
+        </div>
+      </fieldset>
+    </div>
+    <p class="fix-hint">Copy for task description gives a plain-text summary — paste it into a Workfront task description or update. Send to intake form saves this selection as a small hand-off file and opens the Workfront Task Intake site in a new tab — load the file there and the task fills itself in.</p>
+    <div class="fix-foot">
+      <button type="button" id="exp-csv" class="btn-primary">⬇ Download CSV</button>
+      <button type="button" id="exp-copy" class="bulk-sel" style="margin-top:0">📋 Copy for task description</button>
+      <a id="exp-intake" class="bulk-sel" style="margin-top:0" href="https://rideshare-internal.nelnettools.com/wf-intake-form/" target="_blank" rel="noopener noreferrer">↗ Send to intake form</a>
+      <button type="submit" value="cancel" class="bulk-sel" style="margin-top:0;margin-left:auto">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="ren-dialog" class="fix-dialog" aria-labelledby="ren-title">
+  <form method="dialog" class="fix-form">
+    <div class="fix-head">
+      <h2 id="ren-title">Rename source</h2>
+      <button type="submit" value="cancel" class="fix-x" aria-label="Close without renaming">&#10005;</button>
+    </div>
+    <p class="fix-sub">Every scan row, triage decision and manual finding moves to the new name. Nothing is lost, and the old name disappears.</p>
+    <div class="exp-body">
+      <fieldset class="exp-set">
+        <legend>Source</legend>
+        <label for="ren-src" class="sr-only">Source to rename</label>
+        <select id="ren-src" class="subfield"></select>
+      </fieldset>
+      <fieldset class="exp-set">
+        <legend>New name</legend>
+        <label for="ren-new" class="sr-only">New source name</label>
+        <input type="text" id="ren-new" class="subfield" autocomplete="off" spellcheck="false">
+      </fieldset>
+    </div>
+    <p id="ren-msg" class="fix-hint" role="status"></p>
+    <div class="fix-foot">
+      <button type="button" id="ren-go" class="btn-primary">Rename</button>
+      <button type="submit" value="cancel" class="bulk-sel" style="margin-top:0;margin-left:auto">Cancel</button>
+    </div>
   </form>
 </dialog>
 
@@ -869,6 +946,52 @@ function computeSummary(defects, contrast, dispositions, manual){
   active += (manual||[]).filter(m=>m.type==='a11y' && m.status!=='deferred' && (SMAP[m.status||'untriaged']?.bucket||'active')==='active').length;
   return {active, suppressed, verify, untriaged, total, triagedPct: total?Math.round(100*(total-untriaged)/total):0};
 }
+/* ── Rename a source ─────────────────────────────────────────
+   The source name is the key on every record (scan / disp / manual / summary / source / lastview),
+   so a rename rewrites them all. One putRecords per kind: its replaceWhere drops the old-named rows
+   in the same call that writes the new-named ones, so a kind is never half-renamed. Rows are written
+   oldest-first because the store reads newest-first and newestByKey depends on that order. ── */
+async function renameSource(oldName, newName, onProgress){
+  const mine=(await readAllRows()).filter(it=>it.data && it.data.source===oldName);
+  if(!mine.length) throw new Error('No records found for '+oldName);
+  const byKind=new Map();
+  for(const it of mine){ const k=it.data.kind||''; if(!byKind.has(k)) byKind.set(k,[]); byKind.get(k).push(it); }
+  const CH=120; let done=0;
+  for(const [kind,rows] of byKind){
+    const recs=rows.slice().reverse().map(it=>({...it.data, source:newName}));
+    await NS().putRecords(recs.slice(0,CH), {replaceWhere:{kind,source:oldName}});   // 1st chunk clears the old name
+    for(let i=CH;i<recs.length;i+=CH) await NS().putRecords(recs.slice(i,i+CH));
+    done+=recs.length; if(onProgress) onProgress(done, mine.length);
+  }
+  invalidateRows();
+  return mine.length;
+}
+function openRename(sources){
+  const dlg=document.getElementById('ren-dialog'), sel=document.getElementById('ren-src');
+  sel.innerHTML=sources.map(s=>`<option value="${esc(s.source)}">${esc(s.source)}</option>`).join('');
+  document.getElementById('ren-new').value='';
+  document.getElementById('ren-msg').textContent='';
+  if(typeof dlg.showModal==='function') dlg.showModal(); else dlg.setAttribute('open','');
+  sel.focus();
+}
+document.getElementById('ren-go').addEventListener('click', async ()=>{
+  const btn=document.getElementById('ren-go'), msg=document.getElementById('ren-msg');
+  const oldName=document.getElementById('ren-src').value, newName=document.getElementById('ren-new').value.trim();
+  const taken=(await loadSources()).map(s=>s.source);
+  if(!newName){ msg.textContent='Type the new name first.'; document.getElementById('ren-new').focus(); return; }
+  if(newName===oldName){ msg.textContent='That is already its name.'; return; }
+  if(taken.includes(newName)){ msg.textContent=`${newName} already exists — renaming onto it would merge two scans.`; return; }
+  btn.disabled=true; msg.textContent='Renaming…';
+  try{
+    const n=await renameSource(oldName, newName, (d,t)=>{ msg.textContent=`Renaming… ${d} of ${t} records.`; });
+    delete statsCache[oldName];
+    document.getElementById('ren-dialog').close();
+    toast(`Renamed ${oldName} to ${newName} — ${n} record${n===1?'':'s'} moved.`);
+    if(state && state.source===oldName) await loadSource(newName); else await showPicker();
+  }catch(e){ msg.textContent='Rename failed: '+(e.message||e.code||e)+' — nothing else was changed, try again.'; }
+  finally{ btn.disabled=false; }
+});
+
 // Persist a source's summary so the dashboard reads ONE small record instead of the whole scan. Non-critical: swallow errors.
 async function writeSummary(src, s){
   if(!NS()) return;
@@ -1080,7 +1203,18 @@ function pinFor(excl,f){ if(!f.status&&!f.assignee&&!f.xcat){ _pin=null; return 
   const keys=new Set();
   for(const defs of [state.defects||{},state.contrast||{}]) for(const d of Object.values(defs)) for(const u of d.affected_pages){
     const pr=[{fp:d.fingerprint,url:u}]; if(matchStatus(pr,excl,f)&&matchAssignee(pr,excl,f)&&matchXcat(pr,excl,f)) keys.add(d.fingerprint+'|||'+u); }
-  return _pin={key,status:f.status,assignee:f.assignee,xcat:f.xcat,keys}; }
+  const mids=new Set();
+  for(const m of (state.manualFindings||[])) if(manualMatchPinned(m,f)) mids.add(m.id);
+  return _pin={key,status:f.status,assignee:f.assignee,xcat:f.xcat,keys,mids}; }
+/* Manual findings carry their own status/assignee and never a "Blocked by", so they match the held
+   filters directly instead of going through resolvePage. */
+function manualMatchPinned(m,f){
+  if(f.xcat) return false;
+  if(f.status && (m.status||'untriaged')!==f.status) return false;
+  if(f.assignee==='__any'){ if(!m.assignee) return false; }
+  else if(f.assignee==='__none'){ if(m.assignee||!ASSIGNEE_STATUSES.has(m.status||'untriaged')) return false; }
+  else if(f.assignee && m.assignee!==f.assignee) return false;
+  return true; }
 // "Blocked by" only exists on Can't fix — third party pages, so any value implies that status.
 function matchXcat(pairs,excl,f){
   if(!f.xcat) return true;
@@ -1143,7 +1277,7 @@ function render(){
   if(pageView()) renderByPage(excl); else renderTable(all,excl);
   refreshStatusFilter(); refreshAssigneeFilter(); refreshXcatFilter(); refreshCatTabs();
   renderSuppressed(all,excl);
-  renderManual();
+  renderManual(excl);
   const sigBtn=document.querySelector('#contrast-groupby [data-groupby="signature"]'); if(sigBtn) sigBtn.textContent = activeStream==='contrast' ? 'Signature' : 'Rule';
   document.getElementById('colorway-link').hidden = activeStream!=='contrast';
   openIds.forEach(id=>{ if(document.getElementById(id)) toggleDetail(id); });   // preserve expanded rows
@@ -1688,13 +1822,19 @@ const genId=()=>'m_'+Date.now().toString(36)+Math.random().toString(36).slice(2,
 // Manual findings shown on the current tab: each category tab shows only its own.
 function manualInTab(){ const everything=state.manualFindings||[];
   return activeStream==='standard' && activeCat!==ALL_CATS ? everything.filter(m=>(_catHold.has('m:'+m.id)?_catHold.get('m:'+m.id):(m.cat||''))===activeCat) : everything; }
+// Same filter bar as the rules table: search matches the finding title, the rest match the finding itself.
+function manualFiltered(list,excl){ const f=filters(), p=pinFor(excl,f);
+  return list.filter(m=>{
+    if(f.search && !(m.title||'').toLowerCase().includes(f.search)) return false;
+    if(f.sev && (m.severity||'').toUpperCase()!==f.sev.toUpperCase()) return false;
+    return !p || p.mids.has(m.id); }); }
 // Estimator for a manual finding: hours live on the finding itself (est, estGuess).
 const manualEstRow = m => `<div class="est-row"><label>Est. hours <input type="number" class="est-in" min="0" step="0.25" value="${m.est>0?m.est:''}" data-role="est" data-mid="${esc(m.id)}" aria-label="Estimated hours to fix ${esc(m.title)}"></label>
     ${tinyChecks(m.est||0,`data-mid="${esc(m.id)}"`)}
     <label class="chk" title="Enter estimated hours first"><input type="checkbox" data-role="estguess" data-mid="${esc(m.id)}" ${m.est>0&&m.estGuess?'checked':''} ${m.est>0?'':'disabled'}> Complete guess</label></div>`;
-function renderManual(){
-  const list=manualInTab();
-  document.getElementById('manual-summary').textContent=`Manual findings & observations (${list.length})`;
+function renderManual(excl){
+  const all=manualInTab(), list=manualFiltered(all,excl);
+  document.getElementById('manual-summary').textContent=`Manual findings & observations (${list.length===all.length?list.length:`${list.length} of ${all.length}`})`;
   const tb=document.getElementById('manual-tbody');
   tb.innerHTML=list.map(m=>{
     const sev=(m.severity||'OTHER').toLowerCase().replace(/\s+/g,'-'), st=m.status||'untriaged';
@@ -1711,7 +1851,7 @@ function renderManual(){
       <td>${fixBtnManual(m)}</td>
       <td style="white-space:nowrap"><button class="pages-btn" type="button" data-role="medit" data-id="${esc(m.id)}" aria-label="Edit finding ${esc(m.title)}">Edit</button>
         <button class="pages-btn" type="button" data-role="mremove" data-id="${esc(m.id)}" aria-label="Remove finding ${esc(m.title)}">✕</button></td></tr>`;
-  }).join('')||`<tr><td colspan="10" style="text-align:center;color:var(--gray);padding:16px">No manual findings yet — use “＋ Add finding”, or “＋ finding” on a page in any drill-down.</td></tr>`;
+  }).join('')||`<tr><td colspan="10" style="text-align:center;color:var(--gray);padding:16px">${all.length?'No manual findings match the filters.':'No manual findings yet — use “＋ Add finding”, or “＋ finding” on a page in any drill-down.'}</td></tr>`;
 }
 let _editingManual=null;
 function openManualForm(url='', editId=''){
@@ -2001,8 +2141,7 @@ function collectWorkList(){
           const st=WORKLIST_STATUSES.includes(rd.status)?rd.status:wl.sort((a,b)=>WORKLIST_STATUSES.indexOf(a)-WORKLIST_STATUSES.indexOf(b))[0];
           const sample=gp.map(u=>(d.page_html[u]||[])[0]).find(Boolean)||'';
           const nu=gp.find(u=>pageNotes(d.fingerprint,u)), fu=gp.find(u=>fixOf(d.fingerprint,u));
-          rows.push({ _s:st, item:d.rule_title, stream, url:`(global fix — ${gp.length} pages)`,
-            grade: stream==='contrast' ? (d.category||'') : (d.severity||''),
+          rows.push({ _s:st, item:d.rule_title, stream, url:`(global fix — ${gp.length} pages)`,            grade: stream==='contrast' ? (d.category||'') : (d.severity||''),
             instances:d.instance_count||'', status:SMAP[st].label, assignee:effAssignee(d.fingerprint,gp[0]),
             note:(nu?pageNotes(d.fingerprint,nu):rd.notes)||'', fix:(fu?fixOf(d.fingerprint,fu):rd.fix)||'', html:sample, cat:effCat(d.fingerprint,gp[0]), est:gp.map(u=>estOf(d.fingerprint,u)).find(Boolean)||null });
         }
@@ -2021,17 +2160,153 @@ function collectWorkList(){
       grade:m.severity||'', instances:'', status:SMAP[m.status].label, assignee:m.assignee||'', note:m.note||'', fix:m.fix||'', html:'', cat:m.cat||'', est:m.est>0?{h:m.est,guess:!!m.estGuess}:null }); }
   return rows;
 }
-function exportWorkList(){
-  if(!state) return;
-  const rows=collectWorkList();
-  if(!rows.length){ toast('No items in a work-list status (Need to Fix / In progress / Needs approval / Deferred / Question).','error'); return; }
-  const cols=['Section','Rule / Element','Stream','Page URL','Category / Severity','Instances','Status','Assignee','Category','Note','Fix Instructions','Estimate (hrs)','Estimate type','Sample HTML'];
-  const flat=rows.map(r=>({ 'Section': ACTIVE_TODO.has(r._s)?'Work List':r._s==='question'?'Question':'Deferred', 'Rule / Element':r.item, 'Stream':r.stream,
-    'Page URL':r.url, 'Category / Severity':r.grade, 'Instances':r.instances, 'Status':r.status, 'Assignee':r.assignee, 'Category':r.stream==='contrast'?'Color/Visual':(CMAP[r.cat]?CMAP[r.cat].label:''), 'Note':r.note, 'Fix Instructions':r.fix, 'Estimate (hrs)':r.est?r.est.h:'', 'Estimate type':r.est?(r.est.guess?'Complete guess':'Estimate'):'', 'Sample HTML':r.html }));
-  downloadRows(flat, `${state.source} - work list.csv`, cols);
-  const nDef=rows.filter(r=>r._s==='deferred').length, nQ=rows.filter(r=>r._s==='question').length;
-  toast(`Exported ${rows.length-nDef-nQ} to-do + ${nDef} deferred + ${nQ} question (Section column).`);
+/* Export options live here, not in the filter bar — picking an assignee to export shouldn't mean
+   re-filtering the whole page. Statuses/streams/categories/columns persist for the session. */
+const _exp={people:new Set(), cat:'', sts:new Set(WORKLIST_STATUSES), streams:new Set(['standard','contrast','manual']), cols:new Set(['instances','est','note','fix','html'])};
+const expStream = r => r.stream.startsWith('manual') ? 'manual' : r.stream;
+function expRows(){
+  return collectWorkList().filter(r=>{
+    if(!_exp.sts.has(r._s) || !_exp.streams.has(expStream(r))) return false;
+    if(_exp.cat && (r.cat||'__none')!==_exp.cat) return false;
+    return !_exp.people.size || _exp.people.has(r.assignee||'__none'); });   // nothing ticked means everyone
 }
+const expHours = rs => rs.reduce((t,r)=>({h:t.h+(r.est?r.est.h:0), g:t.g+(r.est&&r.est.guess?r.est.h:0), u:t.u+(r.est?0:1)}),{h:0,g:0,u:0});
+// Named people only — what a Workfront task can be assigned to; Unassigned rides along in the label
+const expNames = () => [..._exp.people].filter(v=>v!=='__none').sort((a,b)=>a.localeCompare(b));
+const expWho = () => expNames().concat(_exp.people.has('__none')?['Unassigned']:[]).join(', ');
+function openExport(){
+  if(!state) return;
+  const seed=document.getElementById('filter-assignee').value, people=allAssignees();   // seed from the filter bar, then override here
+  _exp.people.clear();
+  if(seed==='__any') people.forEach(n=>_exp.people.add(n));
+  else if(seed==='__none' || people.includes(seed)) _exp.people.add(seed);
+  document.getElementById('exp-people').innerHTML='<legend>Assignee</legend>'
+    + '<p class="fix-hint" style="margin:0 0 4px">Tick nobody to export everyone.</p>'
+    + people.map(n=>`<label class="chk"><input type="checkbox" data-exp="person" value="${esc(n)}" ${_exp.people.has(n)?'checked':''}> ${esc(n)}</label>`).join('')
+    + `<label class="chk"><input type="checkbox" data-exp="person" value="__none" ${_exp.people.has('__none')?'checked':''}> Unassigned</label>`;
+  const csel=document.getElementById('exp-cat');
+  csel.innerHTML=`<option value="">Every category</option><option value="__none">Uncategorized</option>`
+    + CATS.map(c=>`<option value="${c.v}">${esc(c.label)}</option>`).join('');
+  csel.value=_exp.cat;
+  document.getElementById('exp-statuses').innerHTML='<legend>Statuses</legend>'+WORKLIST_STATUSES.map(v=>
+    `<label class="chk"><input type="checkbox" data-exp="status" value="${v}" ${_exp.sts.has(v)?'checked':''}> ${esc(SMAP[v].label)}</label>`).join('');
+  for(const el of document.querySelectorAll('#exp-dialog [data-exp=stream]')) el.checked=_exp.streams.has(el.value);
+  for(const el of document.querySelectorAll('#exp-dialog [data-exp=col]')) el.checked=_exp.cols.has(el.value);
+  expCount();
+  const dlg=document.getElementById('exp-dialog');
+  if(typeof dlg.showModal==='function') dlg.showModal(); else dlg.setAttribute('open','');
+  document.querySelector('#exp-people input').focus();
+}
+// Live count so the options are judged before the file lands, not after.
+function expCount(){
+  const rows=expRows(), T=expHours(rows), fmt=h=>`${Math.round(h*100)/100} h`;
+  document.getElementById('exp-sub').textContent = rows.length
+    ? `${rows.length} item${rows.length===1?'':'s'} · ${fmt(T.h)} estimated${T.g?` (${fmt(T.g)} of it a guess)`:''}${T.u?` · ${T.u} not estimated`:''}`
+    : 'Nothing matches these options.';
+}
+function expCsv(){
+  const rows=expRows();
+  if(!rows.length){ toast('Nothing matches these options.','error'); return; }
+  const cols=['Section','Rule / Element','Stream','Page URL','Category / Severity'];
+  if(_exp.cols.has('instances')) cols.push('Instances');
+  cols.push('Status','Assignee','Category');
+  if(_exp.cols.has('note')) cols.push('Note');
+  if(_exp.cols.has('fix')) cols.push('Fix Instructions');
+  if(_exp.cols.has('est')) cols.push('Estimate (hrs)','Estimate type');
+  if(_exp.cols.has('html')) cols.push('Sample HTML');
+  const flat=rows.map(r=>{ const o={ 'Section': ACTIVE_TODO.has(r._s)?'Work List':r._s==='question'?'Question':'Deferred',
+      'Rule / Element':r.item, 'Stream':r.stream, 'Page URL':r.url, 'Category / Severity':r.grade,
+      'Instances':r.instances, 'Status':r.status, 'Assignee':r.assignee,
+      'Category':r.stream==='contrast'?'Color/Visual':(CMAP[r.cat]?CMAP[r.cat].label:''),
+      'Note':r.note, 'Fix Instructions':r.fix, 'Estimate (hrs)':r.est?r.est.h:'',
+      'Estimate type':r.est?(r.est.guess?'Complete guess':'Estimate'):'', 'Sample HTML':r.html };
+    const keep={}; for(const c of cols) keep[c]=o[c]; return keep; });
+  const who=expWho();
+  downloadRows(flat, `${state.source} - work list${who?` - ${who}`:''}.csv`, cols);
+  const nDef=rows.filter(r=>r._s==='deferred').length, nQ=rows.filter(r=>r._s==='question').length;
+  toast(`Exported ${rows.length-nDef-nQ} to-do + ${nDef} deferred + ${nQ} question (Section column)${who?` for ${who}`:''}.`);
+  document.getElementById('exp-dialog').close();
+}
+/* Plain text for a Workfront task description: the hours line first (that's what gets typed into
+   Planned Hours), then the items grouped by status. */
+function expText(rows){
+  const fmt=h=>`${Math.round(h*100)/100} h`, T=expHours(rows);
+  const names=[...new Set(rows.map(r=>r.assignee||'Unassigned'))].sort((a,b)=>a.localeCompare(b));
+  const L=[`${state.source} — accessibility work list`];
+  L.push(`${rows.length} item${rows.length===1?'':'s'} · ${fmt(T.h)} estimated${T.g?` (${fmt(T.g)} of it a complete guess)`:''}${T.u?` · ${T.u} not estimated`:''}`);
+  if(state.scanDate) L.push(`Scan ${state.scanDate}`);
+  if(names.length>1){ L.push('');
+    for(const n of names){ const s=expHours(rows.filter(r=>(r.assignee||'Unassigned')===n));
+      L.push(`${n}: ${fmt(s.h)}${s.g?` (${fmt(s.g)} guessed)`:''}${s.u?` · ${s.u} not estimated`:''}`); } }
+  for(const st of WORKLIST_STATUSES){ const rs=rows.filter(r=>r._s===st); if(!rs.length) continue;
+    L.push('', `${SMAP[st].label.toUpperCase()} (${rs.length})`);
+    for(const r of rs){ let line='- '+r.item+(r.url?` — ${r.url}`:'');
+      if(r.est) line+=` — ${fmt(r.est.h)}${r.est.guess?' (guess)':''}`;
+      if(names.length>1) line+=` [${r.assignee||'Unassigned'}]`;
+      L.push(line); } }
+  return L.join('\n');
+}
+function expCopy(){
+  const rows=expRows();
+  if(!rows.length){ toast('Nothing matches these options.','error'); return; }
+  copyText(expText(rows)).then(ok=>{
+    toast(ok?`Copied ${rows.length} item${rows.length===1?'':'s'} for a task description.`:'Copy failed — download the CSV instead.', ok?'ok':'error');
+    if(ok) document.getElementById('exp-dialog').close(); });
+}
+document.getElementById('exp-dialog').addEventListener('change', e=>{
+  const el=e.target, kind=el.dataset.exp;
+  if(el.id==='exp-cat') _exp.cat=el.value;
+  else if(kind==='status'||kind==='stream'||kind==='col'||kind==='person'){
+    const set = kind==='status' ? _exp.sts : kind==='stream' ? _exp.streams : kind==='person' ? _exp.people : _exp.cols;
+    el.checked ? set.add(el.value) : set.delete(el.value); }
+  else return;
+  expCount();
+});
+/* ── Hand off to the Workfront Task Intake site ──────────────
+   Rideshare's client storage is scoped to the calling site, so the two can't share a Dataset, and
+   each site runs in a sandboxed srcdoc iframe that can neither read the gate's URL nor write the
+   clipboard — so the hand-off travels as a small downloaded file the intake form reads back.
+   Summarised rather than dumped: no fix instructions, no sample HTML. ── */
+const WF_MAX_ITEMS = 400;   // a longer list is a work list, not a task description
+/* Workfront is kept to quarter-hours, so a task's hours round UP to the next 0.25 — never down,
+   which would quietly promise work in less time than the triage said it takes. Only the hand-off
+   rounds; Allyway's own totals stay the true sum. */
+const q4 = h => Math.ceil(h*4 - 1e-9)/4;
+function expSpec(rows, limit){
+  const T=expHours(rows), r2=h=>Math.round(h*100)/100;
+  const items=rows.slice(0,limit).map(r=>({s:r._s, t:r.item, u:r.url||'', h:r.est?r.est.h:0, g:r.est&&r.est.guess?1:0, a:r.assignee||''}));
+  /* Per-person totals come from every row, not just the ones listed — the intake form turns each
+     into its own Fix task, and a trimmed item list would otherwise under-report someone's hours. */
+  const people=[...new Set(rows.map(r=>r.assignee||''))].sort((a,b)=>(a||'~').localeCompare(b||'~'))
+    .map(n=>{ const mine=rows.filter(r=>(r.assignee||'')===n), s=expHours(mine);
+      return {n, c:mine.length, h:q4(s.h), g:q4(s.g), u:s.u, exact:r2(s.h)}; });
+  // The parent rolls up from its children, so the total is the sum of the rounded parts
+  return { v:1, source:state.source, scanDate:state.scanDate||'', people,
+    assignee:expNames().join(', '),   // who the export was filtered to, for the Triage task
+    name:`${state.source} ARC Scan – Fixes`, count:rows.length,
+    hours:r2(people.reduce((t,p)=>t+p.h,0)), exactHours:r2(T.h), guessed:q4(T.g), noEst:T.u,
+    shown:items.length, truncated:items.length<rows.length, items };
+}
+/* The anchor's own navigation opens the tab: Rideshare only re-opens genuine user clicks out of
+   the sandbox, so a scripted click would land in a blank popup. */
+function expIntake(e){
+  const rows=expRows();
+  if(!rows.length){ e.preventDefault(); toast('Nothing matches these options.','error'); return; }
+  const spec=expSpec(rows, Math.min(rows.length, WF_MAX_ITEMS));
+  const url=URL.createObjectURL(new Blob([JSON.stringify(spec)],{type:'application/json'}));
+  const a=document.createElement('a');
+  const who=expWho();
+  a.href=url; a.download=`${state.source} ARC Scan handoff${who?` - ${who}`:''}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 10000);
+  toast(spec.truncated
+    ? `Saved a hand-off for ${rows.length} items (first ${spec.shown} in detail) — load it in the intake form.`
+    : `Saved a hand-off for ${rows.length} item${rows.length===1?'':'s'} — load it in the intake form.`);
+  setTimeout(()=>document.getElementById('exp-dialog').close(), 0);   // let the link navigate first
+}
+document.getElementById('exp-csv').addEventListener('click', expCsv);
+document.getElementById('exp-copy').addEventListener('click', expCopy);
+document.getElementById('exp-intake').addEventListener('click', expIntake);
 
 /* ── Back up triage (CSV) — every decision, not just the actionable ones.
    The work list covers 4 statuses; this covers everything SET (untriaged items have no
@@ -2080,7 +2355,7 @@ async function init(){
   document.querySelectorAll('.tab[data-stream]').forEach(t=>t.addEventListener('click',()=>{ if(!t.disabled) switchStream(t.dataset.stream); }));
   document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.addEventListener('click',()=>setGroupBy(b.dataset.groupby)));
   document.getElementById('btn-add-manual').addEventListener('click',()=>openManualForm(''));
-  document.getElementById('btn-worklist').addEventListener('click',exportWorkList);
+  document.getElementById('btn-worklist').addEventListener('click',openExport);
   document.getElementById('btn-backup').addEventListener('click',exportTriage);
   document.getElementById('stale-reload').addEventListener('click',()=>location.reload());
   document.getElementById('home-link').addEventListener('click',e=>{ e.preventDefault(); showPicker(true); saveLastView(''); });
@@ -2096,7 +2371,7 @@ async function showPicker(forcePick){
   if(NS()){
     const admin = !!(NS().viewer && NS().viewer.isAdmin);
     help.textContent = admin ? 'Click a source to triage, or load a new scan.json.' : 'Click a source to triage.';
-    actions.innerHTML = admin ? `<label class="bulk-sel" for="scan-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">＋ Load scan.json</label><input id="scan-input" type="file" accept=".json" hidden>` : '';
+    actions.innerHTML = admin ? `<label class="bulk-sel" for="scan-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">＋ Load scan.json</label><input id="scan-input" type="file" accept=".json" hidden><button type="button" id="btn-rename" class="bulk-sel" style="margin-top:0;margin-left:8px">✎ Rename source…</button>` : '';
     if(admin){ const si=document.getElementById('scan-input'); si.addEventListener('change',e=>{ if(e.target.files[0]) adminLoadScan(e.target.files[0]); e.target.value=''; });
       document.querySelector('label[for=scan-input]').addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();si.click();}}); }
     // No overlay: cards carry their own loading state. Keep any existing cards visible while we refresh;
@@ -2110,6 +2385,7 @@ async function showPicker(forcePick){
         const cur=summ[d.source]; if(!cur||(d.updatedAt||0)>(cur.updatedAt||0)) summ[d.source]=d; }   // keep newest per source
     }catch(e){ grid.innerHTML=`<p class="grid-msg" style="color:var(--error-red)">Could not read storage: ${esc(e.message||e.code||e)}</p>`; return; }
     if(!sources.length){ grid.innerHTML=`<p class="grid-msg">${admin?'No scans yet — load a scan.json to seed the site.':'No scans loaded yet — an admin needs to add one.'}</p>`; return; }
+    if(admin) document.getElementById('btn-rename').addEventListener('click',()=>openRename(sources));
     // Prefer this session's cache, then the persisted summary (kept current on every save), else a skeleton.
     renderSourceCards(grid, sources.map(s=>({src:s.source, scanDate:s.scanDate, ...(statsCache[s.source]||summ[s.source]||{loading:true})})));
     sources.forEach(s=>{
