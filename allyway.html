@@ -959,11 +959,16 @@ function setSave(m){ const el=document.getElementById('save-indicator'); if(!el)
 /* Newest row per key wins (queryData is strictly newest-first). A row carrying nothing but its
    own key is a TOMBSTONE — a cleared disposition or deleted manual finding — and it shadows the
    older rows it replaced, so a clear survives a reload without any slice-wide delete. */
+/* `since` is stamped only by the status editor, so everything triaged before aging shipped carries
+   none and the badge would read every one of them as fresh. The row's own createdAt is the next best
+   clock: a status change rewrites the record, so it dates the last write. A restore from backup resets
+   it, which understates an item's age rather than inventing one. */
 function newestByKey(rows, keyField){
   const out=new Map();
   for(const it of rows){
     const k=it.data[keyField]; if(out.has(k)) continue;
     const {kind,source,...rest}=it.data; delete rest[keyField];
+    if(rest.status && !rest.since && it.createdAt) rest.since=String(it.createdAt).slice(0,10);
     out.set(k, Object.keys(rest).length ? rest : null);
   }
   return out;
