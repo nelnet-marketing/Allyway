@@ -655,7 +655,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <label class="chk"><input type="checkbox" data-exp="stream" value="manual" checked> Manual findings</label>
       </fieldset>
       <fieldset class="exp-set exp-wide" id="exp-cols">
-        <legend>Columns (CSV)</legend>
+        <legend>Details to include</legend>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0 14px">
           <label class="chk"><input type="checkbox" data-exp="col" value="instances" checked> Instances</label>
           <label class="chk"><input type="checkbox" data-exp="col" value="est" checked> Estimate</label>
@@ -665,7 +665,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         </div>
       </fieldset>
     </div>
-    <p class="fix-hint">Copy for task description gives a plain-text summary — paste it into a Workfront task description or update. Send to intake form saves this selection as a small hand-off file and opens the Workfront Task Intake site in a new tab — load the file there and the task fills itself in.</p>
+    <p class="fix-hint">Copy for task description gives a plain-text summary — paste it into a Workfront task description or update. Send to intake form saves this selection as a small hand-off file and opens the Workfront Task Intake site in a new tab — load the file there and the task fills itself in. Instances, Estimate and Sample HTML are CSV-only; Note and Fix instructions also ride along to the intake form.</p>
     <div class="fix-foot">
       <button type="button" id="exp-csv" class="btn-primary">⬇ Download CSV</button>
       <button type="button" id="exp-copy" class="bulk-sel" style="margin-top:0">📋 Copy for task description</button>
@@ -2508,15 +2508,20 @@ document.getElementById('exp-dialog').addEventListener('change', e=>{
    Rideshare's client storage is scoped to the calling site, so the two can't share a Dataset, and
    each site runs in a sandboxed srcdoc iframe that can neither read the gate's URL nor write the
    clipboard — so the hand-off travels as a small downloaded file the intake form reads back.
-   Summarised rather than dumped: no fix instructions, no sample HTML. ── */
+   Summarised rather than dumped: no sample HTML, and note/fix ride along only when ticked. ── */
 const WF_MAX_ITEMS = 400;   // a longer list is a work list, not a task description
+/* Long enough for a real fix instruction, short enough that 400 of them stay a hand-off file */
+const WF_MAX_TEXT = 600;
+const wfText = s => { const t=String(s||'').trim(); return t.length>WF_MAX_TEXT ? t.slice(0,WF_MAX_TEXT-1).trimEnd()+'…' : t; };
 /* Workfront is kept to quarter-hours, so a task's hours round UP to the next 0.25 — never down,
    which would quietly promise work in less time than the triage said it takes. Only the hand-off
    rounds; Allyway's own totals stay the true sum. */
 const q4 = h => Math.ceil(h*4 - 1e-9)/4;
 function expSpec(rows, limit){
   const T=expHours(rows), r2=h=>Math.round(h*100)/100;
-  const items=rows.slice(0,limit).map(r=>({s:r._s, t:r.item, u:r.url||'', h:r.est?r.est.h:0, g:r.est&&r.est.guess?1:0, a:r.assignee||''}));
+  const wantNote=_exp.cols.has('note'), wantFix=_exp.cols.has('fix');
+  const items=rows.slice(0,limit).map(r=>({s:r._s, t:r.item, u:r.url||'', h:r.est?r.est.h:0, g:r.est&&r.est.guess?1:0, a:r.assignee||'',
+    n:wantNote?wfText(r.note):'', f:wantFix?wfText(r.fix):''}));
   /* Per-person totals come from every row, not just the ones listed — the intake form turns each
      into its own Fix task, and a trimmed item list would otherwise under-report someone's hours. */
   const people=[...new Set(rows.map(r=>r.assignee||''))].sort((a,b)=>(a||'~').localeCompare(b||'~'))
