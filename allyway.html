@@ -1405,6 +1405,7 @@ function render(){
   renderManual(excl);
   const sigBtn=document.querySelector('#contrast-groupby [data-groupby="signature"]'); if(sigBtn) sigBtn.textContent = activeStream==='contrast' ? 'Signature' : 'Rule';
   document.getElementById('colorway-link').hidden = activeStream!=='contrast';
+  syncColorwayLink();
   openIds.forEach(id=>{ if(document.getElementById(id)) toggleDetail(id); });   // preserve expanded rows
 }
 
@@ -2607,8 +2608,29 @@ async function init(){
   document.getElementById('stale-reload').addEventListener('click',()=>location.reload());
   document.getElementById('home-link').addEventListener('click',e=>{ e.preventDefault(); showPicker(true); saveLastView(''); });
   document.getElementById('hdr-src').addEventListener('change',e=>{ if(e.target.value && (!state || e.target.value!==state.source)) loadSource(e.target.value); });
-  let restored=false; try{ restored=await tryRestoreLastView(); }catch{}   // reopen last source if used within the TTL
+  let restored=false;
+  // A link ending in #<source-id> opens that source (see linkId); an unknown id falls through to the usual start
+  if(window.NelnetView && NelnetView.id){ try{ restored=await openLinkedSource(NelnetView.id); }catch{} }
+  if(!restored){ try{ restored=await tryRestoreLastView(); }catch{} }   // reopen last source if used within the TTL
   if(!restored) await showPicker();
+  if(window.NelnetView) NelnetView.onViewChange(async id=>{
+    let opened=false; try{ opened=await openLinkedSource(id); }catch{}
+    if(!opened){ showPicker(true); saveLastView(''); }
+  });
+}
+// "Nelnet.com" → "nelnet-com", "collegecounts529.com (Nelway)" → "collegecounts529-com-nelway"
+const linkId = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+async function openLinkedSource(id){
+  if(!id || !NS()) return false;
+  const hit=(await loadSources()).find(s=>linkId(s.source)===id); if(!hit) return false;
+  if(!state || state.source!==hit.source || document.getElementById('tracker-area').hidden) await loadSource(hit.source);
+  return true;
+}
+// Colorway palette key per source, so "Open in Colorway" lands on that site's palette (#<key> in Colorway)
+const COLORWAY_KEYS = { 'Nelnet.com':'nelnetinc', 'Bloomwell':'bloomwell', 'Propelr':'propelr' };
+function syncColorwayLink(){
+  const a=document.getElementById('colorway-link'), key=state && Object.prototype.hasOwnProperty.call(COLORWAY_KEYS,state.source) ? COLORWAY_KEYS[state.source] : '';
+  a.href='https://rideshare-internal.nelnettools.com/colorway/'+(key?'#'+key:'');
 }
 async function showPicker(forcePick){
   document.getElementById('tracker-area').hidden=true;
