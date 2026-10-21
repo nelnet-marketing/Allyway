@@ -2609,12 +2609,18 @@ async function init(){
   document.getElementById('home-link').addEventListener('click',e=>{ e.preventDefault(); showPicker(true); saveLastView(''); });
   document.getElementById('hdr-src').addEventListener('change',e=>{ if(e.target.value && (!state || e.target.value!==state.source)) loadSource(e.target.value); });
   let restored=false;
-  // A link ending in #<source-id> opens that source (see linkId); an unknown id falls through to the usual start
-  if(window.NelnetView && NelnetView.id){ try{ restored=await openLinkedSource(NelnetView.id); }catch{} }
-  if(!restored){ try{ restored=await tryRestoreLastView(); }catch{} }   // reopen last source if used within the TTL
-  if(!restored) await showPicker();
+  // Cover the empty page while the stored rows are read, until a source or the picker has painted
+  if(NS()) showLoading('Loading…');
+  try{
+    // A link ending in #<source-id> opens that source (see linkId); an unknown id falls through to the usual start
+    if(window.NelnetView && NelnetView.id){ try{ restored=await openLinkedSource(NelnetView.id); }catch{} }
+    if(!restored){ try{ restored=await tryRestoreLastView(); }catch{} }   // reopen last source if used within the TTL
+    if(!restored) await showPicker();
+  } finally { hideLoading(); }
   if(window.NelnetView) NelnetView.onViewChange(async id=>{
-    let opened=false; try{ opened=await openLinkedSource(id); }catch{}
+    let opened=false;
+    if(NS()) showLoading('Loading…');
+    try{ try{ opened=await openLinkedSource(id); }catch{} } finally { hideLoading(); }
     if(!opened){ showPicker(true); saveLastView(''); }
   });
 }
