@@ -343,6 +343,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .picker-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px;}
 .picker-head h2{font-family:'Red Hat Display',sans-serif;font-size:20px;color:var(--dark-gray);letter-spacing:-0.01em;}
 .picker-sub{font-size:13.5px;color:var(--gray);margin-top:3px;}
+#picker-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto;}
 .arc-picker{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin-right:14px;}
 .arc-picker label:first-child{font-size:12.5px;font-weight:600;color:var(--dark-gray);}
 .arc-note{flex-basis:100%;font-size:12px;color:var(--gray);}
@@ -548,7 +549,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 <body>
 <header>
   <div class="hdr">
-    <a href="#" id="home-link" aria-label="Allyway home" style="display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit;cursor:pointer">
+    <a href="https://rideshare-internal.nelnettools.com/allyway/" id="home-link" aria-label="Allyway home" style="display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit;cursor:pointer">
     <svg class="nelnet-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" aria-label="Nelnet" role="img">
       <defs><linearGradient id="nlg" x1="54" y1="108" x2="54" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#70ba44"/><stop offset="1" stop-color="#afd136"/></linearGradient></defs>
       <path fill="#899396" d="m57.34,26.9c-5.89,0-10.04,2.64-13.56,5.77l-.2-3.64c-.02-.45-.38-.8-.83-.81h-11.23c-.47,0-.84.38-.84.85v51.01c0,.46.37.84.84.84h12.5c.46,0,.84-.38.84-.84v-35.17c4.56-5.26,6.59-6.11,9.6-6.11,4.2,0,8.68,2.9,8.68,11.03v30.26c0,.46.37.84.83.84h12.51c.46,0,.84-.38.83-.84v-32.86c0-13.34-10.05-20.33-19.98-20.33"/>
@@ -898,12 +899,12 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 /* ── Status model (spec §4) ─────────────────────────────────── */
 const STATUSES = [
   {v:'untriaged',      label:'Untriaged',               bucket:'active'},
+  {v:'question',       label:'Question',                 bucket:'active', field:'assignee'},
   {v:'need_fix',       label:'Need to Fix',             bucket:'active', field:'assignee'},
   {v:'in_progress',    label:'In progress',             bucket:'active', field:'assignee'},
   {v:'in_review',      label:'In review',               bucket:'active', field:'assignee'},
   {v:'needs_approval', label:'Needs approval',          bucket:'active', field:'assignee'},
   {v:'deferred',       label:'Deferred / backlog',      bucket:'active'},
-  {v:'question',       label:'Question',                 bucket:'active', field:'assignee'},
   {v:'fixed',          label:'Fixed',                   bucket:'verify', field:'assignee'},
   {v:'ok_ignore',      label:'OK to ignore',            bucket:'suppressed', field:'reason'},
   {v:'not_issue',      label:'Not really an issue',     bucket:'suppressed'},
@@ -1171,12 +1172,16 @@ function renderTrendChartSVG(points, opts={}){
   const w=opts.width||640, h=opts.height||170, padL=40, padR=44, padT=16, padB=24, color=opts.color||'var(--dark-green)';
   const val=p=>p.total ?? p.active ?? 0;
   const time=p=>{ const t=Date.parse(p.date||p.scanDate||''); return isNaN(t) ? (p.t||p.computedAt||0) : t; };
-  const pts=[...points].sort((a,b)=>time(a)-time(b));
+  // One point per calendar month (the latest scan in it), placed at the month start
+  const monthStart=t=>{ const d=new Date(t); return Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1); };
+  const byMonth=new Map();
+  for(const p of [...points].sort((a,b)=>time(a)-time(b))) byMonth.set(monthStart(time(p)),p);
+  const pts=[...byMonth].map(([m,p])=>({...p,date:new Date(m).toISOString()}));
   const t0=time(pts[0]), span=time(pts[pts.length-1])-t0;
   const maxY=Math.max(1,...pts.map(val));
   const xScale=p=>padL+(span>0?(time(p)-t0)/span:0.5)*(w-padL-padR);
   const yScale=v=>h-padB-(v/maxY)*(h-padT-padB);
-  const fmtDate=t=>new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'});
+  const fmtDate=t=>new Date(t).toLocaleDateString('en-US',{month:'short',year:'numeric',timeZone:'UTC'});
   const n=v=>Number(v).toLocaleString('en-US');
   const path=pts.map((p,i)=>`${i===0?'M':'L'}${xScale(p).toFixed(1)},${yScale(val(p)).toFixed(1)}`).join(' ');
   // Gridlines at 0, half and max with their values; the 0 line is the baseline. A polygon (not a second path) tints the area under the line.
@@ -1752,11 +1757,12 @@ async function adminLoadScan(file){
     if(!scan.source||!Array.isArray(scan.standard)) throw new Error('Not an Allyway scan.json.');
     showLoading(`Saving ${scan.source}…`);
     const report=await reconcileAndIngest(scan);
-    hideLoading();
+    showLoading(`Updating the dashboard for ${scan.source}…`);
     const st=await sourceStats(scan.source).catch(()=>null);   // scan changed — recompute + overwrite any stale summary
     if(st){ statsCache[scan.source]=st; await writeSummary(scan.source, st); } else delete statsCache[scan.source];
-    toast(`${scan.source}: ${scan.standard.length} rules + ${(scan.contrast||[]).length} contrast saved.${reconcileSummary(report)}`);
     await showPicker(true);   // stay on the dashboard so you can load more sources; click the card to open one
+    hideLoading();   // only once the new numbers are on screen, so the spinner never gives way to a stale page
+    toast(`${scan.source}: ${scan.standard.length} rules + ${(scan.contrast||[]).length} contrast saved.${reconcileSummary(report)}`);
   }catch(e){ hideLoading(); toast('Load failed: '+(e.code||e.message),'error'); }
 }
 async function loadLocalFile(file){
@@ -1880,9 +1886,14 @@ async function arcFindings(scanId, onProgress){
 
 /* ── Admin: pull a source straight from ARC into storage ───────────── */
 // Sources too big for the in-page pull (~90 calls a pull against the daily cap): use `node index.js` + Load scan.json
-const ARC_TOO_LARGE=['Nelnet.com','Nelnet Inc'];
+const ARC_TOO_LARGE=['Nelnet.com','Nelnet Inc','CampusGuard'];
 const arcKey=t=>String(t).toLowerCase().replace(/[^a-z0-9]/g,'');
 const arcTooLarge=t=>ARC_TOO_LARGE.some(n=>arcKey(n)===arcKey(t));
+// Not ours to triage — kept out of the picker even under "Show all ARC sources". Matches any title containing one.
+const ARC_HIDDEN=['(ARCHIVED)', 'Campus Commerce Sample',
+  'Demo User Flow', 'MGL Test', 'MCPP User Flow', 'NextGen Data Source', 'Nelnet Bank (Mobile Comparison)',
+  'Agile Team Metrics Dashboard', 'Confluence', 'SharePoint', 'VO Docs', 'Unifi Design', 'Angular Unifi'];
+const arcHidden=t=>ARC_HIDDEN.some(n=>arcKey(t).includes(arcKey(n)));
 async function adminPullFromArc(sourceTitle){
   if(!isAdmin()){ toast('Pulling from ARC is admin-only.','error'); return; }
   if(!arcOn()){ toast('The ARC connection isn’t available on this site.','error'); return; }
@@ -1944,7 +1955,7 @@ async function populateArcPicker(){
   let all, known;
   try{
     const [list, tracked]=await Promise.all([arcSourceListCached(), loadSources()]);
-    all=[...new Set(list.map(s=>s.title).filter(t=>t&&!arcTooLarge(t)))].sort((a,b)=>a.localeCompare(b));   // ARC can list one title twice; the pull matches by title, so one entry is enough
+    all=[...new Set(list.map(s=>s.title).filter(t=>t&&!arcTooLarge(t)&&!arcHidden(t)))].sort((a,b)=>a.localeCompare(b));   // ARC can list one title twice; the pull matches by title, so one entry is enough
     known=new Set(tracked.map(s=>s.source.toLowerCase()));
   }catch(e){ sel.innerHTML=`<option>${esc(e.message||'Could not reach ARC')}</option>`; return; }
   if(!all.length){ sel.innerHTML=`<option>ARC returned no sources</option>`; return; }
@@ -2573,7 +2584,7 @@ function buildDetail(fp){
       <select data-bf="status" aria-label="Status for selected pages"><option value="">Status…</option>${STATUSES.map(s=>`<option value="${s.v}">${esc(s.label)}</option>`).join('')}</select>
       <select data-bf="xcat" hidden aria-label="Blocked by, for selected pages">${xcatOptions()}</select>
       ${peoplePicker('', 'data-bf="assignee"', 'Assignee')}
-      <select data-bf="cat" aria-label="Category for selected pages"><option value="">Category…</option>${CATS.map(c=>`<option value="${c.v}">${esc(c.label)}</option>`).join('')}</select>
+      <select data-bf="cat" aria-label="Category for selected pages"><option value="">Category…</option><option value="__blank">— (blank)</option>${CATS.map(c=>`<option value="${c.v}">${esc(c.label)}</option>`).join('')}</select>
       <input type="text" data-bf="note" placeholder="Note (replaces existing)…" aria-label="Note for selected pages">
       <input type="number" class="est-in" min="0" step="0.05" data-bf="est" placeholder="Hours…" aria-label="Estimated hours for selected pages (0 clears)">
       ${tinyChecks(0,'',true)}
@@ -2892,7 +2903,7 @@ function applyBulk(fp){
       else if(ASSIGNEE_STATUSES.has(st)){ const key=`${fp}|||${u}`; (state.dispositions[key]||(state.dispositions[key]={})).assignee=asPeople(assignee); }
       else noOwner++;
     }
-    if(cat){ holdCat(`${fp}|||${u}`,effCat(fp,u)); setCat(fp,u,cat); }
+    if(cat){ holdCat(`${fp}|||${u}`,effCat(fp,u)); if(cat==='__blank') setCat(fp,u,'',true); else setCat(fp,u,cat); }
     if(note) setNotes(fp,u,note);
     if(est!==''||guess){ const cur=estOf(fp,u); setEst(fp,u,est!==''?(parseFloat(est)||0):(cur?cur.h:0),guess); }   // a lone "guess" tick only flags pages that already have hours
   }
@@ -3459,12 +3470,12 @@ async function showPicker(forcePick){
     const admin = !!(NS().viewer && NS().viewer.isAdmin);
     _trendCache=null; renderLeadershipView();   // every viewer sees this, not just admins — it's the leadership-facing view
     help.textContent = admin ? (arcOn() ? 'Pull a fresh scan from ARC, or click a source to triage.' : 'Click a source to triage, or load a new scan.json.') : 'Click a source to triage.';
-    actions.innerHTML = admin ? `${arcOn()?`<span class="arc-picker" id="arc-picker">
+    actions.innerHTML = admin ? `${arcOn()?`<span class="arc-picker" id="arc-picker" style="margin-right:auto">
         <label for="arc-src">ARC source</label>
         <select class="status-sel" id="arc-src" style="max-width:230px;font-weight:600" disabled><option>Loading ARC sources…</option></select>
         <button class="btn-primary" id="arc-go" type="button" style="margin-top:0;padding:9px 16px;font-size:13px" disabled>⟳ Pull latest scan</button>
         <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:400;color:var(--dark-gray)"><input type="checkbox" id="arc-show-all"> Show all ARC sources</label>
-        <span class="arc-note">${ARC_TOO_LARGE[0]} is too large to pull here — run <code>node index.js</code>, then Load scan.json.</span>
+        <span class="arc-note">CampusGuard and Nelnet.com are too large to pull directly from Rideshare — run <code>node index.js</code>, then Load scan.json.</span>
       </span>`:''}<label class="bulk-sel" for="scan-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">＋ Load scan.json</label><input id="scan-input" type="file" accept=".json" multiple hidden><button type="button" id="btn-rename" class="bulk-sel" style="margin-top:0;margin-left:8px">✎ Rename source…</button>` : '';
     if(admin){ const si=document.getElementById('scan-input'); si.addEventListener('change',async e=>{ const files=[...e.target.files]; e.target.value=''; for(const f of files) await adminLoadScan(f); });
       document.querySelector('label[for=scan-input]').addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();si.click();}});
