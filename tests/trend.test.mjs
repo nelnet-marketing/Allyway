@@ -63,5 +63,44 @@ const many = renderTrendChartSVG(agg.overall);
 check('multi-point series renders one dot per point', (many.match(/<circle/g)||[]).length === agg.overall.length);
 check('multi-point series renders exactly one path (single series, no extra strokes)', (many.match(/<path/g)||[]).length === 1);
 
+/* ── Time, not load order ─────────────────────────────────────────────────────
+   A past month loaded AFTER a newer one (computedAt says it was loaded last) must still plot
+   before it, and "current" must be the newest scan by date. */
+const late = aggregateTrendRows([
+  { source:'A', scanDate:'2026-09-01', computedAt:100, active:8 },
+  { source:'A', scanDate:'2026-08-01', computedAt:200, active:12 },   // loaded later, scanned earlier
+]);
+check('out-of-order load: overall series is in scan-date order', late.overall.map(p=>p.date).join()==='2026-08-01,2026-09-01');
+check('out-of-order load: per-source series is in scan-date order', late.bySource.get('A').map(d=>d.scanDate).join()==='2026-08-01,2026-09-01');
+check('out-of-order load: current active is the NEWEST scan (8), not the last loaded (12)', late.currentActive === 8);
+
+const sameDay = aggregateTrendRows([
+  { source:'A', scanDate:'2026-08-01', computedAt:1, active:10 },
+  { source:'B', scanDate:'2026-08-01', computedAt:2, active:5 },
+]);
+check('two sources on one date collapse to one overall point with the combined total', sameDay.overall.length===1 && sameDay.overall[0].total===15 && sameDay.overall[0].sources===2);
+
+/* ── x position follows the calendar ── */
+const xs = s => [...s.matchAll(/<circle cx="([\d.]+)"/g)].map(m=>parseFloat(m[1]));
+const spaced = renderTrendChartSVG([
+  {date:'2026-01-01', total:5}, {date:'2026-01-02', total:6}, {date:'2026-03-01', total:4}]);
+const [x1,x2,x3] = xs(spaced);
+check('dots are spaced by elapsed time (1 day vs 58 days), not evenly', (x2-x1) < (x3-x2)/10);
+check('out-of-order input is still drawn left to right by date', xs(renderTrendChartSVG([{date:'2026-03-01',total:1},{date:'2026-01-01',total:2}])).every((x,i,a)=>i===0||x>a[i-1]));
+check('first and last dates are labelled under the line', /Jan 1, 2026/.test(spaced) && /Mar 1, 2026/.test(spaced));
+
+/* ── hover / focus tooltip ── */
+const tipSvg = renderTrendChartSVG([
+  {scanDate:'2026-08-01', active:1234, suppressed:500, verify:12, confirmedFixed:7, carriedForward:90},
+  {scanDate:'2026-09-01', active:1100, suppressed:520, verify:30, confirmedFixed:0, carriedForward:0}]);
+check('every dot is keyboard-focusable', (tipSvg.match(/class="trend-pt" tabindex="0"/g)||[]).length === 2);
+check('each dot has an accessible name with date and value', /aria-label="Aug 1, 2026, 1,234 active/.test(tipSvg));
+check('tooltip shows the extra detail (suppressed, fixed, carried forward)', /500 suppressed/.test(tipSvg) && /12 fixed/.test(tipSvg) && /90 carried forward/.test(tipSvg) && /7 confirmed fixed/.test(tipSvg));
+check('tooltip is hidden from screen readers (the dot already carries the label)', (tipSvg.match(/class="trend-tip" aria-hidden="true"/g)||[]).length === 2);
+const rects = [...tipSvg.matchAll(/<rect x="([-\d.]+)" y="([-\d.]+)" width="(\d+)" height="(\d+)"/g)].map(m=>m.slice(1).map(Number));
+check('tooltips stay inside the 640-wide chart, including at the right edge', rects.every(([x,,w])=>x>=0 && x+w<=640));
+const overallTip = renderTrendChartSVG(agg.overall);
+check('combined-line tooltip says how many sources it spans', /across 2 sources/.test(overallTip));
+
 console.log(fails ? `\n${fails} CHECK(S) FAILED` : '\nALL PASS');
 process.exit(fails ? 1 : 0);

@@ -24,13 +24,18 @@ function loadComputeReconciliation() {
   const statuses = slice('const STATUSES = [', 'const REASONS');
   const middle = slice('function defectFromScan(sd){', 'async function adminLoadScan');
   const bucket = "const bucket = st => SMAP[st]?.bucket || 'active';\n";
-  const ctx = { console };
+  // The slice now runs past the reconciliation code into page wiring (main added people-list UI), so give it a no-op DOM
+  const el = { addEventListener(){}, set innerHTML(v){}, style:{} };
+  // computeSummary calls linkTarget / globalUrls, which now live further down the page
+  const dispHelpers = slice('function linkTarget(', 'function pageNotes') + '\n' + slice('function globalUrls(', '/* ── Filter helpers');
+  const written = [];   // what applyReconciliationEffects persists
+  const ctx = { console, written, invalidateRows(){}, NS: () => ({ putRecords: async (rows) => { written.push(...rows); } }), openPeople(){}, document:{ getElementById: () => el, querySelector: () => el, querySelectorAll: () => [], addEventListener(){} } };
   vm.createContext(ctx);
-  new vm.Script(statuses + '\n' + bucket + '\n' + middle + '\n;({computeReconciliation});').runInContext(ctx);
-  return new vm.Script('({computeReconciliation})').runInContext(ctx);
+  new vm.Script(statuses + '\n' + bucket + '\n' + middle + '\n' + dispHelpers + '\n;({computeReconciliation,reopenInto,applyReconciliationEffects,written});').runInContext(ctx);
+  return new vm.Script('({computeReconciliation,reopenInto,applyReconciliationEffects,written})').runInContext(ctx);
 }
 
-const { computeReconciliation } = loadComputeReconciliation();
+const { computeReconciliation, reopenInto, applyReconciliationEffects, written } =loadComputeReconciliation();
 
 /* ── Fixtures (all on the standard stream) ───────────────────────────── */
 const oldScanRows = [
@@ -96,6 +101,54 @@ check('contrast stream is isolated from standard and empty here',
   full.contrast.confirmedFixed.length===0 && full.contrast.fixDidntTake.length===0 &&
   full.contrast.noLongerDetected.length===0 && full.contrast.newFindings.length===0 &&
   full.contrast.escalated.length===0 && full.contrast.activeBefore===0 && full.contrast.activeAfter===0);
+
+/* ── carriedForward = the 'time saved' count: only rules that have a triage decision ─────────
+   Still present and not reopened: H (suppressed, no escalation) and I (in progress). B and G were
+   reopened this cycle, E is new. With no triaged set passed (old callers) every such rule counts. */
+check('carriedForward with no triaged set keeps the old count (H and I)', r.carriedForward === 2);
+const cf = triaged => computeReconciliation(oldScanRows, newScan, disp, triaged).standard.carriedForward;
+check('both carried rules triaged → 2', cf(new Set(['H-suppressed-no-escalate','I-active-unchanged'])) === 2);
+check('only one carried rule triaged → 1 (the untriaged one saved nothing)', cf(new Set(['H-suppressed-no-escalate'])) === 1);
+check('nothing triaged → 0', cf(new Set()) === 0);
+check('a reopened rule never counts even if triaged (B fix did not take)', cf(new Set(['B-fixed-still-there','G-suppressed-escalate'])) === 0);
+check('a rule triaged only on a page (fingerprint in the set) counts', cf(new Set(['I-active-unchanged'])) === 1);
+
+/* ── Page-level "Fixed" that comes back ──────────────────────────────────────────────────────
+   Most Fixed decisions are made one page at a time (key fp|||url), and the lifecycle above only
+   reads rule-level keys, so those used to stay "Fixed" while the scan still found them. */
+const pg = (fp, urls) => ({ stream:'standard', fingerprint:fp, title:fp, pages: urls.map(u=>({url:u})) });
+const oldP = [{ data: pg('P-mixed', ['/a','/b','/c']) }, { data: pg('Q-gone', ['/x']) }, { data: pg('R-other', ['/r']) }];
+const newP = { standard: [ pg('P-mixed', ['/a','/c']), pg('R-other', ['/r']) ], contrast: [] };   // /b and Q went away, /a and /c remain
+const pageFixed = new Map([['P-mixed', new Set(['/a','/b'])], ['Q-gone', new Set(['/x'])]]);   // marked Fixed on pages
+const fullDispP = {
+  'P-mixed|||/a': { status:'fixed' }, 'P-mixed|||/b': { status:'fixed' }, 'P-mixed|||/c': { status:'need_fix' },
+  'Q-gone|||/x': { status:'fixed' }, 'R-other': { status:'not_issue' } };
+const rp = computeReconciliation(oldP, newP, { 'R-other': { status:'not_issue' } }, new Set(['P-mixed','R-other']), { pageFixed, fullDisp: fullDispP }).standard;
+const pItem = rp.fixDidntTake.find(i => i.fp === 'P-mixed');
+check('a page marked Fixed that the new scan still finds is a "fix didn\'t take"', !!pItem && pItem.pageUrls.join() === '/a');
+check('only the returned page is listed (/b is gone, so it is not)', pItem.pageCount === 1);
+check('it is page-only: the rule itself had no Fixed status', pItem.pageOnly === true);
+check('a Fixed page that is gone (Q) is not reopened', !has(rp.fixDidntTake, 'Q-gone'));
+check('a rule that had a page reopened is not counted as time saved, even though /c has a standing decision',
+  rp.carriedForward === 1);   // R-other only
+const reopenedDisp = reopenInto({}, rp.fixDidntTake);
+check('reopening writes the PAGE key, not the rule key', reopenedDisp['P-mixed|||/a']?.status === 'untriaged' && !('P-mixed' in reopenedDisp));
+// Headline: all decisions counted, and the reopened page folded into "after".
+//   before (old scan): P /a fixed, /b fixed, /c need_fix → 1 active page; Q fixed; R suppressed
+check('headline counts page-level decisions (before: P active via /c)', rp.activeBefore === 1);
+check('headline after: the reopened page (/a) joins /c as active → 2', rp.activeAfter === 2);
+// With NO page-level fixed info supplied the behaviour is exactly what it was
+const rp0 = computeReconciliation(oldP, newP, { 'R-other': { status:'not_issue' } }).standard;
+check('without page data nothing new is reported (old callers unchanged)', rp0.fixDidntTake.length === 0);
+
+/* ── What gets written when a page is reopened ── */
+await applyReconciliationEffects('S', { standard: rp, contrast: { fixDidntTake: [], escalated: [] } }, {
+  'P-mixed|||/a': { status:'fixed', assignee:'Jose', since:'2026-09-01', notes:'swapped the colour', fix:'## fix text', cat:'cms' } });
+const pageRow = written.find(w => w.dkey === 'P-mixed|||/a');
+check("reopened page row is written untriaged with a fix-didn't-take flag", pageRow?.status === 'untriaged' && pageRow.reopenedReason === 'fix_didnt_take');
+check('its notes, fix text and category are kept', pageRow.notes === 'swapped the colour' && pageRow.fix === '## fix text' && pageRow.cat === 'cms');
+check('the Fixed claim, owner and age are dropped', !('assignee' in pageRow) && !('since' in pageRow));
+check('no rule-level row is written for a page-only reopen', !written.some(w => w.dkey === 'P-mixed'));
 
 console.log(fails ? `\n${fails} CHECK(S) FAILED` : '\nALL PASS');
 process.exit(fails ? 1 : 0);

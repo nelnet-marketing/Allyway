@@ -17,7 +17,11 @@ const html = readFileSync(join(here, '..', 'allyway.html'), 'utf8');
 const from = html.indexOf('function collectTriage()');
 const to = html.indexOf('function exportTriage()');
 if (from < 0 || to < from) { console.log('FAIL could not extract collectTriage from allyway.html'); process.exit(1); }
-const collectTriage = new Function('state', html.slice(from, to) + '; return collectTriage();');
+// collectTriage writes assignees through the people helpers, which now live earlier in the page
+const pFrom = html.indexOf('const PEOPLE_RENAME');
+const pTo = html.indexOf('// First name only', pFrom);
+if (pFrom < 0 || pTo < pFrom) { console.log('FAIL could not extract the people helpers from allyway.html'); process.exit(1); }
+const collectTriage = new Function('state', html.slice(pFrom, pTo) + html.slice(from, to) + '; return collectTriage();');
 
 /* A source shaped like the real data: the bulk of the work is in statuses the work list
    ignores, one disposition carries only a note, and a manual finding is still untriaged. */
