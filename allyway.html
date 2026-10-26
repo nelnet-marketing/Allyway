@@ -369,6 +369,10 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .theme-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:6px 11px;background:var(--white);border:1.5px solid var(--field-border);border-radius:8px;color:var(--dark-gray);cursor:pointer;font-family:'Red Hat Display',sans-serif;font-size:13px;font-weight:600;line-height:1;transition:background .12s,color .12s,border-color .12s;}
 .theme-toggle:hover{background:var(--soft-fill);color:var(--green-ink);border-color:#bcd98f;}
 .theme-toggle svg{width:15px;height:15px;display:block;}
+/* .theme-toggle's own display beats the UA [hidden] rule, so the admin-only buttons need this to stay hidden. */
+.theme-toggle[hidden]{display:none;}
+/* Preview-as-viewer is a mode, not a preference — the label says so too, so colour never carries it alone. */
+#view-as[aria-pressed="true"]{border-color:var(--dark-green);color:var(--dark-green);background:var(--soft-fill);}
 .colorway-link{margin-left:auto;display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:6px 13px;background:var(--white);border:1.5px solid var(--secondary);border-radius:6px;font-family:'Red Hat Display',sans-serif;font-size:12.5px;font-weight:600;color:var(--secondary);text-decoration:none;cursor:pointer;}
 .colorway-link:hover{background:var(--off-white);}
 .colorway-link .ext{font-size:13px;line-height:1;}
@@ -567,6 +571,9 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
       <button type="button" id="ppl-open" class="theme-toggle" style="display:none" title="Add, rename or remove the people Allyway can assign work to">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg><span>People</span>
       </button>
+      <button type="button" id="view-as" class="theme-toggle" hidden aria-pressed="false" title="See Allyway the way a non-admin viewer sees it">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 12S5.2 5.5 12 5.5 22.5 12 22.5 12 18.8 18.5 12 18.5 1.5 12 1.5 12Z"/><circle cx="12" cy="12" r="3.2"/></svg><span class="view-as__txt">Preview as viewer</span>
+      </button>
       <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Switch to dark theme">
         <span class="theme-toggle__icon" aria-hidden="true"></span><span class="theme-toggle__txt">Dark</span>
       </button>
@@ -607,6 +614,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <button class="tab" role="tab" aria-selected="false" id="tab-all" data-stream="cat:*" hidden>All</button>
         <button class="tab" role="tab" aria-selected="true" id="tab-standard" data-stream="standard">Standard rules</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-cat-html" data-stream="cat:html">HTML</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-cat-styles" data-stream="cat:styles">Styles</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-cat-js" data-stream="cat:js">JavaScript</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-cat-widget" data-stream="cat:widget">Third-party</button>
         <button class="tab" role="tab" aria-selected="false" id="tab-cat-cms" data-stream="cat:cms">CMS</button>
@@ -950,7 +958,7 @@ let activeStream = 'standard';                    // 'standard' | 'contrast'
 let groupBy = 'signature';                      // every tab: 'signature' (rule) | 'page'
 /* Implementation category — which kind of code change fixes a page. Set per rule or per page (page wins);
    Color/Visual is the Contrast tab, so it isn't a value here. A category tab shows only its pages. */
-const CATS = [{v:'html',label:'HTML'},{v:'js',label:'JavaScript'},{v:'widget',label:'Third-party'},{v:'cms',label:'CMS'},{v:'components',label:'Components'},{v:'other',label:'Other'}];
+const CATS = [{v:'html',label:'HTML'},{v:'styles',label:'Styles'},{v:'js',label:'JavaScript'},{v:'widget',label:'Third-party'},{v:'cms',label:'CMS'},{v:'components',label:'Components'},{v:'other',label:'Other'}];
 const CMAP = Object.fromEntries(CATS.map(c=>[c.v,c]));
 let activeCat = '';                               // standard stream only: '' = uncategorized, ALL_CATS = every page, else a CATS value
 const ALL_CATS = '*';
@@ -2459,7 +2467,30 @@ function tgtSetFix(val){ if(!_fixTarget) return; const m=tgtManual();
   if(m){ if(val) m.fix=val; else delete m.fix; persist(); }
   else if(_fixTarget.urls){ if(val) for(const u of _fixTarget.urls) setFix(_fixTarget.fp,u,val); }   // never bulk-clear fixes
   else setFix(_fixTarget.fp,_fixTarget.url,val); }
-function isAdmin(){ const ns=(typeof NS==='function')&&NS(); return !!(ns && ns.viewer && ns.viewer.isAdmin); }
+/* Flip to true to put the "Preview as viewer" button back in the header. Off by default: the switch is a
+   debugging aid, not part of the day-to-day UI. setViewAs(true) still works from the console either way. */
+const VIEW_AS_ENABLED = false;
+const trueAdmin = () => { const ns=(typeof NS==='function')&&NS(); return !!(ns && ns.viewer && ns.viewer.isAdmin); };
+/* Preview as viewer: an admin-only switch that makes every admin gate answer "no", so the app can be
+   checked the way staff see it. Session-only and never stored — the store still knows you're an admin. */
+function isAdmin(){ return !window.__asViewer && trueAdmin(); }
+// Re-runs BOTH kinds of admin gate: the one-shot ones set at startup, and the render-time ones.
+function applyAdminGates(){
+  const q=document.getElementById('fb-review'), admin=isAdmin();
+  if(q){ q.hidden=!admin;
+    if(admin && window._fbRefreshBadge) window._fbRefreshBadge();
+    else { const b=document.getElementById('fb-new-count'); if(b) b.hidden=true; } }
+  if(!document.getElementById('picker-area').hidden) showPicker(true); else render();
+}
+function setViewAs(on){
+  window.__asViewer=on;
+  const b=document.getElementById('view-as');
+  b.setAttribute('aria-pressed', on?'true':'false');
+  b.querySelector('.view-as__txt').textContent = on?'Back to admin view':'Preview as viewer';
+  b.title = on?'Return to your admin view':'See Allyway the way a non-admin viewer sees it';
+  applyAdminGates();
+  toast(on?'Previewing as a non-admin viewer — admin controls are hidden.':'Back to your admin view.');
+}
 // Editing fix instructions follows the site's Rideshare admin access (Who-can-access → Admins).
 function canEditFix(){ return isAdmin(); }
 function fixBtn(fp,url,compact){ const has=!!fixOf(fp,url), admin=canEditFix(), scope=url?'this page':'this rule';
@@ -3421,6 +3452,10 @@ async function init(){
     document.querySelector('label[for=triage-restore-input]').addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();ri.click();}}); }
   document.getElementById('stale-reload').addEventListener('click',()=>location.reload());
   document.getElementById('home-link').addEventListener('click',e=>{ e.preventDefault(); showPicker(true); saveLastView(''); });
+  // Shown on trueAdmin, not isAdmin — the switch has to stay reachable while the preview is on.
+  { const va=document.getElementById('view-as');
+    va.hidden=!(VIEW_AS_ENABLED && trueAdmin());
+    va.addEventListener('click',()=>setViewAs(va.getAttribute('aria-pressed')!=='true')); }
   document.getElementById('scan-sel').addEventListener('change',e=>{ if(state && e.target.value!==state.scanDate) loadSource(state.source, null, e.target.value); });
   document.getElementById('hdr-src').addEventListener('change',e=>{ if(e.target.value && (!state || e.target.value!==state.source)) loadSource(e.target.value); });
   // Delegated: the reconcile card's own innerHTML is rebuilt on every render, so its jump links
@@ -3467,9 +3502,10 @@ async function showPicker(forcePick){
   document.getElementById('ppl-open').style.display='none';
   const help=document.getElementById('picker-help'), actions=document.getElementById('picker-actions'), grid=document.getElementById('source-grid');
   if(NS()){
-    const admin = !!(NS().viewer && NS().viewer.isAdmin);
+    const admin = isAdmin();   // not the raw viewer flag — Preview as viewer has to reach this gate too
     _trendCache=null; renderLeadershipView();   // every viewer sees this, not just admins — it's the leadership-facing view
-    help.textContent = admin ? (arcOn() ? 'Pull a fresh scan from ARC, or click a source to triage.' : 'Click a source to triage, or load a new scan.json.') : 'Click a source to triage.';
+    help.textContent = admin ? (arcOn() ? 'Pull a fresh scan from ARC, or click a source to triage.' : 'Click a source to triage, or load a new scan.json.')
+      : 'Click a source for its ARC scan results. Filter by your name to see what’s assigned to you.';
     actions.innerHTML = admin ? `${arcOn()?`<span class="arc-picker" id="arc-picker" style="margin-right:auto">
         <label for="arc-src">ARC source</label>
         <select class="status-sel" id="arc-src" style="max-width:230px;font-weight:600" disabled><option>Loading ARC sources…</option></select>
@@ -3480,26 +3516,31 @@ async function showPicker(forcePick){
     if(admin){ const si=document.getElementById('scan-input'); si.addEventListener('change',async e=>{ const files=[...e.target.files]; e.target.value=''; for(const f of files) await adminLoadScan(f); });
       document.querySelector('label[for=scan-input]').addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();si.click();}});
       if(arcOn()) populateArcPicker(); }
-    // No overlay: cards carry their own loading state. Keep any existing cards visible while we refresh;
-    // only show a placeholder on a truly empty first load (grid has no cards yet).
+    // Keep any existing cards visible while we refresh; only show a placeholder on a truly empty first load.
     if(!grid.querySelector('.src-card')) grid.innerHTML='<p class="grid-msg">Loading sources…</p>';
+    showLoading('Loading sources…');
     let sources=[], summ={};
     try{
-      const [srcList, summaryRows]=await Promise.all([loadSources(), queryAll({kind:'summary'})]);   // ONE query gets every source's cached summary
-      sources=srcList;
-      for(const it of summaryRows){ const d=it.data; if(d.v!==SUMMARY_V) continue;   // written by older math — ignore so the card recomputes
-        const cur=summ[d.source]; if(!cur||(d.updatedAt||0)>(cur.updatedAt||0)) summ[d.source]=d; }   // keep newest per source
-    }catch(e){ grid.innerHTML=`<p class="grid-msg" style="color:var(--error-red)">Could not read storage: ${esc(e.message||e.code||e)}</p>`; return; }
-    if(!sources.length){ grid.innerHTML=`<p class="grid-msg">${admin?'No scans yet — load a scan.json to seed the site.':'No scans loaded yet — an admin needs to add one.'}</p>`; return; }
-    if(admin) document.getElementById('btn-rename').addEventListener('click',()=>openRename(sources));
-    // Prefer this session's cache, then the persisted summary (kept current on every save), else a skeleton.
-    renderSourceCards(grid, sources.map(s=>({src:s.source, scanDate:s.scanDate, ...(statsCache[s.source]||summ[s.source]||{loading:true})})));
-    sources.forEach(s=>{
-      if(statsCache[s.source]) return;                                    // fresh numbers already this session
-      if(summ[s.source]){ statsCache[s.source]=summ[s.source]; return; }  // persisted summary is authoritative — no scan load
-      sourceStats(s.source).then(st=>{ statsCache[s.source]=st; fillSourceCard({...st, scanDate:s.scanDate}); writeSummary(s.source, st); })
-        .catch(()=>fillSourceCard({src:s.source, scanDate:s.scanDate, err:true}));   // first time only: compute the full scan, then persist a summary
-    });
+      try{
+        const [srcList, summaryRows]=await Promise.all([loadSources(), queryAll({kind:'summary'})]);   // ONE query gets every source's cached summary
+        sources=srcList;
+        for(const it of summaryRows){ const d=it.data; if(d.v!==SUMMARY_V) continue;   // written by older math — ignore so the card recomputes
+          const cur=summ[d.source]; if(!cur||(d.updatedAt||0)>(cur.updatedAt||0)) summ[d.source]=d; }   // keep newest per source
+      }catch(e){ grid.innerHTML=`<p class="grid-msg" style="color:var(--error-red)">Could not read storage: ${esc(e.message||e.code||e)}</p>`; return; }
+      if(!sources.length){ grid.innerHTML=`<p class="grid-msg">${admin?'No scans yet — load a scan.json to seed the site.':'No scans loaded yet — an admin needs to add one.'}</p>`; return; }
+      if(admin) document.getElementById('btn-rename').addEventListener('click',()=>openRename(sources));
+      // Prefer this session's cache, then the persisted summary (kept current on every save), else a skeleton.
+      renderSourceCards(grid, sources.map(s=>({src:s.source, scanDate:s.scanDate, ...(statsCache[s.source]||summ[s.source]||{loading:true})})));
+      const pending=[];
+      sources.forEach(s=>{
+        if(statsCache[s.source]) return;                                    // fresh numbers already this session
+        if(summ[s.source]){ statsCache[s.source]=summ[s.source]; return; }  // persisted summary is authoritative — no scan load
+        pending.push(sourceStats(s.source).then(st=>{ statsCache[s.source]=st; fillSourceCard({...st, scanDate:s.scanDate}); writeSummary(s.source, st); })
+          .catch(()=>fillSourceCard({src:s.source, scanDate:s.scanDate, err:true})));   // first time only: compute the full scan, then persist a summary
+      });
+      // Hold the spinner until the skeleton cards have real numbers, capped so one slow source can't pin the page.
+      if(pending.length) await Promise.race([Promise.all(pending), new Promise(r=>setTimeout(r,8000))]);
+    } finally { hideLoading(); }
     return;
   } else {
     document.getElementById('leadership-slot').innerHTML='';
@@ -3588,7 +3629,7 @@ async function showPicker(forcePick){
   };
 
   var S = function(){ return window.NelnetStorage; };
-  var isAdmin = function(){ var s=S(); return !!(s && s.viewer && s.viewer.isAdmin); };
+  var isAdmin = function(){ var s=S(); return !window.__asViewer && !!(s && s.viewer && s.viewer.isAdmin); };
   var el = function(id){ return document.getElementById(id); };
 
   var dlg=el('fb-dialog'), qdlg=el('fbq-dialog'), form=el('fb-form'), ta=el('fb-text');
@@ -3939,6 +3980,7 @@ async function showPicker(forcePick){
   async function refreshBadge(){
     try{ qStatus=await loadStatuses(); qRows=await loadFeedback(); setBadge(); }catch(e){}
   }
+  window._fbRefreshBadge=refreshBadge;   // Preview as viewer re-runs this gate, so it needs the badge back
 
   if(qBtn){
     el('fbq-retention').textContent = RETENTION_DAYS
