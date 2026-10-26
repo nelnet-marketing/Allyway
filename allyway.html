@@ -90,6 +90,7 @@ table.defects tr.detail-row.hidden{display:none;}
 .cat-error{background:#FDEDEC;color:#C0392B;}.cat-alert{background:#FEF9E7;color:#7a5000;}.cat-bp,.cat-other{background:var(--off-white);color:var(--gray);}
 .lowvol{background:var(--off-white);color:var(--gray);border:1px dashed var(--gray);margin-left:5px;}
 .roll{font-size:12px;color:var(--dark-gray);}
+.rule-stat{display:flex;flex-direction:column;gap:3px;margin-bottom:7px;}   /* the row-wide pick sits above the per-status chips it drives */
 .tri{font-size:12px;font-weight:600;color:var(--dark-gray);font-variant-numeric:tabular-nums;}
 .tri.is-done{color:var(--green-ink);}
 .tri.is-none{color:var(--amber-ink);}
@@ -2303,6 +2304,20 @@ function statusSelect(fp,url,cur){
   const opts=STATUSES.filter(s=>url||!s.pageOnly).map(s=>`<option value="${s.v}" ${s.v===cur?'selected':''}>${esc(s.label)}</option>`).join('');
   return `<select class="status-sel ${statusClass(cur)}" data-role="status" data-fp="${esc(fp)}" data-url="${esc(url||'')}" aria-label="Status">${opts}</select>`;
 }
+/* Rule-level status — the default every page of the rule inherits unless it carries its own.
+   resolvePage and computeSummary already fall back to it, so one pick here triages the whole rule. */
+function ruleStatusCell(fp){
+  const rd=state.dispositions[fp]||{};
+  return `<div class="rule-stat"><span class="stat-sub">All pages</span>${statusSelect(fp,'',rd.status||'untriaged')}${subField(fp,'',rd)}</div>`;
+}
+/* A page-grouped row spans several rules, so no single disposition can hold its status — this
+   writes one per finding on the page. Mixed pages offer no pick until one is made for all. */
+function pageStatusCell(p,excl){
+  const sts=new Set(p.elements.map(e=>resolvePage(e.fp,p.url,excl).status));
+  const cur=sts.size===1?[...sts][0]:'';
+  const opts=STATUSES.map(s=>`<option value="${s.v}"${s.v===cur?' selected':''}>${esc(s.label)}</option>`).join('');
+  return `<div class="rule-stat"><span class="stat-sub">All findings</span><select class="status-sel ${cur?statusClass(cur):''}" data-role="pagestatus" data-url="${esc(p.url)}" aria-label="Status for every finding on ${esc(p.url)}">${cur?'':'<option value="">Mixed — set all…</option>'}${opts}</select></div>`;
+}
 function subField(fp,url,d){
   const st=SMAP[d.status]; if(!st||!st.field) return '';
   const attrs=`data-role="sub" data-sub="${st.field}" data-fp="${esc(fp)}" data-url="${esc(url||'')}"`;
@@ -2333,7 +2348,7 @@ function renderTable(all,excl){
       <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(g,d)}">${esc(g||'—')}</span></td>
       <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.activePages}</strong> / ${r.totalPages}</td>
       <td class="clickable" data-toggle="${did}" style="text-align:center;font-weight:600">${d.instance_count}</td>
-      <td><div class="roll">${r.label}</div>
+      <td>${ruleStatusCell(fp)}<div class="roll">${r.label}</div>
       </td>
     </tr>
     <tr class="detail-row hidden" id="${did}" data-built="0"><td colspan="5"></td></tr>`;
@@ -2680,7 +2695,7 @@ function renderByPage(excl){
       <td class="clickable" data-toggle="${did}"><span class="pill ${gradePill(r.worst,r.worstEl)}">${esc(r.worst)}</span></td>
       <td class="clickable" data-toggle="${did}" style="text-align:center"><strong>${r.active}</strong> / ${p.elements.length}</td>
       <td class="clickable" data-toggle="${did}" style="text-align:center;font-weight:600">${pageInstances(p)}</td>
-      <td><div class="roll">${r.label}</div>
+      <td>${pageStatusCell(p,excl)}<div class="roll">${r.label}</div>
       </td>
     </tr>
     <tr class="detail-row hidden" id="${did}" data-built="0"><td colspan="5"></td></tr>`;
@@ -2821,7 +2836,10 @@ function clearStatus(d){ delete d.status; delete d.assignee; delete d.reason; de
 function clearReopened(d){ delete d.reopenedReason; delete d.reopenedAt; }
 function setStatus(fp,url,val){
   const key=url?`${fp}|||${url}`:fp; const cur=state.dispositions[key];
-  if(val==='untriaged'){ if(cur){ clearStatus(cur); clearReopened(cur); if(Object.keys(cur).length===0) delete state.dispositions[key]; } }
+  // A rule's owner is inherited by every page under it and outlives any rule status, so clearing keeps it
+  if(val==='untriaged'){ if(cur){ const who=url?null:cur.assignee;
+      clearStatus(cur); clearReopened(cur); if(who) cur.assignee=who;
+      if(Object.keys(cur).length===0) delete state.dispositions[key]; } }
   else { const d={...(cur||{}),status:val}; clearReopened(d); if(val!==(cur&&cur.status)) d.since=today();   // unchanged status keeps its clock running
     if(val==='out_of_scope') delete d.assignee; ensureField(d,val); state.dispositions[key]=d; }
   persist();
@@ -3083,6 +3101,10 @@ document.addEventListener('change', e=>{
     if(el.checked){ if(!d) d=state.dispositions[fp]={}; d.globalFix=true; }
     else if(d){ delete d.globalFix; if(Object.keys(d).length===0) delete state.dispositions[fp]; }
     persist(); render(); return; }
+  if(el.dataset.role==='pagestatus'){ if(!el.value) return;
+    const p=viewPages().get(url); if(!p) return;
+    for(const e2 of p.elements) if(!linkTarget(state.dispositions,e2.fp,url)) setStatus(e2.fp,url,el.value);   // linked pages keep following their target
+    render(); return; }
   if(el.dataset.role==='status'){ setStatus(fp,url,el.value); render(); }
   else if(el.dataset.role==='cat'){ holdCat(`${fp}|||${url}`,effCat(fp,url)); setCat(fp,url,el.value,true); render(); }
   else if(el.dataset.role==='sub'){
