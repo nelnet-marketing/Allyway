@@ -766,7 +766,9 @@ function resolveOutputPath(scanInfoMap) {
     mkdirSync(folder, { recursive: true });
     return join(folder, `${source} - ${dateStr}${suffix}.xlsx`);
   } else {
-    const label = SOURCES.join(', ');
+    // Windows caps a full path at 260 chars, so a long list of names falls back to a count
+    const joined = SOURCES.join(', ');
+    const label = joined.length <= 80 ? joined : `${SOURCES.length} sources`;
     const folder = join(__dirname, 'ARC Reports', 'Multiple Sources');
     mkdirSync(folder, { recursive: true });
     return join(folder, `${label} - ${dateStr}${suffix}.xlsx`);
@@ -952,13 +954,14 @@ async function run() {
       }
     }
 
-    await writeWorkbook(perSourceRowsMap, scanInfoMap, contrastBySource);
-
     // Allyway ingest: one grouped-scan JSON per source (pushed into NelnetStorage).
+    // Written before the workbook so an Excel failure can't lose a long run's scans.
     for (const source of SOURCES) {
       const info = scanInfoMap.get(source);
       if (info) writeScanJson(source, perSourceRowsMap.get(source) ?? [], contrastBySource.get(source) ?? [], info);
     }
+
+    await writeWorkbook(perSourceRowsMap, scanInfoMap, contrastBySource);
 
   } catch (err) {
     console.error('❌ Error:', err);
