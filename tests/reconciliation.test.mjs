@@ -141,6 +141,24 @@ check('headline after: the reopened page (/a) joins /c as active → 2', rp.acti
 const rp0 = computeReconciliation(oldP, newP, { 'R-other': { status:'not_issue' } }).standard;
 check('without page data nothing new is reported (old callers unchanged)', rp0.fixDidntTake.length === 0);
 
+/* ── A Fixed finding that was confirmed gone, then came back a later cycle ───────────────────
+   The baseline no longer holds it, so presence alone reads as "new" — but a standing Fixed
+   decision means the fix did not take, and leaving it Fixed hides it in the Fixed tile. */
+const oldB = [{ data: pg('Z-unrelated', ['/z']) }];
+const newB = { standard: [ pg('Y-fixed-returns', ['/1','/2']), pg('X-really-new', ['/1']), pg('W-supp-returns', ['/1']) ], contrast: [] };
+const rb = computeReconciliation(oldB, newB, { 'Y-fixed-returns': { status:'fixed' }, 'W-supp-returns': { status:'ok_ignore' } }).standard;
+check('a Fixed finding gone from the baseline but back in the new scan is a "fix didn\'t take"',
+  has(rb.fixDidntTake, 'Y-fixed-returns') && !has(rb.newFindings, 'Y-fixed-returns'));
+check('it reopens to untriaged, so it leaves the Fixed tile', reopenInto({}, rb.fixDidntTake)['Y-fixed-returns']?.status === 'untriaged');
+check('a fingerprint with no standing decision is still reported as New', has(rb.newFindings, 'X-really-new'));
+check('a suppressed finding that returns is New, never an escalation off a missing baseline',
+  has(rb.newFindings, 'W-supp-returns') && rb.escalated.length === 0);
+// Page-level Fixed deserves the same treatment when the rule itself dropped out of the baseline
+const rbp = computeReconciliation(oldB, { standard: [ pg('V-page-returns', ['/a','/b']) ], contrast: [] }, {},
+  null, { pageFixed: new Map([['V-page-returns', new Set(['/a'])]]), fullDisp: { 'V-page-returns|||/a': { status:'fixed' } } }).standard;
+check('a returning page marked Fixed is reopened, not filed as New',
+  rbp.fixDidntTake.find(i=>i.fp==='V-page-returns')?.pageUrls.join() === '/a' && !has(rbp.newFindings, 'V-page-returns'));
+
 /* ── What gets written when a page is reopened ── */
 await applyReconciliationEffects('S', { standard: rp, contrast: { fixDidntTake: [], escalated: [] } }, {
   'P-mixed|||/a': { status:'fixed', assignee:'Jose', since:'2026-09-01', notes:'swapped the colour', fix:'## fix text', cat:'cms' } });

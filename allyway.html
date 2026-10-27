@@ -1603,18 +1603,20 @@ function reconcileDiffOne(oldRows, newRows, disp, triaged, extra={}){
   const confirmedFixed=[], fixDidntTake=[], noLongerDetected=[], newFindings=[], escalated=[];
   for(const [fp,pages] of newFp){
     const d=disp[fp], status=d&&d.status;
-    if(!oldFp.has(fp)){ newFindings.push({fp,title:title.get(fp),pages}); continue; }
+    // Pages marked Fixed one by one are the usual case: any that the new scan still finds didn't take
+    const pf=extra.pageFixed && extra.pageFixed.get(fp);
+    const back=pf ? [...newUrls.get(fp)].filter(u=>pf.has(u)) : [];
+    // A Fixed claim the scan disproved is a fix that didn't take even when the baseline no longer held
+    // the finding: gone-then-back means it was confirmed fixed first, not that it is new.
+    if(!oldFp.has(fp) && status!=='fixed' && !back.length){ newFindings.push({fp,title:title.get(fp),pages}); continue; }
     let item=null;
     if(status==='fixed'){ item={fp,title:title.get(fp),pages}; fixDidntTake.push(item); }
     else if(d && bucket(status)==='suppressed'){
       const prev=oldFp.get(fp);
-      if(pages-prev>=RECONCILE_ESCALATE_PAGES || pages>=prev*RECONCILE_ESCALATE_MULT) escalated.push({fp,title:title.get(fp),pages,from:prev});
+      if(prev!==undefined && (pages-prev>=RECONCILE_ESCALATE_PAGES || pages>=prev*RECONCILE_ESCALATE_MULT)) escalated.push({fp,title:title.get(fp),pages,from:prev});
     }
-    // Pages marked Fixed one by one are the usual case: any that the new scan still finds didn't take
-    const pf=extra.pageFixed && extra.pageFixed.get(fp);
-    if(pf){ const back=[...newUrls.get(fp)].filter(u=>pf.has(u));
-      if(back.length){ if(item){ item.pageUrls=back; item.pageCount=back.length; }
-        else fixDidntTake.push({fp,title:title.get(fp),pages,pageUrls:back,pageCount:back.length,pageOnly:true}); } }
+    if(back.length){ if(item){ item.pageUrls=back; item.pageCount=back.length; }
+      else fixDidntTake.push({fp,title:title.get(fp),pages,pageUrls:back,pageCount:back.length,pageOnly:true}); }
   }
   for(const [fp,pages] of oldFp){
     if(newFp.has(fp)) continue;   // still present — handled above
