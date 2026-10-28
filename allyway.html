@@ -284,6 +284,8 @@ a.bulk-sel{display:inline-flex;align-items:center;text-decoration:none;}
 .bulk-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 10px;padding:8px 10px;border:1px solid var(--hairline);border-radius:var(--r);background:var(--off-white);font-size:13px;}
 .bulk-bar .bulk-fields{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
 .bulk-bar .bulk-fields[hidden]{display:none;}
+/* Sits above the table rather than inside a drill-down, so it reads as the wider-reaching one. */
+.bulk-bar--all{border-style:dashed;border-color:var(--field-border);}
 .est-in{width:76px;}
 .est-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:12px;}
 .est-row .chk:has(input:disabled){opacity:.55;cursor:not-allowed;}
@@ -656,6 +658,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <input id="triage-restore-input" type="file" accept=".csv" hidden>
       </div>
       <div id="est-summary" class="est-sum" role="status" aria-live="polite"></div>
+      <div id="all-bulk"></div>
       <div class="tbl-wrap">
         <table class="defects">
           <thead><tr id="head-row">
@@ -2145,6 +2148,7 @@ function render(){
   const all=Object.values(currentDefects());
   renderStats(all,excl); renderEstimate();
   if(pageView()) renderByPage(excl); else renderTable(all,excl);
+  renderAllBulk();
   refreshStatusFilter(); refreshAssigneeFilter(); refreshXcatFilter(); refreshCatTabs();
   renderSuppressed(all,excl);
   renderManual(excl);
@@ -2608,11 +2612,12 @@ function aiBar(key,title){ const aiId=`ai-out-${cssId(key)}`;
         <button type="submit" class="ai-send">Send</button></form>
       <div class="ai-note">AI-generated guidance — verify against the WCAG spec before acting.</div>
     </div></div>`; }
-/* Bulk editor, shared by both drill-downs. `scope` is "r:<fp>" (one rule, many pages) or "p:<url>"
-   (one page, many rules); every control carries it so selections never cross drill-downs. */
-function bulkBar(scope,label,noun){ const sc=esc(scope);
-  return `<div class="bulk-bar" role="group" aria-label="${esc(label)}" data-scope="${sc}">
-    <label class="chk"><input type="checkbox" data-role="pgselall" data-scope="${sc}"> Select all</label>
+/* Bulk editor, shared by both drill-downs. `scope` is "r:<fp>" (one rule, many pages), "p:<url>"
+   (one page, many rules), or "all" (every finding matching the current filters, no drill-down open);
+   every control carries it so selections never cross drill-downs. */
+function bulkBar(scope,label,noun,selLabel){ const sc=esc(scope);
+  return `<div class="bulk-bar${scope==='all'?' bulk-bar--all':''}" role="group" aria-label="${esc(label)}" data-scope="${sc}">
+    <label class="chk"><input type="checkbox" data-role="pgselall" data-scope="${sc}"> ${esc(selLabel||'Select all')}</label>
     <span class="bulk-count" role="status" aria-live="polite">0 selected</span>
     <span class="bulk-fields" hidden>
       <select data-bf="status" aria-label="Status for selected ${esc(noun)}"><option value="">Status…</option>${STATUSES.map(s=>`<option value="${s.v}">${esc(s.label)}</option>`).join('')}</select>
@@ -2628,6 +2633,14 @@ function bulkBar(scope,label,noun){ const sc=esc(scope);
       <button type="button" class="pages-btn" data-role="bulksame" data-scope="${sc}">↪ Same as…</button>
       <button type="button" class="btn-primary" data-role="bulkapply" data-scope="${sc}">Apply to selected</button>
     </span></div>`; }
+/* The table-level bar: edits everything the filters currently show, so a sweep over 100-odd rules
+   doesn't mean expanding each one. Redrawn with the table, which also clears its tick after an apply. */
+function renderAllBulk(){
+  const host=document.getElementById('all-bulk'); if(!host) return;
+  const n=filteredPairs().length;
+  host.innerHTML = n ? bulkBar('all','Apply to every finding matching the current filters','findings',
+    `Select all ${n} finding${n===1?'':'s'} matching the filters`) : '';
+}
 function buildDetail(fp){
   const d=currentDefects()[fp]; const excl=excludedUrls();
   const f=filters(), shown=d.affected_pages.filter(u=>{ return matchPairs([{fp,url:u}],excl,f); });   // honour the Status/Assignee filters
@@ -2842,7 +2855,31 @@ function setCat(fp,url,val,explicitNone){   // '' removes the override (the page
 }
 /* ── Bulk edit of selected pages inside an expanded rule ── */
 // Both drill-downs select rule×page findings; the scope says which bar owns a tick.
-const selectedPairs = scope => [...document.querySelectorAll('[data-role=pgsel]:checked')].filter(el=>el.dataset.scope===scope).map(el=>({fp:el.dataset.fp,url:el.dataset.url}));
+/* Every rule×page the current filters leave on screen, drill-downs closed or not — the same tests
+   renderTable/renderByPage run on a row and then buildDetail runs on the pages inside it. */
+function filteredPairs(){
+  const excl=excludedUrls(), f=filters(), out=[];
+  if(pageView()){
+    for(const p of viewPages().values()){
+      if(f.search && !p.url.toLowerCase().includes(f.search) && !p.elements.some(e=>e.label.toLowerCase().includes(f.search))) continue;
+      if(f.sev && !p.elements.some(e=>(gradeOf(e)||'').toUpperCase()===f.sev.toUpperCase())) continue;
+      for(const e of p.elements) if(matchPairs([{fp:e.fp,url:p.url}],excl,f)) out.push({fp:e.fp,url:p.url});
+    }
+  } else {
+    for(const d of Object.values(currentDefects())){
+      if(f.search && !d.rule_title.toLowerCase().includes(f.search)) continue;
+      if(f.sev && (gradeOf(d)||'').toUpperCase()!==f.sev.toUpperCase()) continue;
+      for(const u of d.affected_pages) if(matchPairs([{fp:d.fingerprint,url:u}],excl,f)) out.push({fp:d.fingerprint,url:u});
+    }
+  }
+  return out;
+}
+/* The "all" bar has no tick per finding — nothing is on screen to tick — so its one Select all
+   stands for the whole filtered set. */
+function selectedPairs(scope){
+  if(scope==='all'){ const all=document.querySelector('.bulk-bar--all [data-role=pgselall]'); return all&&all.checked?filteredPairs():[]; }
+  return [...document.querySelectorAll('[data-role=pgsel]:checked')].filter(el=>el.dataset.scope===scope).map(el=>({fp:el.dataset.fp,url:el.dataset.url}));
+}
 const bulkBarFor = scope => [...document.querySelectorAll('.bulk-bar')].find(b=>b.dataset.scope===scope);
 // Options for the "Blocked by" (Can't fix — third party) picker, shared by the bulk bar and its Add… entry.
 /* Assignee picker: a checkbox per person, so assigning two people is two clicks in one open list
@@ -2974,7 +3011,7 @@ function applyBulk(scope){
   if(gfix){ const byFp={}; for(const {fp,url:u} of pairs)(byFp[fp]||(byFp[fp]=[])).push(u);
     for(const f of Object.keys(byFp)) setGlobalPages(f,byFp[f],gfix==='on'); }
   persist(); render();
-  const noun=scope.startsWith('p:')?'finding':'page';
+  const noun=(scope==='all'||scope.startsWith('p:'))?'finding':'page';
   const skip=[linked&&`${linked} linked ${noun}${linked===1?'':'s'} keep following their target`, noOwner&&`${noOwner} without an owner status skipped for assignee`].filter(Boolean);
   toast(`Updated ${pairs.length} ${noun}${pairs.length===1?'':'s'}${skip.length?' — '+skip.join('; '):''}.`);
 }
