@@ -3627,10 +3627,11 @@ async function openLinkedSource(id){
   if(!state || state.source!==hit.source || document.getElementById('tracker-area').hidden) await loadSource(hit.source);
   return true;
 }
-// Colorway palette key per source, so "Open in Colorway" lands on that site's palette (#<key> in Colorway)
-const COLORWAY_KEYS = { 'Nelnet.com':'nelnetinc', 'Bloomwell':'bloomwell', 'Propelr':'propelr' };
+// Colorway palette key per source (#<key> in Colorway); default is the lowercased name, overrides here
+const COLORWAY_KEYS = { 'Nelnet.com':'nelnetinc' };
 function syncColorwayLink(){
-  const a=document.getElementById('colorway-link'), key=state && Object.prototype.hasOwnProperty.call(COLORWAY_KEYS,state.source) ? COLORWAY_KEYS[state.source] : '';
+  const src=state && state.source, a=document.getElementById('colorway-link'),
+    key=!src ? '' : Object.prototype.hasOwnProperty.call(COLORWAY_KEYS,src) ? COLORWAY_KEYS[src] : String(src).toLowerCase().replace(/[^a-z0-9]/g,'');
   a.href='https://rideshare-internal.nelnettools.com/colorway/'+(key?'#'+key:'');
 }
 async function showPicker(forcePick){
