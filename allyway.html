@@ -173,6 +173,9 @@ a.bulk-sel{display:inline-flex;align-items:center;text-decoration:none;}
 .subfield{margin-top:5px;width:100%;max-width:170px;padding:4px 6px;border:1.5px solid var(--field-border);border-radius:6px;font-size:12px;font-family:'Open Sans',sans-serif;min-height:24px;background:var(--white);color:var(--dark-gray);}
 .stat-sub.is-stale{color:var(--amber-ink);font-weight:600;}
 .who{display:inline-block;margin:5px 0 0;padding:0;border:0;min-width:0;max-width:170px;}
+/* In the filter bar the picker sits beside its label like the neighbouring selects, not under it. */
+.filter-who{display:inline-flex;align-items:center;gap:6px;}
+.who--filter{margin:0;max-width:200px;}
 .ms-btn{font-family:'Red Hat Display',sans-serif;font-size:12px;font-weight:600;padding:4px 10px;border:1.5px solid var(--field-border);border-radius:999px;background:var(--white);color:var(--dark-gray);cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:24px;}
 .ms-btn:hover{border-color:var(--dark-green);color:var(--green-ink);background:var(--soft-fill);}
 .ms-btn:focus-visible{outline:2px solid var(--dark-green);outline-offset:2px;}
@@ -647,9 +650,10 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <label for="filter-xcat" hidden>Blocked by
           <select id="filter-xcat"><option value="">All</option></select>
         </label>
-        <label for="filter-assignee">Assignee
-          <select id="filter-assignee"><option value="">All</option></select>
-        </label>
+        <span class="filter-who">Assignee
+          <span class="who who--filter" id="filter-assignee-who"></span>
+          <input type="hidden" id="filter-assignee" value="">
+        </span>
         <span class="spacer" id="result-count"></span>
       </div>
       <div class="toolbar toolbar--export">
@@ -2064,7 +2068,7 @@ function matchAssignee(pairs,excl,f){
   const names=pairAssignees(pairs,excl);
   if(f.assignee==='__any')  return names.size>0;
   if(f.assignee==='__none') return names.size===0 && pairs.some(p=>ASSIGNEE_STATUSES.has(resolvePage(p.fp,p.url,excl).status));
-  return names.has(f.assignee);
+  return f.who.some(n=>names.has(n));   // several people picked: anything owned by any of them
 }
 // Distinct resolved statuses in use, in canonical order — feeds the Status filter dropdown.
 function statusesInUse(){ if(!state) return []; const excl=excludedUrls(); const set=new Set();
@@ -2076,13 +2080,13 @@ function statusesInUse(){ if(!state) return []; const excl=excludedUrls(); const
    that set of pages is held until the filter changes again — updating a finding never makes it vanish. */
 let _pin=null;
 function pinFor(excl,f){ if(!f.status&&!f.assignee&&!f.xcat){ _pin=null; return null; }
-  const key=f.status+'|'+f.assignee+'|'+f.xcat; if(_pin&&_pin.key===key) return _pin;
+  const key=f.status+'|'+f.assignee+'|'+f.who.join('\u0001')+'|'+f.xcat; if(_pin&&_pin.key===key) return _pin;
   const keys=new Set();
   for(const defs of [state.defects||{},state.contrast||{}]) for(const d of Object.values(defs)) for(const u of d.affected_pages){
     const pr=[{fp:d.fingerprint,url:u}]; if(matchStatus(pr,excl,f)&&matchAssignee(pr,excl,f)&&matchXcat(pr,excl,f)) keys.add(d.fingerprint+'|||'+u); }
   const mids=new Set();
   for(const m of (state.manualFindings||[])) if(manualMatchPinned(m,f)) mids.add(m.id);
-  return _pin={key,status:f.status,assignee:f.assignee,xcat:f.xcat,keys,mids}; }
+  return _pin={key,status:f.status,assignee:f.assignee,who:f.who,xcat:f.xcat,keys,mids}; }
 /* Manual findings carry their own status/assignee and never a "Blocked by", so they match the held
    filters directly instead of going through resolvePage. */
 function manualMatchPinned(m,f){
@@ -2091,7 +2095,7 @@ function manualMatchPinned(m,f){
   const who=asPeople(m.assignee);
   if(f.assignee==='__any'){ if(!who.length) return false; }
   else if(f.assignee==='__none'){ if(who.length||!ASSIGNEE_STATUSES.has(m.status||'untriaged')) return false; }
-  else if(f.assignee && !who.includes(f.assignee)) return false;
+  else if(f.assignee && !f.who.some(n=>who.includes(n))) return false;
   return true; }
 // "Blocked by" only exists on Can't fix — third party pages, so any value implies that status.
 function matchXcat(pairs,excl,f){
@@ -2140,10 +2144,13 @@ function ruleRollup(d,excl){
 }
 
 /* ── Render ─────────────────────────────────────────────────── */
-const filters = () => ({search:document.getElementById('filter-search').value.trim().toLowerCase(),
-  sev:document.getElementById('filter-sev').value, status:document.getElementById('filter-status').value,
-  assignee:document.getElementById('filter-assignee').value,
-  xcat:document.getElementById('filter-status').value==='cant_fix' ? document.getElementById('filter-xcat').value : ''});
+/* `assignee` is the raw filter value and `who` the people it names — empty for '', '__any' and '__none',
+   so a test on `assignee` still says whether the filter is on at all. */
+const filters = () => { const who=document.getElementById('filter-assignee').value, status=document.getElementById('filter-status').value;
+  return {search:document.getElementById('filter-search').value.trim().toLowerCase(),
+    sev:document.getElementById('filter-sev').value, status,
+    assignee:who, who:FILTER_WHO_SPECIAL[who]!==undefined?[]:asPeople(who),
+    xcat:status==='cant_fix' ? document.getElementById('filter-xcat').value : ''}; };
 
 function render(){
   if(!state) return;
@@ -2279,13 +2286,43 @@ function refreshStatusFilter(){
   sel.value=vs.includes(cur)?cur:'';   // clear a selection that no longer exists
 }
 // Rebuild the assignee dropdown from names in use; called on load and each render so new names appear.
-function refreshAssigneeFilter(){
-  const asel=document.getElementById('filter-assignee'); const acur=asel.value; const names=allAssignees();
-  if(acur && !['__any','__none'].includes(acur) && !names.includes(acur) && _pin && _pin.assignee===acur) names.push(acur);   // keep a pinned filter selectable
-  asel.innerHTML='<option value="">All</option><option value="__any">Assigned (any)</option><option value="__none">Unassigned</option>'
-    +(names.length?'<optgroup label="People">'+names.map(n=>`<option value="${esc(n)}"${n===acur?' selected':''}>${esc(shortName(n))}</option>`).join('')+'</optgroup>':'');
-  asel.value=names.includes(acur)||['','__any','__none'].includes(acur)?acur:'';   // keep selection if still valid
+/* The Assignee filter takes several people at once (match any of them), because work is often shared
+   and an item owned by two people belongs in both their lists. The hidden input carries the value:
+   '' | '__any' | '__none' | a comma-joined list of names, which is what everything else reads. */
+const FILTER_WHO_SPECIAL = {'':'All','__any':'Assigned (any)','__none':'Unassigned'};
+function filterWhoLabel(raw,picked){
+  if(FILTER_WHO_SPECIAL[raw]!==undefined) return FILTER_WHO_SPECIAL[raw];
+  const shown=picked.slice(0,2).map(shortName).join(', ');
+  return picked.length>2 ? `${shown} +${picked.length-2}` : shown;
 }
+const filterWhoOpen = () => { const p=document.getElementById('filter-who-pop');
+  return !!p && (popOK ? p.matches(':popover-open') : p.classList.contains('is-open')); };
+function paintFilterWhoBtn(){ const btn=document.getElementById('filter-who-btn'); if(!btn) return;
+  const raw=document.getElementById('filter-assignee').value;
+  const label=filterWhoLabel(raw, FILTER_WHO_SPECIAL[raw]!==undefined?[]:asPeople(raw));
+  btn.innerHTML=`${esc(label)} <span aria-hidden="true">▾</span>`; btn.setAttribute('aria-label',`Assignee: ${label}`); }
+function refreshAssigneeFilter(){
+  const host=document.getElementById('filter-assignee-who'), hid=document.getElementById('filter-assignee');
+  // Mid-selection the open list already shows the ticks; rebuilding it would shut it between two people.
+  if(filterWhoOpen()){ paintFilterWhoBtn(); return; }
+  const raw=hid.value, special=FILTER_WHO_SPECIAL[raw]!==undefined, names=allAssignees();
+  // A name still ticked after its last item moved on stays on the list, so the filter never changes under you
+  const picked=special?[]:asPeople(raw).filter(Boolean);
+  const list=[...names,...picked.filter(n=>!names.includes(n))];
+  const label=filterWhoLabel(raw,picked);
+  const rows=list.map(n=>`<label class="ms-row"><input type="checkbox" data-role="fwho" value="${esc(n)}"${picked.includes(n)?' checked':''}><span>${esc(shortName(n))}</span></label>`).join('')
+    || '<p class="fix-hint" style="margin:0">Nothing is assigned yet.</p>';
+  host.innerHTML=`<button type="button" class="ms-btn" id="filter-who-btn" data-role="whoopen" aria-haspopup="true" aria-expanded="false" aria-label="Assignee: ${esc(label)}" ${popOK?'popovertarget="filter-who-pop"':''}>${esc(label)} <span aria-hidden="true">▾</span></button>
+    <div class="ms-panel" id="filter-who-pop" ${popOK?'popover':''} role="group" aria-label="Filter by assignee">
+      <div class="ms-head"><button type="button" class="ms-chip" data-role="fwhoclear">All</button></div>
+      <label class="ms-row"><input type="checkbox" data-role="fwhospecial" value="__any"${raw==='__any'?' checked':''}><span>Assigned (any)</span></label>
+      <label class="ms-row"><input type="checkbox" data-role="fwhospecial" value="__none"${raw==='__none'?' checked':''}><span>Unassigned</span></label>
+      <div class="ms-list">${rows}</div>
+    </div>`;
+}
+// One value in, one render out: the hidden input is what filters() reads, so changing it drives everything.
+function setFilterWho(val){ const hid=document.getElementById('filter-assignee');
+  hid.value=val; hid.dispatchEvent(new Event('input',{bubbles:true})); }
 function switchStream(s){   // s: 'standard' | 'contrast' | 'cat:<value>'
   if(!state) return;
   const stream = s==='contrast' ? 'contrast' : 'standard', cat = s.startsWith('cat:') ? s.slice(4) : '';
@@ -3087,7 +3124,7 @@ function estimateSummary(){
   for(const m of manualInTab()){ const st=m.status||'untriaged'; if(!ACTIVE_TODO.has(st)) continue;
     if(f.status&&f.status!==st) continue;
     const who=asPeople(m.assignee);
-    if(f.assignee&&!(f.assignee==='__any'?who.length:f.assignee==='__none'?!who.length:who.includes(f.assignee))) continue;
+    if(f.assignee&&!(f.assignee==='__any'?who.length:f.assignee==='__none'?!who.length:f.who.some(n=>who.includes(n)))) continue;
     add(who.join(', ')||'Unassigned', m.est>0?{h:m.est,guess:!!m.estGuess}:null); }
   return by; }
 function renderEstimate(){
@@ -3111,6 +3148,14 @@ function setNotes(fp,url,val){
 document.addEventListener('change', e=>{
   const el=e.target, fp=el.dataset.fp, url=el.dataset.url||'';
   if(el.dataset.bf==='status'){ const x=el.closest('.bulk-fields').querySelector('[data-bf=xcat]'); x.hidden = SMAP[el.value]?.field!=='xcat'; return; }   // "Blocked by" only for Can't fix
+  if(el.dataset.role==='fwho'){   // people are additive — ticking two shows both their lists
+    const picked=[...document.querySelectorAll('[data-role=fwho]:checked')].map(c=>c.value);
+    document.querySelectorAll('[data-role=fwhospecial]').forEach(c=>{ c.checked=false; });
+    setFilterWho(picked.join(', ')); return; }
+  if(el.dataset.role==='fwhospecial'){   // "Assigned (any)" and "Unassigned" are each their own answer
+    document.querySelectorAll('[data-role=fwhospecial]').forEach(c=>{ if(c!==el) c.checked=false; });
+    document.querySelectorAll('[data-role=fwho]').forEach(c=>{ c.checked=false; });
+    setFilterWho(el.checked?el.value:''); return; }
   if(el.dataset.role==='assign'){ const wrap=el.closest('.who'), cur=asPeople(wrap.dataset.people);
     whoSet(wrap, el.checked ? cur.concat(el.value) : cur.filter(n=>n!==el.value)); whoPaintBtn(wrap); return; }
   if(el.dataset.bf==='xcat'){ if(el.value==='__add'){ const v=(prompt('Add a “Can’t fix — third party” reason:')||'').trim();
@@ -3152,6 +3197,9 @@ document.addEventListener('click', e=>{
     nm.textContent=open?'Show less':'Show more'; nm.setAttribute('aria-expanded',String(open)); fitNote(ta); return; }
   const wo=e.target.closest('[data-role=whoopen]'); if(wo && !popOK){   // no popover support: toggle the panel in place
     const p=wo.nextElementSibling; p.classList.toggle('is-open'); wo.setAttribute('aria-expanded',String(p.classList.contains('is-open'))); return; }
+  const fwc=e.target.closest('[data-role=fwhoclear]'); if(fwc){
+    fwc.closest('.ms-panel').querySelectorAll('input[type=checkbox]').forEach(b=>{ b.checked=false; });
+    setFilterWho(''); return; }
   const wc=e.target.closest('[data-role=whoclear]'); if(wc){ const wrap=wc.closest('.who');
     whoSet(wrap,[]); wrap.querySelectorAll('input[type=checkbox]').forEach(b=>{ b.checked=false; }); whoPaintBtn(wrap); return; }
   const ps=e.target.closest('[data-ppl-save]'); if(ps){ const from=ps.dataset.pplSave;
@@ -3266,7 +3314,8 @@ function openExport(){
   const seed=document.getElementById('filter-assignee').value, people=allAssignees();   // seed from the filter bar, then override here
   _exp.people.clear();
   if(seed==='__any') people.forEach(n=>_exp.people.add(n));
-  else if(seed==='__none' || people.includes(seed)) _exp.people.add(seed);
+  else if(seed==='__none') _exp.people.add(seed);
+  else for(const n of asPeople(seed)) if(people.includes(n)) _exp.people.add(n);
   document.getElementById('exp-people').innerHTML='<legend>Assignee</legend>'
     + '<p class="fix-hint" style="margin:0 0 4px">Tick nobody to export everyone.</p>'
     + people.map(n=>`<label class="chk"><input type="checkbox" data-exp="person" value="${esc(n)}" ${_exp.people.has(n)?'checked':''}> ${esc(n)}</label>`).join('')
