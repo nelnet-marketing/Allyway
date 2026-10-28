@@ -1087,8 +1087,8 @@ function newestByKey(rows, keyField){
    Propelr loaded 100 of its 200 dispositions and the other half read as untriaged. Unfiltered
    paging can't skip (returned === scanned), so read the store whole and match locally. */
 let _rows=null, _rowsAt=0;
-const ROWS_TTL_MS = 15*1000;   // one pass feeds all the concurrent reads of a single load
-function invalidateRows(){ _rows=null; }   // after any write, or the next read serves stale rows
+const ROWS_TTL_MS = 5*60*1000;   // one pass feeds every source opened in the next 5 min; own writes still invalidate
+function invalidateRows(){ _rows=null; _sliceCache.clear(); }   // after any write, or the next read serves stale rows
 function readAllRows(){
   if(_rows && Date.now()-_rowsAt<ROWS_TTL_MS) return _rows;
   _rowsAt=Date.now();
@@ -1110,10 +1110,18 @@ async function queryFiltered(filter){
   return null;
 }
 // Filtering preserves store order, so newestByKey still gets its rows newest-first.
+/* A per-source slice of the big kinds is a few dozen rows, but a filtered page scans ~1,000+ store rows,
+   so reading it filtered takes a fraction of the round trips a whole-store read does. Any page that
+   fills its limit still falls back to the whole-store read, which is the only safe path then. */
+const SLICE_KINDS = new Set(['scan','disp','manual']);
+const _sliceCache = new Map();   // key → {at, rows}; cleared with the whole-store cache
 async function queryAll(filter){
-  if(SMALL_KINDS.has(filter.kind) && !(_rows && Date.now()-_rowsAt<ROWS_TTL_MS)){   // a whole-store read already cached or in flight serves these too
+  const sliced=SLICE_KINDS.has(filter.kind);
+  if((sliced||SMALL_KINDS.has(filter.kind)) && !(_rows && Date.now()-_rowsAt<ROWS_TTL_MS)){   // a whole-store read already cached or in flight serves these too
+    const ck=sliced?JSON.stringify(filter):'', hit=sliced&&_sliceCache.get(ck);
+    if(hit && Date.now()-hit.at<ROWS_TTL_MS) return hit.rows;
     const rows=await queryFiltered(filter).catch(()=>null);
-    if(rows) return rows; }
+    if(rows){ if(sliced) _sliceCache.set(ck,{at:Date.now(),rows}); return rows; } }
   return (await readAllRows()).filter(it=>{ const d=it.data||{};
     for(const k in filter) if(d[k]!==filter[k]) return false; return true; });
 }
@@ -1125,7 +1133,7 @@ const LAST_VIEW_TTL_MS = 8*60*60*1000;   // reopen the last source within 8h; ol
 function viewerKey(){ const e=((NS()&&NS().viewer&&NS().viewer.email)||'').toLowerCase();
   let h=5381; for(let i=0;i<e.length;i++) h=((h<<5)+h+e.charCodeAt(i))>>>0; return 'u'+h.toString(36); }
 async function saveLastView(source){ if(!NS()) return;   // source='' records the homepage
-  try{ await NS().putRecords([{kind:'lastview',u:viewerKey(),source:source||'',updatedAt:Date.now()}], {replaceWhere:{kind:'lastview',u:viewerKey()}}); invalidateRows(); }catch{} }
+  try{ await NS().putRecords([{kind:'lastview',u:viewerKey(),source:source||'',updatedAt:Date.now()}], {replaceWhere:{kind:'lastview',u:viewerKey()}}); }catch{} }   // no invalidate: nothing reads lastview from the whole-store cache
 async function readLastView(){ if(!NS()) return null;
   try{ const rows=await queryAll({kind:'lastview',u:viewerKey()}); const it=rows[0]; return it?{source:it.data.source||'',updatedAt:it.data.updatedAt||0}:null; }catch{ return null; } }
 async function tryRestoreLastView(){   // returns true if it opened a source; false → caller shows the homepage
