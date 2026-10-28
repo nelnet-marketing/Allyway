@@ -2009,7 +2009,12 @@ function migrateXcats(){
 }
 
 /* ── Disposition resolution (per-page, with rule default + page exclusion) ── */
-function excludedUrls(){ const s=new Set(); for(const [k,v] of Object.entries(state.dispositions)){ if(v.status==='out_of_scope'&&k.includes('|||')) s.add(k.split('|||')[1]); } return s; }
+function excludedUrls(){ const s=new Set(); for(const [k,v] of Object.entries(state.dispositions)){ if(v.status==='out_of_scope'&&k.includes('|||')) s.add(k.split('|||')[1]); }
+  // A "Same as" link that lands on an out-of-scope finding takes its page out too
+  for(const [k,v] of Object.entries(state.dispositions)){ if(!v.sameAs||!k.includes('|||')) continue;
+    const [tf,tu]=(linkTarget(state.dispositions,...k.split('|||'))||'').split('|||'); const t=state.dispositions[`${tf}|||${tu}`];
+    if(t&&(t.status==='out_of_scope'||s.has(tu))) s.add(k.split('|||')[1]); }
+  return s; }
 function resolvePage(fp,url,excl){
   if(excl.has(url)) return {status:'out_of_scope',_viaPage:true};
   const lk=linkTarget(state.dispositions,fp,url);
