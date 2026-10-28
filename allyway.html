@@ -312,6 +312,7 @@ a.bulk-sel{display:inline-flex;align-items:center;text-decoration:none;}
 .detail-tbl--pages th:nth-child(4),.detail-tbl--pages td:nth-child(4){width:175px;}
 .detail-tbl--pages th:nth-child(5),.detail-tbl--pages td:nth-child(5){width:auto;}
 .detail-tbl th:last-child,.detail-tbl td:last-child{min-width:340px;}
+.shared-note{font-size:13px;line-height:1.4;word-break:normal;overflow-wrap:break-word;color:var(--dark-gray);}
 textarea.notes-input{word-break:normal;overflow-wrap:break-word;display:block;resize:none;overflow:hidden;line-height:1.4;height:calc(2.8em + 15px);}   /* clamped to 2 lines */
 textarea.notes-input.is-open{height:auto;}
 .note-more{margin-top:3px;padding:2px 0;background:none;border:0;font:600 12px 'Red Hat Display',sans-serif;color:var(--green-ink);text-decoration:underline;cursor:pointer;}
@@ -2009,7 +2010,7 @@ function resolvePage(fp,url,excl){
   return {status:'untriaged'};
 }
 /* "Same as" link: a page's disposition can carry sameAs = another page's key (fp|||url). The page then
-   takes that page's status and assignee; its own note, fix and category stay its own. Links chain
+   takes that page's status and assignee, and its note, fix and category where the target sets one. Links chain
    (A→B→C resolves to C). Returns the final target's key, or null when there's no link or it loops. */
 function linkTarget(disps,fp,url){
   const start=`${fp}|||${url}`, seen=new Set(); let key=start;
@@ -2017,6 +2018,10 @@ function linkTarget(disps,fp,url){
     if(seen.has(key)) return null; seen.add(key); key=d.sameAs; }
 }
 function pageNotes(fp,url){ return (state.dispositions[`${fp}|||${url}`]||{}).notes||''; }
+// A page that follows another ("same as") shares that page's note when it has one, else keeps its own.
+function noteSource(fp,url){ const lk=url?linkTarget(state.dispositions,fp,url):null;
+  if(lk){ const [tf,tu]=lk.split('|||'); if(pageNotes(tf,tu)) return {fp:tf,url:tu,shared:true}; } return {fp,url,shared:false}; }
+function effNotes(fp,url){ const s=noteSource(fp,url); return pageNotes(s.fp,s.url); }
 // Effective assignee for a page: its own if set, else the rule-level owner (so a per-page
 // status override doesn't blank the inherited assignee). url='' asks the rule level directly.
 function effPeople(fp,url){ const lk=url?linkTarget(state.dispositions,fp,url):null;
@@ -2588,6 +2593,8 @@ function estRow(fp,url){ const e=estOf(fp,url), at=`data-fp="${esc(fp)}" data-ur
     ${tinyChecks(e?e.h:0,at)}
     <label class="chk" title="Enter estimated hours first"><input type="checkbox" data-role="estguess" ${at} ${e&&e.guess?'checked':''} ${e?'':'disabled'}> Complete guess</label></div>`; }
 function noteField(val,fp,url,label){
+  // A note coming from the page this one follows is shown, not editable — edit it on the page that owns it.
+  if(url && noteSource(fp,url).shared) return `<div class="shared-note" title="Follows the page this one is 'same as'">${esc(val)}<div class="stat-sub">(from linked page)</div></div>`;
   return `<textarea class="notes-input" rows="2" data-role="notes" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="${esc(label)}">${esc(val)}</textarea><button type="button" class="note-more" data-role="notemore" aria-expanded="false" hidden>Show more</button>`;
 }
 /* Clamp to 2 lines; reveal the toggle only when the text overflows (or is open). Needs a visible row. */
@@ -2653,7 +2660,7 @@ function buildDetail(fp){
       <td>${html?`<code>${esc(html.slice(0,180))}${html.length>180?'…':''}</code>`:''}</td>
       <td>${rp._linked?linkedStatus(rp,fp,url):statusSelect(fp,url,rp.status)+reopenedBadge(fp,url)+subField(fp,url,rp)+ageNote(rp)+(via?'<div class="stat-sub">(via page out-of-scope)</div>':'')+`<button type="button" class="pages-btn" data-role="samebtn" data-fp="${esc(fp)}" data-url="${esc(url)}" aria-label="Mark ${esc(url)} as the same finding as another page">↪ Same as…</button>`}</td>
       <td>${catSelect(fp,url)}</td>
-      <td>${noteField(pageNotes(fp,url),fp,url,`Notes for ${url}`)}
+      <td>${noteField(effNotes(fp,url),fp,url,`Notes for ${url}`)}
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px"><button class="pages-btn" type="button" data-add-url="${esc(url)}" aria-label="Add a manual finding on ${esc(url)}">＋ finding</button>${fixBtn(fp,url,true)}</div>${rp._linked?'':estRow(fp,url)}</td></tr>`;
   }).join('');
   const gN=globalUrls(fp,d.affected_pages).length;
@@ -2687,7 +2694,7 @@ function renderByPage(excl){
   document.getElementById('result-count').textContent=`${list.length} of ${pagesMap.size} pages`;
   const tb=document.getElementById('defects-tbody');
   tb.innerHTML=list.map(p=>{ const did=`detp-${cssId(p.url)}`; const r=pageRollup(p,excl);
-    const noted=p.elements.some(e=>pageNotes(e.fp,p.url)), gfix=p.elements.some(e=>inGlobalFix(e.fp,p.url));
+    const noted=p.elements.some(e=>effNotes(e.fp,p.url)), gfix=p.elements.some(e=>inGlobalFix(e.fp,p.url));
     const reop=p.elements.map(e=>reopenedBadge(e.fp,p.url)).find(Boolean)||'';
     const worstTitle=r.worstEl?r.worstEl.label:'';
     return `<tr class="rule-row ${r.untriaged?'rule-todo':'rule-done'}">
@@ -2714,7 +2721,7 @@ function buildPageDetail(url){
       <td>${e.html?`<code>${esc(e.html.slice(0,180))}${e.html.length>180?'…':''}</code>`:''}</td>
       <td>${rp._linked?linkedStatus(rp,e.fp,url):statusSelect(e.fp,url,rp.status)+subField(e.fp,url,rp)+ageNote(rp)+(via?'<div class="stat-sub">(via page out-of-scope)</div>':'')+`<button type="button" class="pages-btn" data-role="samebtn" data-fp="${esc(e.fp)}" data-url="${esc(url)}" aria-label="Mark ${esc(e.label)} on ${esc(url)} as the same finding as another contrast item">↪ Same as…</button>`}</td>
       <td>${catSelect(e.fp,url)}</td>
-      <td>${noteField(pageNotes(e.fp,url),e.fp,url,'Note')}
+      <td>${noteField(effNotes(e.fp,url),e.fp,url,'Note')}
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px"><button class="pages-btn" type="button" data-add-url="${esc(url)}" aria-label="Add a manual finding on ${esc(url)}">＋ finding</button>${fixBtn(e.fp,url,true)}</div>${rp._linked?'':estRow(e.fp,url)}</td></tr>
     <tr class="ai-row"><td colspan="7">${aiBar(`${e.fp}@@${url}`,e.label)}</td></tr>`;
   }).join('');
@@ -3218,10 +3225,10 @@ function collectWorkList(){
         if(wl.length){
           const st=WORKLIST_STATUSES.includes(rd.status)?rd.status:wl.sort((a,b)=>WORKLIST_STATUSES.indexOf(a)-WORKLIST_STATUSES.indexOf(b))[0];
           const sample=gp.map(u=>(d.page_html[u]||[])[0]).find(Boolean)||'';
-          const nu=gp.find(u=>pageNotes(d.fingerprint,u)), fu=gp.find(u=>fixOf(d.fingerprint,u));
+          const nu=gp.find(u=>effNotes(d.fingerprint,u)), fu=gp.find(u=>fixOf(d.fingerprint,u));
           rows.push({ _s:st, item:d.rule_title, stream, url:`(global fix — ${gp.length} pages)`,            grade: stream==='contrast' ? (d.category||'') : (d.severity||''),
             instances:d.instance_count||'', status:SMAP[st].label, assignee:effAssignee(d.fingerprint,gp[0]),
-            note:(nu?pageNotes(d.fingerprint,nu):rd.notes)||'', fix:(fu?fixOf(d.fingerprint,fu):rd.fix)||'', html:sample, cat:effCat(d.fingerprint,gp[0]), est:gp.map(u=>estOf(d.fingerprint,u)).find(Boolean)||null });
+            note:(nu?effNotes(d.fingerprint,nu):rd.notes)||'', fix:(fu?fixOf(d.fingerprint,fu):rd.fix)||'', html:sample, cat:effCat(d.fingerprint,gp[0]), est:gp.map(u=>estOf(d.fingerprint,u)).find(Boolean)||null });
         }
       }
       for(const url of d.affected_pages){ if(gset.has(url)) continue;
@@ -3229,7 +3236,7 @@ function collectWorkList(){
       rows.push({ _s:rp.status, item:d.rule_title, stream, url,
         grade: stream==='contrast' ? (d.page_category?.[url]||d.category||'') : (d.severity||''),
         instances:d.page_instances[url]||'', status:SMAP[rp.status].label, assignee:effAssignee(d.fingerprint,url),
-        note:sameAsNote(d.fingerprint,url)+(pageNotes(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).notes||''),
+        note:sameAsNote(d.fingerprint,url)+(effNotes(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).notes||''),
         fix:fixOf(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).fix||'',
         html:(d.page_html[url]||[])[0]||'', cat:effCat(d.fingerprint,url), est:estOf(d.fingerprint,url) }); } }
   }
