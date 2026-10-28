@@ -80,21 +80,29 @@ const sameDay = aggregateTrendRows([
 ]);
 check('two sources on one date collapse to one overall point with the combined total', sameDay.overall.length===1 && sameDay.overall[0].total===15 && sameDay.overall[0].sources===2);
 
-/* ── x position follows the calendar ── */
+/* ── x position follows the calendar ──
+   The chart draws one point per calendar month, the latest scan in it, placed at the month start —
+   scans are monthly, and an extra ad-hoc pull should not put two dots on top of each other. So the
+   axis is months elapsed, and the labels name a month rather than a day. */
 const xs = s => [...s.matchAll(/<circle cx="([\d.]+)"/g)].map(m=>parseFloat(m[1]));
 const spaced = renderTrendChartSVG([
-  {date:'2026-01-01', total:5}, {date:'2026-01-02', total:6}, {date:'2026-03-01', total:4}]);
+  {date:'2026-01-01', total:5}, {date:'2026-02-01', total:6}, {date:'2026-08-01', total:4}]);
 const [x1,x2,x3] = xs(spaced);
-check('dots are spaced by elapsed time (1 day vs 58 days), not evenly', (x2-x1) < (x3-x2)/10);
+check('dots are spaced by elapsed time (1 month vs 6 months), not evenly', (x2-x1) < (x3-x2)/3);
 check('out-of-order input is still drawn left to right by date', xs(renderTrendChartSVG([{date:'2026-03-01',total:1},{date:'2026-01-01',total:2}])).every((x,i,a)=>i===0||x>a[i-1]));
-check('first and last dates are labelled under the line', /Jan 1, 2026/.test(spaced) && /Mar 1, 2026/.test(spaced));
+check('first and last months are labelled under the line', /Jan 2026/.test(spaced) && /Aug 2026/.test(spaced));
+
+// two scans in one month are one dot, carrying the later scan's value
+const twice = renderTrendChartSVG([{date:'2026-01-05', total:9}, {date:'2026-01-27', total:4}]);
+check('a second scan in the same month replaces the first rather than adding a dot',
+  xs(twice).length === 1 && /Jan 2026, 4 active/.test(twice));
 
 /* ── hover / focus tooltip ── */
 const tipSvg = renderTrendChartSVG([
   {scanDate:'2026-08-01', active:1234, suppressed:500, verify:12, confirmedFixed:7, carriedForward:90},
   {scanDate:'2026-09-01', active:1100, suppressed:520, verify:30, confirmedFixed:0, carriedForward:0}]);
 check('every dot is keyboard-focusable', (tipSvg.match(/class="trend-pt" tabindex="0"/g)||[]).length === 2);
-check('each dot has an accessible name with date and value', /aria-label="Aug 1, 2026, 1,234 active/.test(tipSvg));
+check('each dot has an accessible name with month and value', /aria-label="Aug 2026, 1,234 active/.test(tipSvg));
 check('tooltip shows the extra detail (suppressed, fixed, carried forward)', /500 suppressed/.test(tipSvg) && /12 fixed/.test(tipSvg) && /90 carried forward/.test(tipSvg) && /7 confirmed fixed/.test(tipSvg));
 check('tooltip is hidden from screen readers (the dot already carries the label)', (tipSvg.match(/class="trend-tip" aria-hidden="true"/g)||[]).length === 2);
 const rects = [...tipSvg.matchAll(/<rect x="([-\d.]+)" y="([-\d.]+)" width="(\d+)" height="(\d+)"/g)].map(m=>m.slice(1).map(Number));
