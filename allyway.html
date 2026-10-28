@@ -1120,7 +1120,8 @@ async function queryAll(filter){
   if((sliced||SMALL_KINDS.has(filter.kind)) && !(_rows && Date.now()-_rowsAt<ROWS_TTL_MS)){   // a whole-store read already cached or in flight serves these too
     const ck=sliced?JSON.stringify(filter):'', hit=sliced&&_sliceCache.get(ck);
     if(hit && Date.now()-hit.at<ROWS_TTL_MS) return hit.rows;
-    const rows=await queryFiltered(filter).catch(()=>null);
+    // A store that fails falls back to the whole-store read; a bug of ours would hide there, so it rethrows.
+    const rows=await queryFiltered(filter).catch(e=>{ if(e instanceof TypeError||e instanceof ReferenceError) throw e; return null; });
     if(rows){ if(sliced) _sliceCache.set(ck,{at:Date.now(),rows}); return rows; } }
   return (await readAllRows()).filter(it=>{ const d=it.data||{};
     for(const k in filter) if(d[k]!==filter[k]) return false; return true; });

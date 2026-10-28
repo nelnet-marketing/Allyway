@@ -107,13 +107,36 @@ const ordered = await queryAll({ kind: 'disp', source: 'Propelr' });
 eq('store order preserved (newestByKey needs newest-first)',
   ordered.map(r => r.data.dkey).slice(0, 3), ['rule-0', 'rule-1', 'rule-2']);
 
-// a failed pass must not be cached
-const flaky = { n: 0, queryData() { this.n++; return this.n === 1 ? Promise.reject(new Error('boom')) : Promise.resolve({ items: [], cursor: null }); } };
-const q2 = new Function('NS', src + '; return queryAll;')(() => flaky);
+/* The failure paths. A sliced kind tries a filtered read first and falls back to the whole-store
+   read when that comes back short or fails — safe, because readAllRows returns the WHOLE store or
+   throws, never part of it. So a filtered failure must still answer completely, and only a failure
+   of the fallback itself may surface. Reading as empty is the one answer neither may give. */
+function filteredFailsStore(rows) {
+  const real = makeStore(rows);
+  return {
+    get calls() { return real.calls; },
+    queryData(args) { return args.filter ? Promise.reject(new Error('filtered read failed')) : real.queryData(args); },
+  };
+}
+const q2 = new Function('NS', src + '; return queryAll;')(() => filteredFailsStore(rows));
+// .catch keeps a regression here a reported failure rather than an uncaught rejection that kills the run
+const sliceFallback = await q2({ kind: 'disp', source: 'Propelr' }).catch(e => `threw: ${e.message}`);
+eq('a failed slice read still returns every disposition', sliceFallback.length, 200);
+
+// both paths down: the only honest answer is the error, never an empty result read as untriaged
+const dead = { queryData() { return Promise.reject(new Error('store down')); } };
+const q3 = new Function('NS', src + '; return queryAll;')(() => dead);
 let threw = false;
-try { await q2({ kind: 'disp' }); } catch { threw = true; }
-eq('a rejected pass propagates', threw, true);
-eq('a rejected pass is not cached (retry re-requests)', (await q2({ kind: 'disp' })).length, 0);
+try { await q3({ kind: 'disp' }); } catch { threw = true; }
+eq('a store that is down propagates rather than reading as empty', threw, true);
+
+// 'nope' is in neither SLICE_KINDS nor SMALL_KINDS, so it goes straight to the whole-store read
+const flaky = { n: 0, queryData() { this.n++; return this.n === 1 ? Promise.reject(new Error('boom')) : Promise.resolve({ items: [], cursor: null }); } };
+const q4 = new Function('NS', src + '; return queryAll;')(() => flaky);
+threw = false;
+try { await q4({ kind: 'nope' }); } catch { threw = true; }
+eq('a rejected whole-store pass propagates', threw, true);
+eq('a rejected pass is not cached (retry re-requests)', (await q4({ kind: 'nope' })).length, 0);
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exit(fails ? 1 : 0);
