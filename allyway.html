@@ -1324,7 +1324,7 @@ async function renderLeadershipView(selectedSrc){
    Global-fix rules collapse to one item here exactly as in renderStats, so card and tab agree. */
 const SUMMARY_V = 3;   // bump when this math changes — older persisted summaries are ignored, then recomputed
 function computeSummary(defects, contrast, dispositions, manual){
-  const excl=new Set(); for(const [k,v] of Object.entries(dispositions)){ if(v.status==='out_of_scope'&&k.includes('|||')) excl.add(k.split('|||')[1]); }
+  const excl=excludedUrlsFor(dispositions);
   const res=(fp,url)=>{ if(excl.has(url))return 'out_of_scope';
     const lk=linkTarget(dispositions,fp,url); if(lk){ const [tf,tu]=lk.split('|||'); return res(tf,tu); }   // "same as" page
     const pg=dispositions[`${fp}|||${url}`]; if(pg&&pg.status)return pg.status; const rd=dispositions[fp]; if(rd&&rd.status)return rd.status; return 'untriaged'; };
@@ -2030,12 +2030,7 @@ function migrateXcats(){
 }
 
 /* ── Disposition resolution (per-page, with rule default + page exclusion) ── */
-function excludedUrls(){ const s=new Set(); for(const [k,v] of Object.entries(state.dispositions)){ if(v.status==='out_of_scope'&&k.includes('|||')) s.add(k.split('|||')[1]); }
-  // A "Same as" link that lands on an out-of-scope finding takes its page out too
-  for(const [k,v] of Object.entries(state.dispositions)){ if(!v.sameAs||!k.includes('|||')) continue;
-    const [tf,tu]=(linkTarget(state.dispositions,...k.split('|||'))||'').split('|||'); const t=state.dispositions[`${tf}|||${tu}`];
-    if(t&&(t.status==='out_of_scope'||s.has(tu))) s.add(k.split('|||')[1]); }
-  return s; }
+function excludedUrls(){ return excludedUrlsFor(state.dispositions); }
 function resolvePage(fp,url,excl){
   if(excl.has(url)) return {status:'out_of_scope',_viaPage:true};
   const lk=linkTarget(state.dispositions,fp,url);
@@ -2055,6 +2050,13 @@ function linkTarget(disps,fp,url){
   for(;;){ const d=disps[key]; if(!d||!d.sameAs) return key===start?null:key;
     if(seen.has(key)) return null; seen.add(key); key=d.sameAs; }
 }
+// Pages taken out of scope: marked out_of_scope directly, or linked "Same as" a finding that is. Shared by
+// the filters and computeSummary so the card and the source view can't count different pages.
+function excludedUrlsFor(disps){ const s=new Set(); for(const [k,v] of Object.entries(disps)){ if(v.status==='out_of_scope'&&k.includes('|||')) s.add(k.split('|||')[1]); }
+  for(const [k,v] of Object.entries(disps)){ if(!v.sameAs||!k.includes('|||')) continue;
+    const [tf,tu]=(linkTarget(disps,...k.split('|||'))||'').split('|||'); const t=disps[`${tf}|||${tu}`];
+    if(t&&(t.status==='out_of_scope'||s.has(tu))) s.add(k.split('|||')[1]); }
+  return s; }
 function pageNotes(fp,url){ return (state.dispositions[`${fp}|||${url}`]||{}).notes||''; }
 // A page that follows another ("same as") shares that page's note when it has one, else keeps its own.
 function noteSource(fp,url){ const lk=url?linkTarget(state.dispositions,fp,url):null;

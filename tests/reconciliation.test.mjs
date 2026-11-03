@@ -31,11 +31,11 @@ function loadComputeReconciliation() {
   const written = [];   // what applyReconciliationEffects persists
   const ctx = { console, written, invalidateRows(){}, NS: () => ({ putRecords: async (rows) => { written.push(...rows); } }), openPeople(){}, document:{ getElementById: () => el, querySelector: () => el, querySelectorAll: () => [], addEventListener(){} } };
   vm.createContext(ctx);
-  new vm.Script(statuses + '\n' + bucket + '\n' + middle + '\n' + dispHelpers + '\n;({computeReconciliation,reopenInto,applyReconciliationEffects,written});').runInContext(ctx);
-  return new vm.Script('({computeReconciliation,reopenInto,applyReconciliationEffects,written})').runInContext(ctx);
+  new vm.Script(statuses + '\n' + bucket + '\n' + middle + '\n' + dispHelpers + '\n;({computeReconciliation,computeSummary,reopenInto,applyReconciliationEffects,written});').runInContext(ctx);
+  return new vm.Script('({computeReconciliation,computeSummary,reopenInto,applyReconciliationEffects,written})').runInContext(ctx);
 }
 
-const { computeReconciliation, reopenInto, applyReconciliationEffects, written } =loadComputeReconciliation();
+const { computeReconciliation, computeSummary, reopenInto, applyReconciliationEffects, written } =loadComputeReconciliation();
 
 /* ── Fixtures (all on the standard stream) ───────────────────────────── */
 const oldScanRows = [
@@ -167,6 +167,15 @@ check("reopened page row is written untriaged with a fix-didn't-take flag", page
 check('its notes, fix text and category are kept', pageRow.notes === 'swapped the colour' && pageRow.fix === '## fix text' && pageRow.cat === 'cms');
 check('the Fixed claim, owner and age are dropped', !('assignee' in pageRow) && !('since' in pageRow));
 check('no rule-level row is written for a page-only reopen', !written.some(w => w.dkey === 'P-mixed'));
+
+/* ── Summary math agrees with the filters on pages taken out of scope ── */
+// R1's /q is out of scope; R2's /p links "Same as" it, so /p leaves scope for every rule on it
+const sDefects = { R1: { fingerprint:'R1', affected_pages:['/q','/keep'] }, R2: { fingerprint:'R2', affected_pages:['/p','/keep'] }, R3: { fingerprint:'R3', affected_pages:['/p'] } };
+const sDisp = { 'R1|||/q': { status:'out_of_scope' }, 'R1|||/keep': { status:'need_fix' },
+  'R2|||/p': { sameAs:'R1|||/q' }, 'R2|||/keep': { status:'need_fix' } };
+const sm = computeSummary(sDefects, {}, sDisp, []);
+check('a rule with no decision on a page taken out of scope through a link is not untriaged', sm.untriaged === 0);
+check('that page counts as suppressed for every rule on it, not active', sm.suppressed === 3 && sm.active === 2);
 
 console.log(fails ? `\n${fails} CHECK(S) FAILED` : '\nALL PASS');
 process.exit(fails ? 1 : 0);
