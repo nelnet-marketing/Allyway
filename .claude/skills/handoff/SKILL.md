@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Draft the "accessibility review is complete" handoff email for one or more Allyway sources. Pulls live counts and blocked items from the Rideshare store, groups the Needs Approval items by root cause, and leaves an Outlook draft for review. Use when Teisha says "handoff Propelr", "draft the handoff email", "Propelr is ready to send to Jose", "email the PMs about ScholarNet", or names sources she has finished triaging.
+description: Draft the handoff email for one or more Allyway sources — either the full "accessibility review is complete" remediation handoff or a narrow ask for one person who holds access the team lacks (e.g. HubSpot). Pulls live counts from the Rideshare store, groups blocked items by root cause (full handoff) or counts a person's items by status (partial), and leaves an Outlook draft for review. Use when Teisha says "handoff Propelr", "draft the handoff email", "Propelr is ready to send to Jose", "email the PMs about ScholarNet", or names sources she has finished triaging.
 ---
 
 # Allyway handoff email
@@ -11,6 +11,19 @@ the blocked items arrive grouped by root cause instead of as a list of rule name
 
 Invoked as `/handoff Propelr`, `/handoff Propelr ScholarNet BenefitEd`, or with no arguments
 (then ask which sources).
+
+## Step 0 — Which kind of request?
+
+After the sources are known, ask once (AskUserQuestion) which email this is, per source:
+
+- **Full fixes** — the dev lead does the bulk of the remediation (e.g. an NBS site like Propelr).
+  Use the main template, Steps 1–4 as written.
+- **Partial fixes** — only a small slice goes to one person because they hold access she doesn't
+  (BenefitEd in November 2026: Jose has HubSpot, she doesn't). Use the **Partial-fix variant**
+  at the bottom of the template section. Skip Step 3 (no Needs Approval cluster); instead count
+  that person's live items by status. Ask who it's for and what the access is.
+
+Don't guess from the numbers — a site with few Active findings can still be a full handoff.
 
 ## Step 1 — Read the live numbers
 
@@ -47,6 +60,17 @@ truncated count to a stakeholder is the worst possible place for it to resurface
 A single small filtered read is fine when you expect fewer rows than the limit — e.g. one
 source's `needs_approval` items. Anything that could exceed the limit gets the unfiltered pass.
 
+**Drop out-of-scope pages before counting anything.** Disposition rows on a page that's out of
+scope still carry their old status. A page is out of scope if any row on it is `out_of_scope`,
+or if it's linked "Same as" a finding that is (`excludedUrlsFor` in `allyway.html`). On
+BenefitEd in November 2026, 221 `needs_approval` rows sat on redirected resource pages that were
+all out of scope — the live Needs Approval count was 0. Counting raw rows would have put a
+false question to the dev. Resolve each row's status the way `computeSummary` does (excluded
+URL → out of scope, then Same-as target, then page row, then rule row) and count only what's live.
+
+If the summary disagrees with the in-app counts, the summary is wrong, not the app: before
+November 2026 `computeSummary` ignored Same-as exclusions (fixed — one shared helper now).
+
 ## Step 2 — Pre-flight checks
 
 Run these before drafting and report what you find:
@@ -70,6 +94,9 @@ Run these before drafting and report what you find:
 
 ## Step 3 — Group the blocked items by root cause
 
+(Full-fix emails only. If there are no *live* Needs Approval items, cluster the live `question`
+items the same way — BenefitEd's were third-party widgets: the HubSpot chat and a video player.)
+
 Read the `needs_approval` dispositions for the source:
 
 ```
@@ -92,25 +119,36 @@ navigating the site, not a URL list.
 Use the template below, filled with the live numbers. Then create an Outlook draft:
 
 ```
-CreateDraftMessage  → subject, body, To: Jose, Cc: Felicia, Kylie, Mike, Ryan, Randall
+CreateDraftMessage  → subject, body, To: Jose, Cc: Felicia, Mike, Ryan, Randall
 ```
 
 **Never send.** She reviews and sends.
 
 ### Who it goes to
 
-The same six every time, whatever sources are in the email — don't re-ask her:
+**Full-fix handoff** — the same five every time, whatever sources are in the email:
 
 - **To:** Jose, the dev lead who owns remediation.
-- **Cc:** Felicia and Kylie, the two PMs, plus Mike, Ryan and Randall.
+- **Cc:** Felicia (PM), plus Mike, Ryan and Randall.
 
-The PMs are not per-source. Both are copied on every handoff, and a multi-source email doesn't
-change the Cc.
+Kylie was on the September 2026 Propelr email but is deliberately off this list — she may no
+longer be at Nelnet. Don't add her back. The Cc isn't per-source; a multi-source email doesn't
+change it.
 
-**First names only, deliberately — no addresses in this file.** Resolve each name through the
-Microsoft 365 people tools at draft time and show her the resolved list before creating the
-draft. Never guess or construct an address from a pattern; a wrong one either bounces or
-reaches a stranger. If a name resolves to more than one person, ask rather than picking.
+**Partial-fix request** — To is whoever holds the access. Don't assume the standing Cc: it's a
+narrow ask to one person, so ask her whether to drop the Cc or keep it.
+
+**First names only, deliberately — no addresses in this file.** Resolve the names and show her
+the resolved list before creating the draft. `search_people` needs `People.Read`, which the
+connector may not have; if it 403s, read the sent Propelr email (`SearchMessages`) for full
+names, and let `CreateDraftMessage` resolve them. Then **check the draft's returned Cc against
+the list** — a name that doesn't resolve is dropped silently (that's how Kylie went missing).
+Never guess or construct an address from a pattern; a wrong one either bounces or reaches a
+stranger. If a name resolves to more than one person, ask rather than picking.
+
+**Edits to a draft she has open get overwritten.** If she's editing the draft in Outlook, an
+`UpdateDraft` is accepted and then clobbered by her autosave. Ask her to close it first, or give
+her the text to paste.
 
 ## Template
 
@@ -180,9 +218,58 @@ Nelnet Rideshare, so you'll need to be on the VPN — reach out if you have any 
 Once you confirm, <Source> is fully closed for this review cycle 🙂
 ```
 
+### Partial-fix variant
+
+For a narrow ask to one person who holds access she doesn't. Calibrated against her own final
+version of the BenefitEd email to Jose (November 2026). Numbers are *that person's live items*, split
+by status — not the site totals. Count only items assigned to them after dropping out-of-scope
+pages, and only the ones that really are the third-party slice (BenefitEd: 17 HubSpot items,
+4 Need to Fix + 13 Question; the other live items belonged to Matt Stanley and were not part of
+this ask).
+
+```
+Subject: <Source> <Mon> ARC Scan Results
+
+Hi <Name>,
+
+I found <n> <third-party> issues during my ARC Scan triage of <Source>: <a> marked “Need to fix” and <b> marked “Question”. I’ve assigned them all to you in Allyway. You’ll need to be on the VPN, so let me know if you don’t have access.
+
+Could you take a look and let me know if we can fix them?
+
+If you fix something, reassign it back to me and/or update the status to “In review.”
+
+If we can’t fix it, add a note explaining why, set the status to “Can’t fix — third party,” and choose “<reason>” under “Blocked by” (or whatever option makes the most sense).
+
+I know you have <their other project> on your plate, so just let me know when you think you’ll be able to get to these.
+
+Happy to walk through anything if that would be helpful 🙂
+
+Thanks,
+```
+
+`<Mon>` is the month of the scan being triaged (BenefitEd: "Oct"). Stop at "Thanks," — her Outlook
+signature is appended automatically, so don't type a name block into the body.
+
+Things her version gets right, and the traps in the first draft:
+
+- **Short, separate paragraphs** — the ask, the fix path and the can't-fix path each get their own
+  line so a dev can scan them. Don't merge them back into one block.
+- **No `#<source>` deep link.** The app has no hash routing and Rideshare's iframe swallows the
+  hash, so it lands on the dashboard. Just say "in Allyway".
+- **VPN note with an offer to help** ("let me know if you don't have access"). Keep it.
+- **Use the app's exact labels:** status "Can't fix — third party"; the picker is called
+  "Blocked by"; the option is "HubSpot Form" (not "Hubspot"); "In review".
+- **Name what the items really are** — BenefitEd's were HubSpot forms *and* the HubSpot chat,
+  so "form and chat", not "form".
+- **Ask when, not how long** ("let me know when you think you'll be able to get to these") and
+  acknowledge their workload — it's a favour on top of a full plate, not a handoff.
+- Confirm every item is assigned to that person before saying "I've assigned them all to you";
+  items that belong to someone else (BenefitEd: Matt Stanley's Sprout video and 404 redirects)
+  aren't in it.
+
 Multiple sources: keep the opening and closing, and give each source its own short paragraph
 with its own counts and its own blocked-items question. Put the source with the most active
-findings first. Don't merge their numbers into a single total — the PMs plan per site. Sources
+findings first. Don't merge their numbers into a single total — PM planning is per site. Sources
 in the verification state get their own paragraph too — don't drop them because they have no
 active work, and don't imply someone needs to write code for them.
 
