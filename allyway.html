@@ -320,6 +320,23 @@ textarea.notes-input{word-break:normal;overflow-wrap:break-word;display:block;re
 textarea.notes-input.is-open{height:auto;}
 .note-more{margin-top:3px;padding:2px 0;background:none;border:0;font:600 12px 'Red Hat Display',sans-serif;color:var(--green-ink);text-decoration:underline;cursor:pointer;}
 .note-more:focus-visible{outline:2px solid currentColor;outline-offset:2px;}
+/* Manual findings: a narrow Page column so the Note gets the room, and a 3-line note box */
+td.m-title{min-width:170px;}
+td.m-page{max-width:130px;}
+.m-url{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+td.m-note{min-width:340px;width:38%;}
+td.m-note textarea.notes-input{height:calc(4.2em + 15px);}
+td.m-note textarea.notes-input.is-open{height:auto;}
+/* Pager — same markup under every table: range left, prev/next centre, rows-per-page right */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px 12px;margin:10px 0 4px;font-family:'Red Hat Display',sans-serif;font-size:12.5px;color:var(--dark-gray);}
+.pager__nav,.pager__size{display:flex;align-items:center;gap:8px 12px;}
+.pager__size{justify-self:end;}
+.pager select{padding:0 8px;height:30px;border:1.5px solid var(--field-border);border-radius:7px;font-size:13px;font-family:'Open Sans',sans-serif;color:var(--dark-gray);background:var(--white);}
+.pager .pages-btn{min-height:30px;padding:0 14px;font-size:13px;}
+.pager .pages-btn:disabled{opacity:.5;cursor:not-allowed;}
+.pager .pages-btn:disabled:hover{background:var(--white);color:var(--dark-gray);}
+.pager [data-pg-status]:focus-visible{outline:2px solid var(--dark-green);outline-offset:2px;}
+@media (max-width:680px){.pager{grid-template-columns:1fr;justify-items:center;}.pager__size{justify-self:center;}}
 .detail-tbl .status-sel,.detail-tbl .subfield,.detail-tbl .who{max-width:156px;}   /* px, not %, or the select's own text re-widens the col */
 .pg-excluded td{opacity:.55;text-decoration:line-through;}
 details.suppressed-sec{margin-top:20px;border:1px solid var(--hairline);border-radius:var(--r);background:var(--white);}
@@ -676,14 +693,14 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
           <tbody id="defects-tbody"></tbody>
         </table>
       </div>
+      <div id="defects-pager"></div>
       <details class="suppressed-sec" id="manual-sec" open>
         <summary id="manual-summary">Manual findings &amp; observations (0)</summary>
         <div class="card-body">
           <button class="btn-primary" id="btn-add-manual" type="button" style="margin-bottom:12px">＋ Add finding</button>
           <div id="manual-form" hidden></div>
-          <div class="tbl-wrap"><table class="defects"><thead><tr>
-            <th>Title</th><th>Page</th><th>Type</th><th>Severity</th><th>Category</th><th>Status</th><th>Assignee</th><th>Note</th><th>Fix</th><th></th>
-          </tr></thead><tbody id="manual-tbody"></tbody></table></div>
+          <div class="tbl-wrap"><table class="defects"><thead><tr id="manual-head"></tr></thead><tbody id="manual-tbody"></tbody></table></div>
+          <div id="manual-pager"></div>
         </div>
       </details>
 
@@ -692,7 +709,8 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <div class="card-body"><div class="tbl-wrap">
           <table class="defects"><thead><tr><th>Rule</th><th>Page / scope</th><th>Why suppressed</th></tr></thead>
           <tbody id="suppressed-tbody"></tbody></table>
-        </div></div>
+        </div>
+        <div id="suppressed-pager"></div></div>
       </details>
     </div>
   </div></div>
@@ -1471,6 +1489,7 @@ function activateSource(){
   // the one "Standard rules" tab ('') is that same whole view under another name.
   const _n=catCounts(); activeStream='standard'; activeCat=CATS.some(c=>_n[c.v]>0)?ALL_CATS:'';
   groupBy='signature'; sortKey='sev'; sortDir=1; _pin=null; _catHold.clear();
+  PG.page={}; PG.sig={}; manualSort={key:'',dir:1}; manualOrder=[];
   syncGroupByButtons();   // the reset above must reach the pills, not just the variable
   for(const k of Object.keys(orders)) orders[k]=[];
   const ct=document.getElementById('tab-contrast'); const cCount=Object.keys(contrast).length;
@@ -1498,6 +1517,7 @@ function jumpToRule(fp){
   ['filter-search','filter-status','filter-assignee'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('filter-sev').value='';
   if(activeStream==='contrast' && contrastGroupBy!=='signature'){ contrastGroupBy='signature'; syncGroupByButtons(); if(!orders[orderKey()].length) recomputeOrder(); }
+  PG.reveal=fp;   // renderTable opens the page that holds this rule
   render();
   const did='det-'+cssId(fp), row=document.getElementById(did);
   if(!row) return;
@@ -2387,7 +2407,8 @@ function renderTable(all,excl){
     return matchPairs(pairs,excl,f); });
   document.getElementById('result-count').textContent=`${list.length} of ${all.length} rules`;
   const tb=document.getElementById('defects-tbody');
-  tb.innerHTML=list.map(d=>{
+  const pg=pgSlice('main',list,mainSig(f),PG.reveal?list.findIndex(d=>d.fingerprint===PG.reveal):-1); PG.reveal=null;
+  tb.innerHTML=pg.rows.map(d=>{
     const fp=d.fingerprint, g=gradeOf(d);
     const r=ruleRollup(d,excl), did=`det-${cssId(fp)}`;
     return `<tr class="rule-row ${r.untriaged?'rule-todo':'rule-done'}" data-fp="${esc(fp)}">
@@ -2401,6 +2422,7 @@ function renderTable(all,excl){
     </tr>
     <tr class="detail-row hidden" id="${did}" data-built="0"><td colspan="5"></td></tr>`;
   }).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--gray);padding:24px">No rules match the filters.</td></tr>`;
+  pgBar('main','defects-pager',pg);
 }
 
 const AI_SYSTEM="You are a WCAG 2.1 accessibility expert helping an auditor triage automated accessibility-scan findings, in a running conversation about ONE scan rule.\n\nYour FIRST reply (the rule explanation) must use short blocks, each on its own line, separated by a blank line, in exactly this order:\n\nThis rule maps to **<number> <name> (Level A or AA)**.\n\n<1–2 sentences on why it fails real users.>\n\n**Remediation:**\n\n<1–3 sentences of concrete fix.>\n\n**Source:** <url>\n\nFor FOLLOW-UP questions, answer conversationally and concisely (a few sentences or short blocks); do not repeat the whole structure unless asked.\n\nAlways: only cite success criteria that genuinely exist in WCAG 2.1 — never invent an SC number; if the rule is advisory or best-practice rather than a strict A/AA failure, say so. When you cite a specific criterion, include its official W3C 'Understanding' URL (https://www.w3.org/WAI/WCAG21/Understanding/<slug>.html); if unsure of the exact slug, use https://www.w3.org/WAI/WCAG21/quickref/ — never guess a URL. Keep to WCAG/accessibility for this rule; if asked something unrelated, say it's outside what you can help with here. Use ** for bold. No other markdown, no headings, no preamble.";
@@ -2656,7 +2678,7 @@ function fitNote(ta){
   else { ta.style.height=''; }
   btn.hidden=!open && ta.scrollHeight<=ta.clientHeight+1;
 }
-function fitNotes(root){ root.querySelectorAll('textarea[data-role=notes]').forEach(fitNote); }
+function fitNotes(root){ root.querySelectorAll('textarea[data-role=notes],textarea[data-role=mnote]').forEach(fitNote); }
 /* The "Why does this fail WCAG?" panel. `key` is the rule fingerprint in the rule drill-down and
    fp@@url in the page drill-down, so two open pages never share one panel id or thread. */
 function aiBar(key,title){ const aiId=`ai-out-${cssId(key)}`;
@@ -2744,7 +2766,8 @@ function renderByPage(excl){
     return true; });
   document.getElementById('result-count').textContent=`${list.length} of ${pagesMap.size} pages`;
   const tb=document.getElementById('defects-tbody');
-  tb.innerHTML=list.map(p=>{ const did=`detp-${cssId(p.url)}`; const r=pageRollup(p,excl);
+  const pg=pgSlice('main',list,mainSig(f));
+  tb.innerHTML=pg.rows.map(p=>{ const did=`detp-${cssId(p.url)}`; const r=pageRollup(p,excl);
     const noted=p.elements.some(e=>effNotes(e.fp,p.url)), gfix=p.elements.some(e=>inGlobalFix(e.fp,p.url));
     const reop=p.elements.map(e=>reopenedBadge(e.fp,p.url)).find(Boolean)||'';
     const worstTitle=r.worstEl?r.worstEl.label:'';
@@ -2759,6 +2782,7 @@ function renderByPage(excl){
     </tr>
     <tr class="detail-row hidden" id="${did}" data-built="0"><td colspan="5"></td></tr>`;
   }).join('')||`<tr><td colspan="5" style="text-align:center;color:var(--gray);padding:24px">No pages match the filters.</td></tr>`;
+  pgBar('main','defects-pager',pg);
 }
 function buildPageDetail(url){
   const p=viewPages().get(url); if(!p) return ''; const excl=excludedUrls();
@@ -2806,8 +2830,48 @@ function renderSuppressed(all,excl){
     const st=SMAP[rp.status]; const why=st.label+(rp.reason?` — ${rp.reason}`:'')+(rp.xcat?` — ${rp.xcat}`:'');
     rows.push(`<tr><td><strong>${esc(d.rule_title)}</strong></td><td>${esc(url||'(rule-wide)')}</td><td>${esc(why)}</td></tr>`); } }
   document.getElementById('suppressed-summary').textContent=`Suppressed (${rows.length}) — not counted, data retained`;
-  document.getElementById('suppressed-tbody').innerHTML=rows.join('')||`<tr><td colspan="3" style="text-align:center;color:var(--gray);padding:18px">Nothing suppressed yet.</td></tr>`;
+  const pg=pgSlice('suppressed',rows,activeStream+'|'+activeCat);   // the filter bar doesn't touch this table
+  pgBar('suppressed','suppressed-pager',pg);
+  document.getElementById('suppressed-tbody').innerHTML=pg.rows.join('')||`<tr><td colspan="3" style="text-align:center;color:var(--gray);padding:18px">Nothing suppressed yet.</td></tr>`;
 }
+
+/* ── Pager: one look under every table. Rows per page and the page are each kept per table. ── */
+// Manual findings rows are taller than the others, so that table starts at 5 and offers it as a choice.
+const PG_DEFAULT={main:10,suppressed:10,manual:5};
+const pgSizes = key => [...(key==='manual'?[5]:[]),10,25,50,100,0];   // 0 = All; the pager hides at or below the smallest
+const PG={size:{...PG_DEFAULT},page:{},sig:{},reveal:null};   // reveal: a rule fingerprint to bring onto the page shown
+const mainSig = f => [activeStream,activeCat,groupBy,sortKey,sortDir,JSON.stringify(f)].join('|');
+// Slices one table's rows; the page goes back to 1 whenever `sig` (tab, filters, sort) changes.
+function pgSlice(key,rows,sig,at=-1){   // `at`: index of a row that must be on the page shown
+  if(PG.sig[key]!==sig){ PG.sig[key]=sig; PG.page[key]=1; }
+  const size=PG.size[key]||rows.length||1, pages=Math.max(1,Math.ceil(rows.length/size));
+  if(at>=0) PG.page[key]=Math.floor(at/size)+1;
+  const page=Math.min(Math.max(1,PG.page[key]||1),pages), from=(page-1)*size;
+  PG.page[key]=page;
+  return {key,rows:rows.slice(from,from+size),page,pages,from:rows.length?from+1:0,to:Math.min(rows.length,from+size),total:rows.length}; }
+function pgBar(key,hostId,s){
+  const host=document.getElementById(hostId); if(!host) return;
+  const sizes=pgSizes(key);
+  if(s.total<=sizes[0]){ host.innerHTML=''; return; }
+  const sizeId=`pg-size-${key}`;
+  const nav=(to,html,off)=>`<button type="button" class="pages-btn" data-pg-key="${key}" data-pg-to="${to}"${off?' disabled':''}>${html}</button>`;
+  host.innerHTML=`<div class="pager" role="group" aria-label="Table pages" data-pg-group="${key}">
+    <span class="pager__range" data-pg-status tabindex="-1" role="status" aria-live="polite">${s.from}–${s.to} of ${s.total}</span>
+    <div class="pager__nav">${nav('prev','<span aria-hidden="true">‹</span> Previous<span class="sr-only"> page</span>',s.page<=1)}<span>Page ${s.page} of ${s.pages}</span>${nav('next','Next<span class="sr-only"> page</span> <span aria-hidden="true">›</span>',s.page>=s.pages)}</div>
+    <div class="pager__size"><label for="${sizeId}">Rows per page</label><select id="${sizeId}" data-pg-key="${key}" data-pg-size>${sizes.map(n=>`<option value="${n}"${PG.size[key]===n?' selected':''}>${n||'All'}</option>`).join('')}</select></div></div>`; }
+// Redraw, then put focus back on the control that was used (or the range, if it just went inert).
+function pgRedraw(key,sel){
+  render();
+  const bar=document.querySelector(`.pager[data-pg-group="${key}"]`); if(!bar) return;
+  const el=bar.querySelector(`${sel}:not(:disabled)`)||bar.querySelector('[data-pg-status]'); if(el) el.focus({preventScroll:true});
+  const wrap=bar.parentElement.previousElementSibling; if(wrap && wrap.getBoundingClientRect().top<0) wrap.scrollIntoView({block:'start'}); }
+document.addEventListener('click', e=>{
+  const b=e.target.closest('button[data-pg-to]'); if(!b||b.disabled) return;
+  const key=b.dataset.pgKey; PG.page[key]=(PG.page[key]||1)+(b.dataset.pgTo==='next'?1:-1);
+  pgRedraw(key,`[data-pg-to="${b.dataset.pgTo}"]`); });
+document.addEventListener('change', e=>{
+  const s=e.target.closest('select[data-pg-size]'); if(!s) return;
+  const key=s.dataset.pgKey; PG.size[key]=parseInt(s.value,10)||0; PG.page[key]=1; pgRedraw(key,'select[data-pg-size]'); });
 
 /* ── Manual findings & observations ─────────────────────────── */
 const genId=()=>'m_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -2824,26 +2888,63 @@ function manualFiltered(list,excl){ const f=filters(), p=pinFor(excl,f);
 const manualEstRow = m => `<div class="est-row"><label>Est. hours <input type="number" class="est-in" min="0" step="0.25" value="${m.est>0?m.est:''}" data-role="est" data-mid="${esc(m.id)}" aria-label="Estimated hours to fix ${esc(m.title)}"></label>
     ${tinyChecks(m.est||0,`data-mid="${esc(m.id)}"`)}
     <label class="chk" title="Enter estimated hours first"><input type="checkbox" data-role="estguess" data-mid="${esc(m.id)}" ${m.est>0&&m.estGuess?'checked':''} ${m.est>0?'':'disabled'}> Complete guess</label></div>`;
+/* Sorting: like the rules table, the order is frozen when a header is clicked, so editing a row's
+   status or category never makes it jump away. New findings join the end. */
+const MCOLS=[['title','Title'],['url','Page'],['type','Type'],['sev','Severity'],['cat','Category'],['status','Status'],['assignee','Assignee'],['note','Note']];
+let manualSort={key:'',dir:1}, manualOrder=[];
+function manualVal(m,k){
+  switch(k){
+    case 'title': return (m.title||'').toLowerCase();
+    case 'url': return (m.url||'').toLowerCase();
+    case 'type': return m.type==='a11y'?0:1;
+    case 'sev': return SEV_RANK[(m.severity||'').toUpperCase()]??99;
+    case 'cat': return ((CATS.find(c=>c.v===m.cat)||{}).label||'').toLowerCase();
+    case 'status': return STATUSES.findIndex(s=>s.v===(m.status||'untriaged'));
+    case 'assignee': return peopleLabel(m.assignee).toLowerCase();
+    default: return (m.note||'').toLowerCase(); } }
+function sortManual(k){
+  manualSort = manualSort.key===k ? {key:k,dir:-manualSort.dir} : {key:k,dir:1};
+  const blank=v=>v===''||v===99, d=manualSort.dir;   // blanks sink to the bottom either way
+  manualOrder=(state.manualFindings||[]).slice().sort((a,b)=>{ const va=manualVal(a,k), vb=manualVal(b,k);
+    if(blank(va)!==blank(vb)) return blank(va)?1:-1;
+    return va<vb?-d:va>vb?d:manualVal(a,'title').localeCompare(manualVal(b,'title')); }).map(m=>m.id);
+  render(); }
+function setManualHead(){
+  document.getElementById('manual-head').innerHTML=MCOLS.map(([k,label])=>
+    `<th class="sortable" tabindex="0" data-msort="${k}" aria-sort="${manualSort.key===k?(manualSort.dir===1?'ascending':'descending'):'none'}">${label} <span class="arr">▲▼</span></th>`).join('')+'<th></th>'; }
+document.getElementById('manual-head').addEventListener('click', e=>{ const th=e.target.closest('th[data-msort]'); if(th) sortManual(th.dataset.msort); });
+document.getElementById('manual-head').addEventListener('keydown', e=>{
+  if(e.key!=='Enter' && e.key!==' ') return;
+  const th=e.target.closest('th[data-msort]'); if(!th) return;
+  e.preventDefault(); const k=th.dataset.msort; sortManual(k);
+  const nth=document.querySelector(`#manual-head th[data-msort="${k}"]`); if(nth) nth.focus();   // the header row was rebuilt
+});
 function renderManual(excl){
-  const all=manualInTab(), list=manualFiltered(all,excl);
+  const all=manualInTab(); let list=manualFiltered(all,excl);
   document.getElementById('manual-summary').textContent=`Manual findings & observations (${list.length===all.length?list.length:`${list.length} of ${all.length}`})`;
+  setManualHead();
+  if(manualSort.key){ const rank=new Map(manualOrder.map((id,i)=>[id,i]));
+    list=list.slice().sort((a,b)=>(rank.has(a.id)?rank.get(a.id):1e9)-(rank.has(b.id)?rank.get(b.id):1e9)); }
+  const pg=pgSlice('manual',list,[activeStream,activeCat,manualSort.key,manualSort.dir,JSON.stringify(filters())].join('|'));
   const tb=document.getElementById('manual-tbody');
-  tb.innerHTML=list.map(m=>{
-    const sev=(m.severity||'OTHER').toLowerCase().replace(/\s+/g,'-'), st=m.status||'untriaged';
+  tb.innerHTML=pg.rows.map(m=>{
+    const sev=(m.severity||'OTHER').toLowerCase().replace(/\s+/g,'-'), st=m.status||'untriaged', fix=fixBtnManual(m);
     const opts=STATUSES.filter(s=>!s.pageOnly).map(s=>`<option value="${s.v}" ${s.v===st?'selected':''}>${esc(s.label)}</option>`).join('');
     return `<tr>
-      <td><strong>${esc(m.title)}</strong></td>
-      <td>${m.url?`<a href="${esc(m.url)}" target="_blank" rel="noopener noreferrer">${esc(m.url)}</a>`:'—'}</td>
+      <td class="m-title"><strong>${esc(m.title)}</strong></td>
+      <td class="m-page">${m.url?`<a class="m-url" href="${esc(m.url)}" title="${esc(m.url)}" target="_blank" rel="noopener noreferrer">${esc(m.url)}</a>`:'—'}</td>
       <td><span class="pill ${m.type==='a11y'?'sev-high':'lowvol'}">${m.type==='a11y'?'A11y · counts':'Observation'}</span></td>
       <td><span class="pill sev-${sev}">${esc(m.severity||'—')}</span></td>
       <td><select class="subfield" data-role="mcat" data-id="${esc(m.id)}" aria-label="Category for ${esc(m.title)}"><option value="">—</option>${CATS.map(c=>`<option value="${c.v}"${c.v===m.cat?' selected':''}>${esc(c.label)}</option>`).join('')}</select></td>
       <td><select class="status-sel ${statusClass(st)}" data-role="mstatus" data-id="${esc(m.id)}" aria-label="Status">${opts}</select>${ageNote(m)}</td>
       <td>${SMAP[st]&&SMAP[st].field==='assignee' ? peoplePicker(m.assignee, `data-role="who" data-mid="${esc(m.id)}"`) : (m.assignee?`<span class="stat-sub">${esc(peopleLabel(m.assignee))}</span>`:'')}</td>
-      <td><input class="notes-input" type="text" value="${esc(m.note||'')}" data-role="mnote" data-id="${esc(m.id)}" aria-label="Note">${ACTIVE_TODO.has(st)?manualEstRow(m):''}</td>
-      <td>${fixBtnManual(m)}</td>
+      <td class="m-note"><textarea class="notes-input" rows="3" data-role="mnote" data-id="${esc(m.id)}" aria-label="Note for ${esc(m.title)}">${esc(m.note||'')}</textarea><button type="button" class="note-more" data-role="notemore" aria-expanded="false" hidden>Show more</button>
+        ${fix?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">${fix}</div>`:''}${ACTIVE_TODO.has(st)?manualEstRow(m):''}</td>
       <td style="white-space:nowrap"><button class="pages-btn" type="button" data-role="medit" data-id="${esc(m.id)}" aria-label="Edit finding ${esc(m.title)}">Edit</button>
         <button class="pages-btn" type="button" data-role="mremove" data-id="${esc(m.id)}" aria-label="Remove finding ${esc(m.title)}">✕</button></td></tr>`;
-  }).join('')||`<tr><td colspan="10" style="text-align:center;color:var(--gray);padding:16px">${all.length?'No manual findings match the filters.':'No manual findings yet — use “＋ Add finding”, or “＋ finding” on a page in any drill-down.'}</td></tr>`;
+  }).join('')||`<tr><td colspan="9" style="text-align:center;color:var(--gray);padding:16px">${all.length?'No manual findings match the filters.':'No manual findings yet — use “＋ Add finding”, or “＋ finding” on a page in any drill-down.'}</td></tr>`;
+  fitNotes(tb);
+  pgBar('manual','manual-pager',pg);
 }
 let _editingManual=null;
 function openManualForm(url='', editId=''){
@@ -3205,7 +3306,7 @@ document.addEventListener('blur', e=>{
   if(e.target.dataset.role==='notes'){ setNotes(e.target.dataset.fp,e.target.dataset.url||'',e.target.value); }
   else if(e.target.dataset.role==='mnote'){ const m=state.manualFindings.find(x=>x.id===e.target.dataset.id); if(m){m.note=e.target.value;persist();} }
 }, true);
-document.addEventListener('input', e=>{ if(e.target.dataset&&e.target.dataset.role==='notes') fitNote(e.target); });
+document.addEventListener('input', e=>{ const r=e.target.dataset&&e.target.dataset.role; if(r==='notes'||r==='mnote') fitNote(e.target); });
 document.addEventListener('click', e=>{
   const nm=e.target.closest('[data-role=notemore]'); if(nm){ const ta=nm.previousElementSibling, open=ta.classList.toggle('is-open');
     nm.textContent=open?'Show less':'Show more'; nm.setAttribute('aria-expanded',String(open)); fitNote(ta); return; }
