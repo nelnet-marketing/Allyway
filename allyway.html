@@ -190,7 +190,6 @@ a.bulk-sel{display:inline-flex;align-items:center;text-decoration:none;}
 .ms-row{display:flex;align-items:center;gap:8px;padding:5px 4px;border-radius:6px;font-size:13px;cursor:pointer;}
 .ms-row:hover{background:var(--soft-fill);color:var(--green-ink);}
 .ms-row:focus-within{outline:2px solid var(--dark-green);outline-offset:-2px;}
-.ms-row input{width:15px;height:15px;accent-color:var(--dark-green);cursor:pointer;}
 .ppl-list{list-style:none;margin:14px 0;padding:0;display:flex;flex-direction:column;gap:10px;}
 .ppl-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding-bottom:10px;border-bottom:1px solid var(--hairline);}
 .ppl-row .subfield{margin-top:0;max-width:none;}
@@ -281,9 +280,14 @@ a.bulk-sel{display:inline-flex;align-items:center;text-decoration:none;}
 .detail-tbl .status-sel{display:block;}   /* stack the assignee/reason field below the status, not inline */
 .detail-tbl .subfield{display:block;margin-top:6px;}
 .detail-tbl .who{display:block;}
+.detail-tbl th.sortable:focus-visible{outline:2px solid currentColor;outline-offset:-2px;}
 .detail-tbl th:first-child,.detail-tbl td:first-child{width:210px;}
 .detail-tbl--pages th:first-child,.detail-tbl--pages td:first-child{width:32%;min-width:300px;word-break:break-word;}   /* Page URL reads better with room … */
-.pg-pick{display:inline-flex;align-items:center;margin-right:8px;vertical-align:middle;}
+.pg-pick{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;margin-right:4px;vertical-align:middle;cursor:pointer;}   /* 24px hit area: WCAG 2.2 target size */
+/* One checkbox everywhere: 16px box inside a 24px-tall label (WCAG 2.2 target size) */
+input[type=checkbox]{width:16px;height:16px;margin:0;flex:none;accent-color:var(--dark-green);cursor:pointer;}
+input[type=checkbox]:disabled{cursor:not-allowed;}
+.chk{display:inline-flex;align-items:center;gap:6px;min-height:24px;cursor:pointer;}
 .bulk-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 10px;padding:8px 10px;border:1px solid var(--hairline);border-radius:var(--r);background:var(--off-white);font-size:13px;}
 .bulk-bar .bulk-fields{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
 .bulk-bar .bulk-fields[hidden]{display:none;}
@@ -613,7 +617,7 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 </header>
 
 <div id="stale-bar" class="stale-bar" role="alert" hidden>
-  <span><strong>Changes are no longer being saved.</strong> The last save failed (<span id="stale-why"></span>), so this tab may be behind what other people have saved since. Reload to pick up the current data — anything changed since the failure will need redoing.</span>
+  <span><strong>Changes are no longer being saved.</strong> The last save failed: <span id="stale-why"></span>. <span id="stale-count"></span> This tab may also be behind what other people have saved since. Reload to pick up the current data — anything changed since the failure will need redoing.</span>
   <button type="button" class="btn-primary" id="stale-reload">Reload</button>
 </div>
 
@@ -1032,13 +1036,25 @@ function persist(){ if(_stale) return;   // frozen after a failed save — only 
 /* A failed save leaves this tab's copy possibly behind the store, and a stale tab that keeps
    writing is how a whole source's triage got overwritten. Stop writing and ask for a reload. */
 // A rejection carrying no code/message left the banner blank — always name something.
-const errText = e => (e && (e.code || e.message)) || String((e && e.name) || e || '') || 'unknown error';
-function goStale(why){
+const errText = e => [e && e.code, e && e.message].filter((v,i,a)=>v && a.indexOf(v)===i).join(': ') || String((e && e.name) || e || '') || 'unknown error';
+function goStale(why, unsaved){
   _stale=true; if(_saveT) clearTimeout(_saveT);   // drop any debounced save still pending
   setSave('error');
   const bar=document.getElementById('stale-bar'); if(!bar) return;
   const w=document.getElementById('stale-why'); if(w) w.textContent=why||'unknown error';
+  const c=document.getElementById('stale-count');
+  if(c) c.textContent = unsaved>0 ? `${unsaved} change${unsaved===1?'':'s'} ${unsaved===1?'was':'were'} not saved and reloading discards ${unsaved===1?'it':'them'}.` : '';
   bar.hidden=false;
+}
+/* Past BULK_SAVE changed rows a save goes up in SAVE_CHUNK-row batches instead of one call per row.
+   Row by row, a bulk status change took ~3s a row (~50 min for 900) and one failure lost the rest. */
+const BULK_SAVE=10, SAVE_CHUNK=100;
+const FATAL_SAVE_CODES=new Set(['replace_forbidden','pii_blocked','too_large','invalid_request','forbidden','collection_too_large']);
+async function putRetry(rows, opts){
+  for(let n=0;;n++){
+    try{ return await NS().putRecords(rows, opts); }
+    catch(e){ if(n>=3 || FATAL_SAVE_CODES.has(e && e.code)) throw e; await new Promise(r=>setTimeout(r,1000*3**n)); }   // 1s, 3s, 9s
+  }
 }
 // Baseline of what's already in storage, so a save writes ONLY changed rows (Rideshare caps writes per viewer/day).
 let _savedDisp={}, _savedManual={}, _savedXcats='', _savedPeople='';
@@ -1063,21 +1079,41 @@ async function saveNow(){
   const dCleared=Object.keys(_savedDisp).filter(k=>!(k in curDisp));
   const mChanged=Object.keys(curMan).filter(id=>curMan[id]!==_savedManual[id]);
   const mCleared=Object.keys(_savedManual).filter(id=>!(id in curMan));
+  const total=dChanged.length+dCleared.length+mChanged.length+mCleared.length; let done=0;
   _saving=true;
   try{
     // Every write is scoped to ONE dkey/mid. Never rewrite a source's whole slice: an admin's
     // replaceWhere matches every viewer's rows, so one stale tab would delete everyone's triage.
-    for(const k of dChanged){ const v=state.dispositions[k]; await NS().putRecords([{kind:'disp',source:src,dkey:k,...v}], {replaceWhere:{kind:'disp',source:src,dkey:k}}); }
-    for(const k of dCleared) await NS().putRecords([{kind:'disp',source:src,dkey:k}], {replaceWhere:{kind:'disp',source:src,dkey:k}});           // tombstone
-    for(const id of mChanged){ const m=state.manualFindings.find(x=>x.id===id); await NS().putRecords([{kind:'manual',source:src,mid:id,...m}], {replaceWhere:{kind:'manual',source:src,mid:id}}); }
-    for(const id of mCleared) await NS().putRecords([{kind:'manual',source:src,mid:id}], {replaceWhere:{kind:'manual',source:src,mid:id}});      // tombstone
-    if(curXcats!==_savedXcats) await NS().putRecords([{kind:'config',source:'_site',ckey:'xcats',list:state.xcats}], {replaceWhere:{kind:'config',source:'_site',ckey:'xcats'}});
-    if(curPeople!==_savedPeople) await NS().putRecords([{kind:'config',source:'_site',ckey:'people',list:state.people}], {replaceWhere:{kind:'config',source:'_site',ckey:'people'}});
+    if(total>=BULK_SAVE){
+      // Bulk change: append in batches (newest row per key wins on read), committing each batch as it lands
+      const rows=[
+        ...dChanged.map(k=>({kind:'disp',source:src,dkey:k,...state.dispositions[k]})),
+        ...dCleared.map(k=>({kind:'disp',source:src,dkey:k})),   // tombstone
+        ...mChanged.map(id=>({kind:'manual',source:src,mid:id,...state.manualFindings.find(x=>x.id===id)})),
+        ...mCleared.map(id=>({kind:'manual',source:src,mid:id}))   // tombstone
+      ];
+      for(let i=0;i<rows.length;i+=SAVE_CHUNK){
+        const chunk=rows.slice(i,i+SAVE_CHUNK);
+        await putRetry(chunk);
+        for(const r of chunk){
+          if(r.kind==='disp'){ if(r.dkey in curDisp) _savedDisp[r.dkey]=curDisp[r.dkey]; else delete _savedDisp[r.dkey]; }
+          else if(r.mid in curMan) _savedManual[r.mid]=curMan[r.mid]; else delete _savedManual[r.mid];
+        }
+        done+=chunk.length;
+      }
+    } else {
+      for(const k of dChanged){ const v=state.dispositions[k]; await putRetry([{kind:'disp',source:src,dkey:k,...v}], {replaceWhere:{kind:'disp',source:src,dkey:k}}); done++; }
+      for(const k of dCleared){ await putRetry([{kind:'disp',source:src,dkey:k}], {replaceWhere:{kind:'disp',source:src,dkey:k}}); done++; }           // tombstone
+      for(const id of mChanged){ const m=state.manualFindings.find(x=>x.id===id); await putRetry([{kind:'manual',source:src,mid:id,...m}], {replaceWhere:{kind:'manual',source:src,mid:id}}); done++; }
+      for(const id of mCleared){ await putRetry([{kind:'manual',source:src,mid:id}], {replaceWhere:{kind:'manual',source:src,mid:id}}); done++; }      // tombstone
+    }
+    if(curXcats!==_savedXcats) await putRetry([{kind:'config',source:'_site',ckey:'xcats',list:state.xcats}], {replaceWhere:{kind:'config',source:'_site',ckey:'xcats'}});
+    if(curPeople!==_savedPeople) await putRetry([{kind:'config',source:'_site',ckey:'people',list:state.people}], {replaceWhere:{kind:'config',source:'_site',ckey:'people'}});
     invalidateRows();   // rows just changed — drop the snapshot before anything reads it back
     if(dChanged.length||dCleared.length||mChanged.length||mCleared.length){ const sm=computeSummary(state.defects, state.contrast, state.dispositions, state.manualFindings); statsCache[src]=sm; writeSummary(src, sm); }
     _savedDisp=curDisp; _savedManual=curMan; _savedXcats=curXcats; _savedPeople=curPeople;   // commit only what we captured up front
     if(!_stale) setSave('saved');   // never advertise a save on a tab that has since frozen
-  }catch(e){ console.error('[allyway] save failed:', e); goStale(errText(e)); }
+  }catch(e){ console.error('[allyway] save failed:', e); goStale(errText(e), total-done); }
   finally{ _saving=false; }
 }
 function setSave(m){ const el=document.getElementById('save-indicator'); if(!el)return;
@@ -2723,6 +2759,42 @@ function renderAllBulk(){
   host.innerHTML = n ? bulkBar('all','Apply to every finding matching the current filters','findings',
     `Select all ${n} finding${n===1?'':'s'} matching the filters`) : '';
 }
+/* Sortable headers for the expanded rule/page tables. Sorts the rows in place (so ticks, typed notes
+   and focus survive) and is remembered per open row, then re-applied when a redraw rebuilds it. */
+const detailSort={};   // detail row id -> {col, dir}
+const dth = (label,type='text') => `<th class="sortable" tabindex="0" data-dsort="${type}" aria-sort="none">${esc(label)} <span class="arr" aria-hidden="true">▲▼</span></th>`;
+function detailCellValue(td,type){
+  if(!td) return '';
+  if(type==='grade') return gradeRank(td.textContent.trim());
+  if(type==='num') return parseFloat(td.textContent)||0;
+  const sel=td.querySelector('select'), ta=td.querySelector('textarea');
+  return (sel ? (sel.options[sel.selectedIndex]||{}).text : ta ? ta.value : td.textContent).trim().toLowerCase();
+}
+function applyDetailSort(row){
+  const st=detailSort[row.id], tbl=row.querySelector('table.detail-tbl'); if(!tbl) return;
+  const ths=[...tbl.querySelectorAll('thead th')];
+  ths.forEach((h,i)=>h.setAttribute('aria-sort', st&&st.col===i ? (st.dir===1?'ascending':'descending') : 'none'));
+  if(!st) return;
+  const type=ths[st.col].dataset.dsort, tb=tbl.tBodies[0];
+  // A row and the AI-help row that follows it travel together
+  const groups=[]; [...tb.rows].forEach(r=>{ if(r.classList.contains('ai-row')&&groups.length) groups[groups.length-1].push(r); else groups.push([r]); });
+  const val=g=>detailCellValue(g[0].cells[st.col],type);
+  groups.map((g,i)=>({g,i,v:val(g)})).sort((a,b)=>{
+    const ea=a.v===''&&type==='text', eb=b.v===''&&type==='text'; if(ea!==eb) return ea?1:-1;   // blanks last either way
+    const c=typeof a.v==='number' ? a.v-b.v : String(a.v).localeCompare(String(b.v),undefined,{numeric:true});
+    return c*st.dir || a.i-b.i; }).forEach(o=>o.g.forEach(r=>tb.appendChild(r)));
+}
+function sortDetail(th){
+  const row=th.closest('tr.detail-row'); if(!row) return;
+  const col=[...th.parentNode.children].indexOf(th), cur=detailSort[row.id];
+  detailSort[row.id]={col,dir:cur&&cur.col===col?-cur.dir:1};
+  applyDetailSort(row);
+}
+document.addEventListener('click', e=>{ const th=e.target.closest('th[data-dsort]'); if(th) sortDetail(th); });
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Enter' && e.key!==' ') return;
+  const th=e.target.closest('th[data-dsort]'); if(!th) return;
+  e.preventDefault(); sortDetail(th); });
 function buildDetail(fp){
   const d=currentDefects()[fp]; const excl=excludedUrls();
   const f=filters(), shown=d.affected_pages.filter(u=>{ return matchPairs([{fp,url:u}],excl,f); });   // honour the Status/Assignee filters
@@ -2741,7 +2813,7 @@ function buildDetail(fp){
   const gN=globalUrls(fp,d.affected_pages).length;
   const noteBar=gN?`<p class="stat-sub" style="margin:0 0 10px" role="status">${gN} page${gN===1?'':'s'} grouped as a single global fix — exported as one row.</p>`:'';
   const filtNote = shown.length<d.affected_pages.length ? `<p class="stat-sub" role="status">Showing ${shown.length} of ${d.affected_pages.length} pages that match the current Status/Assignee filter.</p>` : '';
-  return noteBar+aiBar(fp,d.rule_title)+bulkBar('r:'+fp,`Apply to selected pages of ${d.rule_title}`,'pages')+filtNote+`<table class="detail-tbl detail-tbl--pages"><thead><tr><th>Page URL</th><th>Inst</th><th>Sample HTML</th><th>Status (this page)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return noteBar+aiBar(fp,d.rule_title)+bulkBar('r:'+fp,`Apply to selected pages of ${d.rule_title}`,'pages')+filtNote+`<table class="detail-tbl detail-tbl--pages"><thead><tr>${dth('Page URL')}${dth('Inst','num')}${dth('Sample HTML')}${dth('Status (this page)')}${dth('Category')}${dth('Notes')}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 // Read-only status for a page that follows another ("same as") — shows where it points and offers Unlink.
 function linkedStatus(rp,fp,url){
@@ -2805,7 +2877,7 @@ function buildPageDetail(url){
   const gN=p.elements.filter(e=>inGlobalFix(e.fp,url)).length;
   const noteBar=gN?`<p class="stat-sub" style="margin:0 0 10px" role="status">${gN} finding${gN===1?'':'s'} on this page ${gN===1?'is':'are'} grouped as a single global fix — exported as one row.</p>`:'';
   const filtNote = shownEls.length<p.elements.length ? `<p class="stat-sub" role="status">Showing ${shownEls.length} of ${p.elements.length} elements that match the current Status/Assignee filter.</p>` : '';
-  return noteBar+bulkBar('p:'+url,`Apply to selected findings on ${url}`,'findings')+filtNote+`<table class="detail-tbl"><thead><tr><th>${activeStream==='contrast'?'Element (signature)':'Rule'}</th><th>${esc(gradeLabel())}</th><th>Inst</th><th>Sample HTML</th><th>Status (this element)</th><th>Category</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return noteBar+bulkBar('p:'+url,`Apply to selected findings on ${url}`,'findings')+filtNote+`<table class="detail-tbl"><thead><tr>${dth(activeStream==='contrast'?'Element (signature)':'Rule')}${dth(gradeLabel(),'grade')}${dth('Inst','num')}${dth('Sample HTML')}${dth('Status (this element)')}${dth('Category')}${dth('Notes')}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function toggleDetail(id){
@@ -2821,6 +2893,7 @@ function toggleDetail(id){
     else { const realFp=Object.keys(currentDefects()).find(k=>cssId(k)===cid); row.firstElementChild.innerHTML=buildDetail(realFp);
       if(_aiThreads[realFp] && _aiThreads[realFp].length) hydrateAI(realFp); }   // restore any open AI thread after a table re-render
     row.dataset.built='1';
+    applyDetailSort(row);
   }
   if(!hidden) fitNotes(row);
 }
@@ -2965,6 +3038,7 @@ function openManualForm(url='', editId=''){
     <label ${stackLbl}>Status <select id="mf-status" ${selSty}>${STATUSES.filter(s=>!s.pageOnly).map(s=>`<option value="${s.v}"${sel(s.v,curStatus)}>${esc(s.label)}</option>`).join('')}</select></label>
     <label ${stackLbl}>Category <select id="mf-cat" ${selSty}><option value="">—</option>${CATS.map(c=>`<option value="${c.v}"${sel(c.v,m?m.cat:'')}>${esc(c.label)}</option>`).join('')}</select></label>
     <label ${stackLbl}>Note <input id="mf-note" class="notes-input" type="text" value="${esc(curNote)}" placeholder="optional (e.g. redirects to our other site)"></label>
+    <div ${stackLbl}><span aria-hidden="true">Assignee</span>${peoplePicker(m?m.assignee:'', 'id="mf-who"')}</div>
     <div style="grid-column:1/3;display:flex;gap:8px">
       <button class="btn-primary" id="mf-save" type="button">${m?'Update finding':'Save finding'}</button>
       <button class="bulk-sel" id="mf-cancel" type="button" style="margin-top:0">Cancel</button></div></div>`;
@@ -2979,8 +3053,9 @@ function saveManual(){
     type:document.getElementById('mf-type').value, severity:document.getElementById('mf-sev').value,
     status:document.getElementById('mf-status').value, note:document.getElementById('mf-note').value.trim() };
   fields.cat=document.getElementById('mf-cat').value;   // '' clears it on edit
+  const who=asPeople(document.getElementById('mf-who').dataset.people); fields.assignee=who.length?who:undefined;
   const wasEdit=!!_editingManual;
-  if(wasEdit){ const m=(state.manualFindings||[]).find(x=>x.id===_editingManual); if(m){ if(fields.status!==m.status) m.since=today(); Object.assign(m, fields); } }   // keeps id/assignee/fix
+  if(wasEdit){ const m=(state.manualFindings||[]).find(x=>x.id===_editingManual); if(m){ if(fields.status!==m.status) m.since=today(); Object.assign(m, fields); if(!m.assignee) delete m.assignee; } }   // keeps id/fix
   else (state.manualFindings||(state.manualFindings=[])).push({id:genId(), since:today(), ...fields});
   _editingManual=null;
   const wrap=document.getElementById('manual-form'); wrap.hidden=true; wrap.innerHTML='';
@@ -3756,7 +3831,7 @@ async function showPicker(forcePick){
         <label for="arc-src">ARC source</label>
         <select class="status-sel" id="arc-src" style="max-width:230px;font-weight:600" disabled><option>Loading ARC sources…</option></select>
         <button class="btn-primary" id="arc-go" type="button" style="margin-top:0;padding:9px 16px;font-size:13px" disabled>⟳ Pull latest scan</button>
-        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:400;color:var(--dark-gray)"><input type="checkbox" id="arc-show-all"> Show all ARC sources</label>
+        <label style="display:inline-flex;align-items:center;gap:6px;min-height:24px;font-size:12.5px;font-weight:400;color:var(--dark-gray)"><input type="checkbox" id="arc-show-all"> Show all ARC sources</label>
         <span class="arc-note">CampusGuard and Nelnet.com are too large to pull directly from Rideshare — run <code>node index.js</code>, then Load scan.json.</span>
       </span>`:''}<label class="bulk-sel" for="scan-input" tabindex="0" role="button" style="margin-top:0;cursor:pointer">＋ Load scan.json</label><input id="scan-input" type="file" accept=".json" multiple hidden><button type="button" id="btn-rename" class="bulk-sel" style="margin-top:0;margin-left:8px">✎ Rename source…</button>` : '';
     if(admin){ const si=document.getElementById('scan-input'); si.addEventListener('change',async e=>{ const files=[...e.target.files]; e.target.value=''; for(const f of files) await adminLoadScan(f); });
