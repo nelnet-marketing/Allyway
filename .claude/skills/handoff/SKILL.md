@@ -91,6 +91,14 @@ Run these before drafting and report what you find:
 4. **Check the summary's `updatedAt` against the newest disposition's `createdAt`.** If a
    disposition is newer than the summary, the summary is stale — the numbers will understate
    the work. Have her open the source in the app to recompute, then re-read.
+5. **Look for one fix counted many times.** If a single rule holds a big share of `active` and
+   almost all its pages are "Same as" one finding, the app counts each page separately unless
+   that rule itself is set as a global fix. FACTS in November 2026: "Check if link text needed"
+   was 303 of 593, all "Same as" one global-fix "Missing href" — really one fix, and `active`
+   fell to 291 once the rule was marked global. Tell her before drafting. Setting it means
+   writing a `kind:'disp'` row (`dkey` = the rule, `globalFix:true`) plus a recomputed
+   `kind:'summary'` row to the store — only on her explicit go-ahead, and tell her the new
+   record ids so it can be undone with `remove_site_data`.
 
 ## Step 3 — Group the blocked items by root cause
 
@@ -114,22 +122,45 @@ than inventing a theme. When a cluster sits on one page, name the page the way a
 say it ("the Products page"), not the path — she wrote it that way, and the recipient is
 navigating the site, not a URL list.
 
+## Step 3b — Break the Active findings down by rule
+
+Every full-fix email carries a by-rule table so a big number (FACTS: 593) reads as a handful of
+rules, not a wall. Skip it only when `active` is small enough that it adds nothing (roughly
+under 40).
+
+From the same unfiltered pass, take the live active items — status `need_fix`, `in_progress`,
+`in_review`, `needs_approval`, `question` — resolved exactly as `computeSummary` does (newest
+scan only, out-of-scope pages dropped, "Same as" followed). A global-fix rule collapses to one
+item. Group by rule `title` (the scan row's `title`; `fingerprint` is the same for rule-level rows).
+Then:
+
+- Sort by count, descending. Show the top rules (FACTS used six — they were 496 of 593); stop
+  where the counts fall off a cliff. Don't list more than ~8 rows.
+- **Status** column uses the app's labels: "Need to fix", "Question", "Needs Approval"; "Mixed"
+  when a rule splits across statuses. Question rows are "can we fix this?" asks — that's useful
+  context for the dev, so keep the column. Append the cause to Question rows when it's known
+  ("Question - due to HubSpot forms") — read it from the notes; ask her if the notes don't say.
+- Last row: **"Everything else (N smaller rules plus M manual findings)"**, count = `active`
+  minus the rows above, status "Mixed". `active` includes manual `a11y` findings that `total`
+  doesn't, so the rows must sum to `active`, not `total − suppressed`. Check the sum.
+- Rule titles are shown as the app shows them, with `<`/`>` escaped in the HTML.
+
 ## Step 4 — Draft it
 
 Use the template below, filled with the live numbers. Then create an Outlook draft:
 
 ```
-CreateDraftMessage  → subject, body, To: Jose, Cc: Felicia, Mike, Ryan, Randall
+CreateDraftMessage  → subject, body, To: Jose, Cc: Felicia, Mike, Ryan, Randall, Mason
 ```
 
 **Never send.** She reviews and sends.
 
 ### Who it goes to
 
-**Full-fix handoff** — the same five every time, whatever sources are in the email:
+**Full-fix handoff** — the same six every time, whatever sources are in the email:
 
 - **To:** Jose, the dev lead who owns remediation.
-- **Cc:** Felicia (PM), plus Mike, Ryan and Randall.
+- **Cc:** Felicia (PM), plus Mike, Ryan, Randall and Mason (Mason Cannon, added November 2026).
 
 Kylie was on the September 2026 Propelr email but is deliberately off this list — she may no
 longer be at Nelnet. Don't add her back. The Cc isn't per-source; a multi-source email doesn't
@@ -143,7 +174,8 @@ the resolved list before creating the draft. `search_people` needs `People.Read`
 connector may not have; if it 403s, read the sent Propelr email (`SearchMessages`) for full
 names, and let `CreateDraftMessage` resolve them. Then **check the draft's returned Cc against
 the list** — a name that doesn't resolve is dropped silently (that's how Kylie went missing).
-Never guess or construct an address from a pattern; a wrong one either bounces or reaches a
+Mason wasn't on the Propelr email, so that fallback won't find him — resolve "Mason Cannon" by
+full name. Never guess or construct an address from a pattern; a wrong one either bounces or reaches a
 stranger. If a name resolves to more than one person, ask rather than picking.
 
 **Edits to a draft she has open get overwritten.** If she's editing the draft in Outlook, an
@@ -166,6 +198,10 @@ I reviewed <total> automated findings and ruled out <suppressed> as false positi
 non-issues, leaving <active> Active findings. All are documented in Allyway -> <Source> card
 with notes/remediation guidance and are assigned to you.
 
+Most of that comes from a handful of rules:
+
+<table: Rule | Findings | Status — from Step 3b, last row "Everything else (...)">
+
 For anyone unfamiliar, Allyway is the tool I'm building to track accessibility findings and
 remediation work. Currently hosted on Nelnet Rideshare so you'll need to be on the VPN to
 access it. Reach out if you have any issues.
@@ -184,8 +220,21 @@ What that template gets right, and why each piece is there:
 - **"the tool I'm building"**, not "using". It's hers.
 - **The VPN sentence is not optional.** Allyway is behind Rideshare; a recipient off VPN just
   gets a dead link and no explanation. She pairs it with an offer to help.
-- **No URL in the body.** She pointed at the location instead ("Allyway -> <Source> card").
-  Adding the raw link is fine if she asks, but the VPN note is what actually unblocks people.
+- **Link "Allyway -> <Source>" to the source's deep link**, `https://rideshare-internal.nelnettools.com/allyway/#<source-id>`
+  (deep links work as of November 2026; FACTS is `#facts`, so use the source's lowercase id). Only
+  that phrase is the link — no bare URL. The VPN note still goes in; the link is dead off VPN.
+- **The by-rule table sits right after the count.** The HTML is a plain bordered table (inline
+  `border:1px solid #999;padding:4px 10px` on each cell — email clients ignore stylesheets), the
+  Findings column right-aligned. "Most of that comes from a handful of rules:" is the lead-in.
+  Multi-source emails get one table per source paragraph. Don't add "(this includes N I logged
+  manually)" after the count — she cut it from the FACTS email; the "Everything else" row already
+  says "plus the N manual findings".
+- **Say why on Question rows.** She appended the cause to the Status cell on the FACTS email:
+  "Question - due to HubSpot forms". When a Question rule traces to a third party or a shared
+  component, say so in Status; it tells the dev the ask is "can we fix this?", not "fix this".
+- **The "One question for you" paragraph is optional when the Needs Approval slice is tiny.** FACTS
+  had 2 live Needs Approval items (one page) and she sent it without the paragraph. With a
+  handful of items or fewer, ask whether to include it rather than assuming.
 - **"One question for you:"** — the blocked cluster is framed as a single explicit ask, not
   buried in a hedge. Drop the old "that number may come down slightly" phrasing; naming the
   count and asking the question outright is stronger.
@@ -254,8 +303,8 @@ Things her version gets right, and the traps in the first draft:
 
 - **Short, separate paragraphs** — the ask, the fix path and the can't-fix path each get their own
   line so a dev can scan them. Don't merge them back into one block.
-- **No `#<source>` deep link.** The app has no hash routing and Rideshare's iframe swallows the
-  hash, so it lands on the dashboard. Just say "in Allyway".
+- **Link "Allyway" to the `#<source-id>` deep link** (`https://rideshare-internal.nelnettools.com/allyway/#<source-id>`).
+  It used to land on the dashboard; deep links work now. Send the body as HTML so the link renders.
 - **VPN note with an offer to help** ("let me know if you don't have access"). Keep it.
 - **Use the app's exact labels:** status "Can't fix — third party"; the picker is called
   "Blocked by"; the option is "HubSpot Form" (not "Hubspot"); "In review".
