@@ -14,7 +14,7 @@ const eq = (label, got, want) => {
 };
 
 const html = readFileSync(join(here, '..', 'allyway.html'), 'utf8');
-const from = html.indexOf('function collectTriage()');
+const from = html.indexOf('function collectTriage(');
 const to = html.indexOf('function exportTriage()');
 if (from < 0 || to < from) { console.log('FAIL could not extract collectTriage from allyway.html'); process.exit(1); }
 // collectTriage writes assignees through the people helpers, which now live earlier in the page
@@ -78,6 +78,24 @@ eq('xcat carried through', disp.find(r => r.dkey === 'Duplicate labels used').xc
 // untriaged findings have no disposition row at all, so nothing to exclude
 eq('no empty-status disp row invented for untriaged items',
   disp.every(r => 'status' in r), true);
+
+// "Same as" pages fold into the exported row they follow
+const fFrom = html.indexOf('function foldSameAs(');
+const fTo = html.indexOf('function expRows()');
+if (fFrom < 0 || fTo < fFrom) { console.log('FAIL could not extract foldSameAs from allyway.html'); process.exit(1); }
+const foldSameAs = new Function(html.slice(fFrom, fTo) + '; return foldSameAs;')();
+const mk = (item, url, o = {}) => ({ item, url, note: '', fix: '', _keys: ['fp:' + item + '|||' + url], _tgt: '', _own: '', ...o });
+const target = mk('Missing href', '(global fix — 3 pages)', { _keys: ['fp:Missing href|||/', 'fp:Missing href|||/a'], note: 'mega menu' });
+const f1 = mk('Check link text', '/p1', { _tgt: 'fp:Missing href|||/', fix: 'fix the nav' });
+const f2 = mk('Check link text', '/p2', { _tgt: 'fp:Missing href|||/a', fix: 'fix the nav', _own: 'p2 only' });
+const orphan = mk('Check link text', '/p3', { _tgt: 'fp:Missing href|||/elsewhere' });
+const folded = foldSameAs([target, f1, f2, orphan]);
+eq('followers fold away, orphan with no target in the export stays', folded.map(r => r.url), ['(global fix — 3 pages)', '/p3']);
+eq('target lists the folded URLs', folded[0]._also, ['/p1', '/p2']);
+eq('target note leads with the count by rule', folded[0].note.startsWith('Also covers 2 pages marked "Same as" (Check link text ×2). mega menu'), true);
+eq('page-only note is carried over', folded[0].note.includes('Notes on those pages: p2 only'), true);
+eq('identical follower fix text is carried once', folded[0].fix, 'Fix notes on those pages: fix the nav');
+eq('rows without a target are untouched', foldSameAs([mk('A', '/x')]).length, 1);
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exit(fails ? 1 : 0);

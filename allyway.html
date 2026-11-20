@@ -17,6 +17,7 @@
   --hero-green:#AED136;--medium-green:#70BA44;--dark-green:#11891C;--gray:#676D73;
   --dark-gray:#565B64;--gold:#FDB913;--white:#FFFFFF;--off-white:#F7F8F4;
   --hairline:#E6E8E3;--soft-fill:#F0F4E8;--error-red:#A80C59;
+  --defer-ink:#2F4F86;--defer-bg:#E6EDF8;   /* deferred: blue, apart from the green/amber/pink status colors */
   --green-ink:#0D7015;--amber-ink:#8A5A00;--field-border:#8A9198;   /* AA-contrast variants for small text / form borders */
   --secondary:#0e729a;--secondary-dark:#215e87;   /* brand blue — white text ≥5.4:1 (AA) */
   --row-done:#F7F8F4;--row-todo:#FFFFFF;   /* rules table: fully-triaged rows recede, rows with work left sit forward */
@@ -60,9 +61,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .stat.headline{background:var(--soft-fill);border-color:#d6e3b8;}
 .stat-n{font-family:'Red Hat Display',sans-serif;font-size:1.7rem;font-weight:700;color:var(--dark-green);line-height:1;margin-bottom:3px;}
 .stat-l{font-size:11px;color:var(--gray);text-transform:uppercase;letter-spacing:.06em;}
+.count-body{grid-column:1/-1;}
+.count-body p{margin:0 0 10px;line-height:1.5;}
 .stat-sub{font-size:10.5px;color:var(--gray);margin-top:4px;line-height:1.35;}
 .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
-.toolbar label{font-family:'Red Hat Display',sans-serif;font-size:12.5px;font-weight:600;color:var(--dark-gray);display:flex;align-items:center;gap:6px;}
+.toolbar label:not(.btn-export),.toolbar .filter-who{font-family:'Red Hat Display',sans-serif;font-size:12.5px;font-weight:600;color:var(--dark-gray);display:flex;align-items:center;gap:6px;}
 .toolbar select,.toolbar input[type=search]{padding:8px 11px;border:1.5px solid var(--field-border);border-radius:7px;font-size:13.5px;font-family:'Open Sans',sans-serif;color:var(--dark-gray);background:var(--white);min-height:24px;}
 .toolbar input[type=search]{min-width:200px;}
 .toolbar .chk{display:flex;align-items:center;gap:6px;font-weight:500;font-size:13px;}
@@ -389,8 +392,11 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .src-card__stat{text-align:center;background:var(--off-white);border:1px solid var(--hairline);border-radius:var(--r);padding:9px 4px;}
 .src-card__n{font-family:'Red Hat Display',sans-serif;font-size:1.4rem;font-weight:700;line-height:1;color:var(--dark-green);}
 .src-card__n.warn{color:var(--amber-ink);}
+.src-card__n.zero{color:var(--gray);}   /* nothing yet — neutral, not the green of good news */
 .src-card__l{font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:.05em;margin-top:5px;}
 .src-card__foot{display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600;color:var(--dark-gray);font-family:'Red Hat Display',sans-serif;}
+.src-card__defer{display:flex;justify-content:flex-end;margin-top:-5px;}
+.src-card__defer span{font-family:'Red Hat Display',sans-serif;font-size:11px;font-weight:600;color:var(--defer-ink);background:var(--defer-bg);border-radius:10px;padding:2px 9px;}
 .src-card__progress{display:flex;flex-direction:column;gap:7px;}
 .src-card__progress .src-card__foot>span:first-child{min-width:88px;}   /* keeps both bars starting at the same x */
 .src-card__bar{flex:1;height:6px;border-radius:4px;background:var(--soft-fill);overflow:hidden;}
@@ -423,11 +429,12 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
   --dark-gray:#D7DBE0;    /* primary text */
   --gray:#A6ADB5;         /* secondary / small text */
   --hairline:#333A43;     /* dividers */
-  --field-border:#59616B; /* form + control borders */
+  --field-border:#6F7882; /* form + control borders — ≥3:1 on surfaces (WCAG 1.4.11) */
   --soft-fill:#223022;    /* green-tinted fill (table head, badges, headline) */
   --dark-green:#5FC24C;   /* bright green: accent text + filled buttons */
   --green-ink:#8FD760;    /* green text on soft-fill / surfaces */
   --amber-ink:#E0A93A;    /* amber text */
+  --defer-ink:#9DBDF2;--defer-bg:#1F2B42;
   --error-red:#F06BA0;    /* error / suppressed text */
   --secondary:#56B6E4;    /* blue: links + filled buttons */
   --secondary-dark:#7AC6EA; /* blue hover (lighter) */
@@ -504,6 +511,22 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
 .fb-shot{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:8px 20px 0;}
 .fb-shot input[type=file]{font-size:12.5px;color:var(--dark-gray);max-width:100%;}
 .fb-thumb{max-height:88px;max-width:150px;border:1px solid var(--hairline);border-radius:6px;}
+/* Evidence on manual findings: the form's file list and the viewer dialog */
+.ev-box{grid-column:1/3;border:1px solid var(--hairline);border-radius:var(--r);padding:10px 12px;background:var(--white);margin:0;}
+.ev-box legend{font-weight:600;padding:0 4px;}
+.ev-box input[type=file]{font-size:12.5px;color:var(--dark-gray);max-width:100%;}
+.ev-hint{font-size:11.5px;color:var(--gray);margin:6px 0 0;}
+.ev-status{font-size:12px;color:var(--dark-gray);margin:6px 0 0;min-height:1em;}
+.ev-files{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px;}
+.ev-file{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;border-top:1px solid var(--hairline);padding-top:8px;}
+.ev-file .ev-name{flex:0 1 180px;font-size:12.5px;color:var(--dark-gray);overflow-wrap:anywhere;}
+.ev-file label{flex:1 1 220px;display:flex;flex-direction:column;font-size:12px;}
+.ev-view{list-style:none;margin:0;padding:0 20px;display:grid;gap:18px;}
+.ev-view figure{margin:0;}
+.ev-view figcaption,.ev-desc{font-size:12.5px;color:var(--dark-gray);margin-top:4px;overflow-wrap:anywhere;}
+.ev-img,.ev-vid{display:block;max-width:100%;max-height:60vh;border:1px solid var(--hairline);border-radius:6px;}
+.ev-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+.ev-note{font-size:12px;color:var(--error-red);margin:6px 0 0;}
 .fb-ctx{margin:16px 20px 0;font-size:12px;color:var(--gray);}
 .fb-ctx summary{cursor:pointer;font-weight:600;min-height:24px;}
 .fb-ctx dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin-top:8px;}
@@ -593,6 +616,9 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
     <span class="product-tag"><strong>Allyway</strong></span>
     </a>
     <div class="hdr-right" id="hdr-right">
+      <button type="button" id="count-open" class="theme-toggle" title="What a finding is, and why these numbers differ from ARC's">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg><span>How we count</span>
+      </button>
       <button type="button" id="fb-open" class="theme-toggle" title="Send feedback about Allyway">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-2.8-.4L3 21l1.9-5.2A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5Z"/></svg><span>Feedback</span>
       </button>
@@ -668,6 +694,9 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <label for="filter-status">Status
           <select id="filter-status"><option value="">All</option></select>
         </label>
+        <label for="filter-global">Global fix
+          <select id="filter-global"><option value="">All</option><option value="yes">Global fixes only</option><option value="no">Not global</option></select>
+        </label>
         <label for="filter-xcat" hidden>Blocked by
           <select id="filter-xcat"><option value="">All</option></select>
         </label>
@@ -679,9 +708,9 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
       </div>
       <div class="toolbar toolbar--export">
         <button class="btn-export" id="btn-worklist" type="button" title="Choose who and what to include">⬇ Export work list…</button>
-        <button class="btn-export" id="btn-backup" type="button">⬇ Back up triage (CSV)</button>
-        <label class="btn-export" for="triage-restore-input" tabindex="0" role="button" style="cursor:pointer">⬆ Restore triage backup (CSV)</label>
-        <input id="triage-restore-input" type="file" accept=".csv" hidden>
+        <button class="btn-export" id="btn-backup" type="button" title="A CSV, or a ZIP when manual findings have screenshots or video">⬇ Back up triage (CSV/ZIP)</button>
+        <label class="btn-export" for="triage-restore-input" tabindex="0" role="button" style="cursor:pointer">⬆ Restore triage backup (CSV/ZIP)</label>
+        <input id="triage-restore-input" type="file" accept=".csv,.zip" hidden>
       </div>
       <div id="est-summary" class="est-sum" role="status" aria-live="polite"></div>
       <div id="all-bulk"></div>
@@ -748,6 +777,17 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
   </form>
 </dialog>
 
+<dialog id="ev-dialog" class="fix-dialog" aria-labelledby="ev-title">
+  <form method="dialog" class="fix-form">
+    <div class="fix-head">
+      <h2 id="ev-title">Evidence</h2>
+      <button type="submit" value="close" class="fix-x" aria-label="Close evidence">✕</button>
+    </div>
+    <p id="ev-sub" class="fix-sub"></p>
+    <ul id="ev-view" class="ev-view"></ul>
+    <div class="fix-foot"><button type="submit" value="close" class="bulk-sel" style="margin-top:0">Close</button></div>
+  </form>
+</dialog>
 <dialog id="same-dialog" class="fix-dialog" aria-labelledby="same-title">
   <form method="dialog" class="fix-form" id="same-form">
     <div class="fix-head">
@@ -785,6 +825,10 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         <label class="chk"><input type="checkbox" data-exp="stream" value="contrast" checked> Contrast</label>
         <label class="chk"><input type="checkbox" data-exp="stream" value="manual" checked> Manual findings</label>
       </fieldset>
+      <fieldset class="exp-set exp-wide">
+        <legend>"Same as" pages</legend>
+        <label class="chk"><input type="checkbox" data-exp="fold" checked> Fold into the row they follow (one row per root cause, with a page count)</label>
+      </fieldset>
       <fieldset class="exp-set exp-wide" id="exp-cols">
         <legend>Details to include</legend>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0 14px">
@@ -796,12 +840,30 @@ details.suppressed-sec .card-body{padding:0 16px 16px;}
         </div>
       </fieldset>
     </div>
-    <p class="fix-hint">Copy for task description gives a plain-text summary — paste it into a Workfront task description or update. Send to intake form saves this selection as a small hand-off file and opens the Workfront Task Intake site in a new tab — load the file there and the task fills itself in. Instances, Estimate and Sample HTML are CSV-only; Note and Fix instructions also ride along to the intake form.</p>
+    <p class="fix-hint">Copy for task description gives a plain-text summary — paste it into a Workfront task description or update. Send to intake form saves this selection as a small hand-off file and opens the Workfront Task Intake site in a new tab — load the file there and the task fills itself in. Instances, Estimate and Sample HTML are CSV-only; Note and Fix instructions also ride along to the intake form. Folded "Same as" pages are counted in the Note, and listed in the CSV's "Also covers (URLs)" column.</p>
     <div class="fix-foot">
       <button type="button" id="exp-csv" class="btn-primary">⬇ Download CSV</button>
       <button type="button" id="exp-copy" class="bulk-sel" style="margin-top:0">📋 Copy for task description</button>
       <a id="exp-intake" class="bulk-sel" style="margin-top:0" href="https://rideshare-internal.nelnettools.com/wf-intake-form/" target="_blank" rel="noopener noreferrer">↗ Send to intake form</a>
       <button type="submit" value="cancel" class="bulk-sel" style="margin-top:0;margin-left:auto">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="count-dialog" class="fix-dialog" aria-labelledby="count-title">
+  <form method="dialog" class="fix-form">
+    <div class="fix-head">
+      <h2 id="count-title">How we count</h2>
+      <button type="submit" value="cancel" class="fix-x" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="exp-body"><div class="count-body">
+      <p><strong>ARC counts every flagged element</strong> (an instance). <strong>Allyway counts the work:</strong> one finding per rule per page, because that is the unit someone fixes and signs off. The two numbers are meant to differ.</p>
+      <p>Example: &ldquo;Italic element used&rdquo; flags 5,967 elements across 109 pages. ARC shows 5,967. Allyway shows 109 findings, one per page.</p>
+      <p>Each source shows both: <em>findings</em> and <em>instances</em>. The Instances column in the tables is ARC&rsquo;s count for that rule or page.</p>
+      <p>Findings you marked as one global fix count once, however many pages they cover. Findings marked Deferred are still counted in the total, but not as active, suppressed or fixed, so those three numbers can add up to less than the total.</p>
+    </div></div>
+    <div class="fix-foot">
+      <button type="submit" value="cancel" class="btn-export" style="margin-left:auto">Done</button>
     </div>
   </form>
 </dialog>
@@ -1113,6 +1175,7 @@ async function saveNow(){
     if(dChanged.length||dCleared.length||mChanged.length||mCleared.length){ const sm=computeSummary(state.defects, state.contrast, state.dispositions, state.manualFindings); statsCache[src]=sm; writeSummary(src, sm); }
     _savedDisp=curDisp; _savedManual=curMan; _savedXcats=curXcats; _savedPeople=curPeople;   // commit only what we captured up front
     if(!_stale) setSave('saved');   // never advertise a save on a tab that has since frozen
+    flushEvTrash();
   }catch(e){ console.error('[allyway] save failed:', e); goStale(errText(e), total-done); }
   finally{ _saving=false; }
 }
@@ -1364,21 +1427,21 @@ function computeSummary(defects, contrast, dispositions, manual){
   const res=(fp,url)=>{ if(excl.has(url))return 'out_of_scope';
     const lk=linkTarget(dispositions,fp,url); if(lk){ const [tf,tu]=lk.split('|||'); return res(tf,tu); }   // "same as" page
     const pg=dispositions[`${fp}|||${url}`]; if(pg&&pg.status)return pg.status; const rd=dispositions[fp]; if(rd&&rd.status)return rd.status; return 'untriaged'; };
-  let active=0,suppressed=0,verify=0,untriaged=0,total=0;
+  let active=0,suppressed=0,verify=0,untriaged=0,total=0,deferred=0;
   for(const defs of [defects||{}, contrast||{}]) for(const d of Object.values(defs)){
     const g=new Set(globalUrls(d.fingerprint,d.affected_pages,dispositions));
     const c={active:0,suppressed:0,verify:0,deferred:0}, gc={active:0,suppressed:0,verify:0,deferred:0}; let nUntriaged=0, gUntriaged=0;
     for(const url of d.affected_pages){ const st=res(d.fingerprint,url), t=g.has(url)?gc:c;
       t[st==='deferred'?'deferred':(SMAP[st]?.bucket||'active')]++; if(st==='untriaged'){ if(g.has(url))gUntriaged++; else nUntriaged++; } }
-    total+=d.affected_pages.length-g.size; active+=c.active; suppressed+=c.suppressed; verify+=c.verify; untriaged+=nUntriaged;
+    total+=d.affected_pages.length-g.size; active+=c.active; suppressed+=c.suppressed; verify+=c.verify; deferred+=c.deferred; untriaged+=nUntriaged;
     if(g.size){   // the global-fix pages = one item, in whichever bucket it sits
       const b = gc.active ? 'active' : gc.verify ? 'verify' : gc.suppressed ? 'suppressed' : '';
       total++; if(gUntriaged)untriaged++;              // any untriaged page → the collapsed item isn't triaged
-      if(b==='active')active++; else if(b==='verify')verify++; else if(b==='suppressed')suppressed++;   // all deferred: triaged, not active
+      if(b==='active')active++; else if(b==='verify')verify++; else if(b==='suppressed')suppressed++; else deferred++;   // all deferred: triaged, not active
     }
   }
   active += (manual||[]).filter(m=>m.type==='a11y' && m.status!=='deferred' && (SMAP[m.status||'untriaged']?.bucket||'active')==='active').length;
-  return {active, suppressed, verify, untriaged, total, triagedPct: total?Math.round(100*(total-untriaged)/total):0};
+  return {active, suppressed, verify, deferred, untriaged, total, triagedPct: total?Math.round(100*(total-untriaged)/total):0};
 }
 /* ── Rename a source ─────────────────────────────────────────
    The source name is the key on every record (scan / disp / manual / summary / source / lastview),
@@ -1409,6 +1472,8 @@ function openRename(sources){
   sel.focus();
 }
 document.getElementById('ppl-open').addEventListener('click', openPeople);
+document.getElementById('count-open').addEventListener('click', ()=>{ const d=document.getElementById('count-dialog');
+  if(typeof d.showModal==='function') d.showModal(); else d.setAttribute('open',''); });
 /* The dialog's form is method="dialog", so a bare Enter would submit it and close the whole thing
    mid-edit. Enter belongs to the field it was pressed in: add the typed person, or save that row. */
 document.getElementById('ppl-dialog').addEventListener('keydown', e=>{
@@ -1443,7 +1508,7 @@ document.getElementById('ren-go').addEventListener('click', async ()=>{
 // Persist a source's summary so the dashboard reads ONE small record instead of the whole scan. Non-critical: swallow errors.
 async function writeSummary(src, s){
   if(!NS()) return;
-  try{ await NS().putRecords([{kind:'summary',source:src,v:SUMMARY_V,active:s.active,suppressed:s.suppressed,verify:s.verify,
+  try{ await NS().putRecords([{kind:'summary',source:src,v:SUMMARY_V,active:s.active,suppressed:s.suppressed,verify:s.verify,deferred:s.deferred,
     untriaged:s.untriaged,total:s.total,triagedPct:s.triagedPct,updatedAt:Date.now()}], {replaceWhere:{kind:'summary',source:src}});
     invalidateRows(); }catch{}
 }
@@ -1464,14 +1529,17 @@ function metricsHtml(s){
   if(s.loading) return `<div class="src-card__stats">${['Active','Fixed','Suppressed'].map(l=>`<div class="src-card__stat"><div class="src-card__n" style="color:var(--gray)">·</div><div class="src-card__l">${l}</div></div>`).join('')}</div><div class="src-card__foot"><span style="color:var(--gray)">Loading…</span></div>`;
   return `<div class="src-card__stats">
       <div class="src-card__stat"><div class="src-card__n ${s.active?'warn':''}">${s.active}</div><div class="src-card__l">Active</div></div>
-      <div class="src-card__stat"><div class="src-card__n">${s.verify}</div><div class="src-card__l">Fixed</div></div>
-      <div class="src-card__stat"><div class="src-card__n">${s.suppressed}</div><div class="src-card__l">Suppressed</div></div>
+      <div class="src-card__stat"><div class="src-card__n ${s.verify?'':'zero'}">${s.verify}</div><div class="src-card__l">Fixed</div></div>
+      <div class="src-card__stat"><div class="src-card__n ${s.suppressed?'':'zero'}">${s.suppressed}</div><div class="src-card__l">Suppressed</div></div>
     </div>
+    ${deferredOf(s)?`<div class="src-card__defer"><span>+${deferredOf(s)} deferred</span></div>`:''}${/* remove this line to drop the home-card deferred note */''}
     <div class="src-card__progress">
       <div class="src-card__foot"><span>${s.triagedPct}% triaged</span><span class="src-card__bar"><span style="width:${s.triagedPct}%"></span></span></div>
       ${(s.active+s.verify)?`<div class="src-card__foot"><span>${fixedPct(s)}% fixed</span><span class="src-card__bar"><span style="width:${fixedPct(s)}%"></span></span></div>`:`<div class="src-card__foot"><span>No fixes needed</span></div>`}
     </div>`;
 }
+// Summary rows saved before deferred was stored fall back to what the total holds beyond the other three buckets
+const deferredOf = s => typeof s.deferred==='number' ? s.deferred : Math.max(0, (s.total||0)-(s.active||0)-(s.verify||0)-(s.suppressed||0));
 // Fixing progress = Fixed ÷ (Active + Fixed); suppressed items never need a fix, so they sit outside it
 const fixedPct = s => (s.active+s.verify) ? Math.round(100*s.verify/(s.active+s.verify)) : 0;
 const cardAria = s => (s.err||s.loading) ? `Open ${s.src}` : `Open ${s.src}: ${s.active} active findings, ${s.triagedPct} percent triaged, ${(s.active+s.verify)?fixedPct(s)+" percent fixed":"no fixes needed"}`;
@@ -1550,7 +1618,7 @@ function activateSource(){
 // (fix-didn't-take, escalated, new) — confirmedFixed/noLongerDetected rows are gone, no jump target.
 function jumpToRule(fp){
   if(!state) return;
-  ['filter-search','filter-status','filter-assignee'].forEach(id=>document.getElementById(id).value='');
+  ['filter-search','filter-status','filter-assignee','filter-global'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('filter-sev').value='';
   if(activeStream==='contrast' && contrastGroupBy!=='signature'){ contrastGroupBy='signature'; syncGroupByButtons(); if(!orders[orderKey()].length) recomputeOrder(); }
   PG.reveal=fp;   // renderTable opens the page that holds this rule
@@ -2151,18 +2219,20 @@ function statusesInUse(){ if(!state) return []; const excl=excludedUrls(); const
 /* Rows stay put after an edit: the Status/Assignee filter is evaluated once, when its value changes, and
    that set of pages is held until the filter changes again — updating a finding never makes it vanish. */
 let _pin=null;
-function pinFor(excl,f){ if(!f.status&&!f.assignee&&!f.xcat){ _pin=null; return null; }
-  const key=f.status+'|'+f.assignee+'|'+f.who.join('\u0001')+'|'+f.xcat; if(_pin&&_pin.key===key) return _pin;
+function pinFor(excl,f){ if(!f.status&&!f.assignee&&!f.xcat&&!f.global){ _pin=null; return null; }
+  const key=f.status+'|'+f.assignee+'|'+f.who.join('\u0001')+'|'+f.xcat+'|'+f.global; if(_pin&&_pin.key===key) return _pin;
   const keys=new Set();
   for(const defs of [state.defects||{},state.contrast||{}]) for(const d of Object.values(defs)) for(const u of d.affected_pages){
-    const pr=[{fp:d.fingerprint,url:u}]; if(matchStatus(pr,excl,f)&&matchAssignee(pr,excl,f)&&matchXcat(pr,excl,f)) keys.add(d.fingerprint+'|||'+u); }
+    const pr=[{fp:d.fingerprint,url:u}]; if(matchStatus(pr,excl,f)&&matchAssignee(pr,excl,f)&&matchXcat(pr,excl,f)&&matchGlobal(d.fingerprint,u,f)) keys.add(d.fingerprint+'|||'+u); }
   const mids=new Set();
   for(const m of (state.manualFindings||[])) if(manualMatchPinned(m,f)) mids.add(m.id);
-  return _pin={key,status:f.status,assignee:f.assignee,who:f.who,xcat:f.xcat,keys,mids}; }
+  return _pin={key,status:f.status,assignee:f.assignee,who:f.who,xcat:f.xcat,global:f.global,keys,mids}; }
+// Global-fix filter: "yes" keeps only pages grouped into a rule's global fix, "no" only those outside it.
+const matchGlobal = (fp,url,f) => !f.global || (globalUrls(fp,[url]).length>0) === (f.global==='yes');
 /* Manual findings carry their own status/assignee and never a "Blocked by", so they match the held
    filters directly instead of going through resolvePage. */
 function manualMatchPinned(m,f){
-  if(f.xcat) return false;
+  if(f.xcat||f.global==='yes') return false;   // manual findings are never part of a global fix
   if(f.status && (m.status||'untriaged')!==f.status) return false;
   const who=asPeople(m.assignee);
   if(f.assignee==='__any'){ if(!who.length) return false; }
@@ -2222,7 +2292,8 @@ const filters = () => { const who=document.getElementById('filter-assignee').val
   return {search:document.getElementById('filter-search').value.trim().toLowerCase(),
     sev:document.getElementById('filter-sev').value, status,
     assignee:who, who:FILTER_WHO_SPECIAL[who]!==undefined?[]:asPeople(who),
-    xcat:status==='cant_fix' ? document.getElementById('filter-xcat').value : ''}; };
+    xcat:status==='cant_fix' ? document.getElementById('filter-xcat').value : '',
+    global:document.getElementById('filter-global').value}; };
 
 function render(){
   if(!state) return;
@@ -2269,8 +2340,9 @@ function refreshCatTabs(){
     document.getElementById('tab-cat-'+c.v).hidden = !n[c.v] && !(activeStream==='standard' && activeCat===c.v); }   // the open tab stays until you leave it
 }
 function renderStats(all,excl){
-  let activeFindings=0,supprFindings=0,verifyFindings=0;
+  let activeFindings=0,supprFindings=0,verifyFindings=0,totalFindings=0,totalInstances=0;
   for(const d of all){ const g=new Set(globalUrls(d.fingerprint,d.affected_pages));
+    totalFindings+=d.affected_pages.length-g.size+(g.size?1:0); totalInstances+=d.instance_count||0;
     const c={active:0,suppressed:0,verify:0}, gc={active:0,suppressed:0,verify:0};
     for(const u of d.affected_pages){ const st=resolvePage(d.fingerprint,u,excl).status; if(st==='deferred') continue; (g.has(u)?gc:c)[bucket(st)]++; }
     activeFindings+=c.active; supprFindings+=c.suppressed; verifyFindings+=c.verify;
@@ -2280,9 +2352,12 @@ function renderStats(all,excl){
   const mA11y=manual.filter(m=>m.type==='a11y'), mObs=manual.filter(m=>m.type==='other');
   const mA11yActive=mA11y.filter(m=>bucket(m.status||'untriaged')==='active'&&m.status!=='deferred'&&(activeCat===ALL_CATS||(m.cat||'')===activeCat)).length;
   const manualAdd = activeStream==='standard' ? mA11yActive : 0;   // manual findings live on the standard tabs, by category
+  // Deferred pages are in the total but in none of the other buckets, so they are what's left over
+  const deferredFindings=totalFindings-activeFindings-supprFindings-verifyFindings+manualAdd;
   activeFindings+=manualAdd;
   document.getElementById('stat-row').innerHTML=`
-    <div class="stat headline"><div class="stat-n">${activeFindings}</div><div class="stat-l">Active ${activeStream==='contrast'?'contrast ':''}findings</div></div>
+    <div class="stat headline"><div class="stat-n">${activeFindings}</div><div class="stat-l">Active ${activeStream==='contrast'?'contrast ':''}findings</div><div class="stat-sub">of ${totalFindings.toLocaleString()} findings · ${totalInstances.toLocaleString()} instances</div></div>
+    <div class="stat"><div class="stat-n">${deferredFindings}</div><div class="stat-l">Deferred findings</div><div class="stat-sub">triaged, parked for later</div></div>
     <div class="stat"><div class="stat-n">${supprFindings}</div><div class="stat-l">Suppressed findings</div></div>
     <div class="stat"><div class="stat-n">${verifyFindings}</div><div class="stat-l">Fixed (verify next scan)</div></div>
     <div class="stat"><div class="stat-n">${mA11y.length}<span style="font-size:.9rem">·${mObs.length}</span></div><div class="stat-l">Manual a11y · observations</div></div>`;
@@ -3006,7 +3081,7 @@ function renderManual(excl){
     const sev=(m.severity||'OTHER').toLowerCase().replace(/\s+/g,'-'), st=m.status||'untriaged', fix=fixBtnManual(m);
     const opts=STATUSES.filter(s=>!s.pageOnly).map(s=>`<option value="${s.v}" ${s.v===st?'selected':''}>${esc(s.label)}</option>`).join('');
     return `<tr>
-      <td class="m-title"><strong>${esc(m.title)}</strong></td>
+      <td class="m-title"><strong>${esc(m.title)}</strong>${evBtn(m)}</td>
       <td class="m-page">${m.url?`<a class="m-url" href="${esc(m.url)}" title="${esc(m.url)}" target="_blank" rel="noopener noreferrer">${esc(m.url)}</a>`:'—'}</td>
       <td><span class="pill ${m.type==='a11y'?'sev-high':'lowvol'}">${m.type==='a11y'?'A11y · counts':'Observation'}</span></td>
       <td><span class="pill sev-${sev}">${esc(m.severity||'—')}</span></td>
@@ -3023,6 +3098,7 @@ function renderManual(excl){
 }
 let _editingManual=null;
 function openManualForm(url='', editId=''){
+  mfDiscard();   // an earlier form left open must not strand its uploads
   const m = editId ? (state.manualFindings||[]).find(x=>x.id===editId) : null;
   _editingManual = m ? m.id : null;
   const wrap=document.getElementById('manual-form'); wrap.hidden=false;
@@ -3039,11 +3115,13 @@ function openManualForm(url='', editId=''){
     <label ${stackLbl}>Category <select id="mf-cat" ${selSty}><option value="">—</option>${CATS.map(c=>`<option value="${c.v}"${sel(c.v,m?m.cat:'')}>${esc(c.label)}</option>`).join('')}</select></label>
     <label ${stackLbl}>Note <input id="mf-note" class="notes-input" type="text" value="${esc(curNote)}" placeholder="optional (e.g. redirects to our other site)"></label>
     <div ${stackLbl}><span aria-hidden="true">Assignee</span>${peoplePicker(m?m.assignee:'', 'id="mf-who"')}</div>
+    ${evFieldset()}
     <div style="grid-column:1/3;display:flex;gap:8px">
       <button class="btn-primary" id="mf-save" type="button">${m?'Update finding':'Save finding'}</button>
       <button class="bulk-sel" id="mf-cancel" type="button" style="margin-top:0">Cancel</button></div></div>`;
+  mfEvInit(m);
   document.getElementById('mf-save').addEventListener('click',saveManual);
-  document.getElementById('mf-cancel').addEventListener('click',()=>{_editingManual=null;wrap.hidden=true;wrap.innerHTML='';});
+  document.getElementById('mf-cancel').addEventListener('click',()=>{ mfDiscard(); _editingManual=null;wrap.hidden=true;wrap.innerHTML=''; });
   document.getElementById((_editingManual||url)?'mf-title':'mf-url').focus();
 }
 function saveManual(){
@@ -3054,13 +3132,149 @@ function saveManual(){
     status:document.getElementById('mf-status').value, note:document.getElementById('mf-note').value.trim() };
   fields.cat=document.getElementById('mf-cat').value;   // '' clears it on edit
   const who=asPeople(document.getElementById('mf-who').dataset.people); fields.assignee=who.length?who:undefined;
+  if(_mfBusy){ toast('Wait for the upload to finish.','error'); return; }
+  const noAlt=_mfEv.findIndex(e=>!(e.alt||'').trim());
+  if(noAlt>=0){ toast('Describe each screenshot or video before saving.','error'); const f=document.querySelector(`[data-ev-alt="${noAlt}"]`); if(f) f.focus(); return; }
+  fields.evidence=_mfEv.length?_mfEv.map(e=>({...e,alt:e.alt.trim()})):undefined;
   const wasEdit=!!_editingManual;
-  if(wasEdit){ const m=(state.manualFindings||[]).find(x=>x.id===_editingManual); if(m){ if(fields.status!==m.status) m.since=today(); Object.assign(m, fields); if(!m.assignee) delete m.assignee; } }   // keeps id/fix
-  else (state.manualFindings||(state.manualFindings=[])).push({id:genId(), since:today(), ...fields});
+  if(wasEdit){ const m=(state.manualFindings||[]).find(x=>x.id===_editingManual); if(m){ if(fields.status!==m.status) m.since=today(); Object.assign(m, fields); if(!m.assignee) delete m.assignee; if(!m.evidence) delete m.evidence; } }   // keeps id/fix
+  else { const nm={id:genId(), since:today(), ...fields}; if(!nm.evidence) delete nm.evidence; (state.manualFindings||(state.manualFindings=[])).push(nm); }
+  _mfDrop.forEach(id=>_evTrash.add(id));   // files taken off an existing finding go once this save lands
+  _mfNew.clear(); _mfDrop.clear(); _mfEv=[];
   _editingManual=null;
   const wrap=document.getElementById('manual-form'); wrap.hidden=true; wrap.innerHTML='';
   persist(); render(); toast(wasEdit?'Finding updated.':'Finding added.');
 }
+
+/* ── Evidence: screenshots and screen recordings on a manual finding ──────────────────────
+   Bytes live in Rideshare file storage; the finding keeps only [{id,name,type,size,alt}], so a record
+   never carries encoded bytes. Size is capped per file and per finding to keep the site light. */
+const EV_MAX_FILES=5, EV_IMG_MAX=5*1024*1024, EV_VID_MAX=15*1024*1024;
+const EV_IMG=/^image\/(png|jpeg|gif|webp)$/, EV_VID=/^video\/(mp4|webm)$/;
+const evIsVideo=e=>/^video\//.test((e&&e.type)||'');
+const evMB=n=>(n/1048576).toFixed(n<10485760?1:0)+' MB';
+/* Files to delete once the save that drops them has landed — deleting first would leave a finding
+   pointing at nothing if that save failed. */
+const _evTrash=new Set();
+async function flushEvTrash(){
+  if(!NS()||!NS().removeFile) return;
+  for(const id of [..._evTrash]){
+    try{ await NS().removeFile(id); _evTrash.delete(id); }
+    catch(e){ if(e && e.code==='not_found') _evTrash.delete(id); }   // anything else stays queued for the next save
+  }
+}
+const evBtn=m=>{ const n=(m.evidence||[]).length; return n?`<div><button class="pages-btn" type="button" data-role="mevid" data-id="${esc(m.id)}" aria-label="View ${n} evidence file${n===1?'':'s'} for ${esc(m.title)}">Evidence (${n})</button></div>`:''; };
+
+/* Form state for the finding being added or edited */
+let _mfEv=[], _mfNew=new Set(), _mfDrop=new Set(), _mfBusy=false, _mfSess=0;
+function evFieldset(){
+  const off=!NS();
+  return `<fieldset class="ev-box"><legend>Evidence (optional)</legend>
+    <input id="mf-ev-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm" multiple ${off?'disabled':''} aria-describedby="mf-ev-hint">
+    <p id="mf-ev-hint" class="ev-hint">${off?'Attachments only work on the Rideshare site.':`Screenshots up to ${evMB(EV_IMG_MAX)} (PNG, JPG, GIF, WebP) and recordings up to ${evMB(EV_VID_MAX)} (MP4, WebM), ${EV_MAX_FILES} files per finding. You can also paste an image with Ctrl+V.`}</p>
+    <p id="mf-ev-status" class="ev-status" role="status" aria-live="polite"></p>
+    <ul id="mf-ev-list" class="ev-files"></ul></fieldset>`;
+}
+function mfEvInit(m){
+  _mfSess++; _mfEv=m&&m.evidence?m.evidence.map(e=>({...e})):[]; _mfNew=new Set(); _mfDrop=new Set(); _mfBusy=false;
+  mfEvRender();
+  const inp=document.getElementById('mf-ev-file');
+  inp.addEventListener('change',()=>{ const fs=[...inp.files]; inp.value=''; mfAddFiles(fs); });
+  document.getElementById('mf-ev-list').addEventListener('input',e=>{ const i=e.target.dataset.evAlt; if(i!==undefined&&_mfEv[i]) _mfEv[i].alt=e.target.value; });
+  document.getElementById('mf-ev-list').addEventListener('click',e=>{ const b=e.target.closest('[data-ev-rm]'); if(!b) return; mfEvRemove(+b.dataset.evRm); });
+}
+function mfEvRender(){
+  const ul=document.getElementById('mf-ev-list'); if(!ul) return;
+  ul.innerHTML=_mfEv.map((e,i)=>`<li class="ev-file"><span class="ev-name">${evIsVideo(e)?'Video':'Screenshot'}: ${esc(e.name)} (${evMB(e.size||0)})</span>
+    <label>Description <input class="notes-input" type="text" data-ev-alt="${i}" value="${esc(e.alt||'')}" placeholder="${evIsVideo(e)?'What the recording shows':'What the screenshot shows'}" aria-label="Description of ${esc(e.name)}" style="max-width:none"></label>
+    <button type="button" class="pages-btn" data-ev-rm="${i}" aria-label="Remove ${esc(e.name)}">Remove</button></li>`).join('');
+}
+function mfEvRemove(i){
+  const e=_mfEv[i]; if(!e) return;
+  _mfEv.splice(i,1);
+  if(_mfNew.has(e.id)){ _mfNew.delete(e.id); NS().removeFile(e.id).catch(()=>{}); }   // never referenced by a saved finding
+  else _mfDrop.add(e.id);
+  mfEvRender();
+  const st=document.getElementById('mf-ev-status'); if(st) st.textContent=`Removed ${e.name}.`;
+  const inp=document.getElementById('mf-ev-file'); if(inp) inp.focus();
+}
+async function mfAddFiles(files){
+  const sess=_mfSess, st=()=>document.getElementById('mf-ev-status'), save=()=>document.getElementById('mf-save');
+  const notes=[];
+  for(const f of files){
+    if(_mfEv.length>=EV_MAX_FILES){ notes.push(`Only ${EV_MAX_FILES} files per finding, so ${f.name||'a file'} was skipped.`); continue; }
+    const vid=EV_VID.test(f.type), img=EV_IMG.test(f.type), name=f.name||(vid?'recording':'screenshot');
+    if(!vid&&!img){ notes.push(`${name} is not a PNG, JPG, GIF, WebP, MP4 or WebM file.`); continue; }
+    const cap=vid?EV_VID_MAX:EV_IMG_MAX;
+    if(f.size>cap){ notes.push(`${name} is ${evMB(f.size)}; ${vid?'recordings':'screenshots'} are limited to ${evMB(cap)}.`); continue; }
+    _mfBusy=true; if(save()) save().disabled=true; if(st()) st().textContent=`Uploading ${name}…`;
+    try{
+      const r=await NS().putFile(f), id=(r&&(r.id||r.fileId))||r;
+      if(sess!==_mfSess){ NS().removeFile(id).catch(()=>{}); return; }   // the form was closed mid-upload
+      _mfNew.add(id); _mfEv.push({id,name,type:f.type,size:f.size,alt:''});
+    }catch(e){ notes.push(`Could not upload ${name}: ${(e&&(e.code==='too_large'?'file too large':e.code||e.message))||'unknown error'}.`); }
+  }
+  if(sess!==_mfSess) return;
+  _mfBusy=false; if(save()) save().disabled=false;
+  mfEvRender();
+  if(st()) st().textContent=notes.join(' ')||(files.length?'Added. Describe each file below.':'');
+  const first=document.querySelector('[data-ev-alt]:placeholder-shown'); if(first&&files.length&&!notes.length) first.focus();
+}
+// Throw away files uploaded for a form that was cancelled, replaced or never saved
+function mfDiscard(){
+  _mfSess++;
+  if(NS()&&NS().removeFile) for(const id of _mfNew) NS().removeFile(id).catch(()=>{});
+  _mfNew=new Set(); _mfDrop=new Set(); _mfEv=[]; _mfBusy=false;
+}
+document.getElementById('manual-form').addEventListener('paste',e=>{
+  const fs=[...(e.clipboardData&&e.clipboardData.files||[])].filter(f=>/^image\//.test(f.type));
+  if(!fs.length||!document.getElementById('mf-ev-file')||!NS()) return;
+  e.preventDefault(); mfAddFiles(fs);
+});
+
+/* Viewer: images render inline from a short-lived URL; video is read into a blob so it can play */
+let _evOpen=null;
+function evUrl(id){ return NS().getFileUrl(id,{inline:true}).then(r=>r.url); }
+async function openEvidence(mid){
+  const m=(state.manualFindings||[]).find(x=>x.id===mid); if(!m||!(m.evidence||[]).length) return;
+  _evOpen=m;
+  document.getElementById('ev-sub').textContent=m.title||'Manual finding';
+  const ul=document.getElementById('ev-view');
+  if(!NS()){ ul.innerHTML='<li class="ev-note">Evidence can only be viewed on the Rideshare site.</li>'; document.getElementById('ev-dialog').showModal(); return; }
+  ul.innerHTML=m.evidence.map((e,i)=>evIsVideo(e)
+    ? `<li><figure><p class="ev-desc"><strong>Video:</strong> ${esc(e.alt)}</p><div id="ev-slot-${i}"><button type="button" class="pages-btn" data-ev-play="${i}">Play video (${evMB(e.size||0)})</button></div>
+        <figcaption>${esc(e.name)}</figcaption></figure><div class="ev-acts"><button type="button" class="pages-btn" data-ev-dl="${i}" aria-label="Download ${esc(e.name)}">Download</button></div></li>`
+    : `<li><figure><img class="ev-img" id="ev-img-${i}" alt="${esc(e.alt)}"><figcaption>${esc(e.name)} (${evMB(e.size||0)})</figcaption></figure>
+        <div class="ev-acts"><button type="button" class="pages-btn" data-ev-view="${i}" aria-label="View ${esc(e.name)} full screen">Full screen</button><button type="button" class="pages-btn" data-ev-dl="${i}" aria-label="Download ${esc(e.name)}">Download</button></div></li>`).join('');
+  document.getElementById('ev-dialog').showModal();
+  m.evidence.forEach((e,i)=>{ if(evIsVideo(e)) return; const img=document.getElementById('ev-img-'+i);
+    const load=retry=>evUrl(e.id).then(u=>{ img.src=u; }).catch(()=>{ if(!retry) img.insertAdjacentHTML('afterend','<p class="ev-note">This file is no longer in storage.</p>'); });
+    img.onerror=()=>{ if(!img.dataset.retried){ img.dataset.retried='1'; load(true); } };   // the URL expires after ~5 minutes
+    load(false); });
+}
+document.getElementById('ev-view').addEventListener('click',async e=>{
+  const m=_evOpen; if(!m) return;
+  const play=e.target.closest('[data-ev-play]'), dl=e.target.closest('[data-ev-dl]'), vw=e.target.closest('[data-ev-view]');
+  try{
+    if(vw){ await NS().viewFile(m.evidence[+vw.dataset.evView].id); }
+    else if(dl){ await NS().downloadFile(m.evidence[+dl.dataset.evDl].id); }
+    else if(play){
+      const i=+play.dataset.evPlay, ev=m.evidence[i], slot=document.getElementById('ev-slot-'+i);
+      play.disabled=true; play.textContent='Loading…';
+      const f=await NS().getFileBytes(ev.id);
+      const v=document.createElement('video'); v.className='ev-vid'; v.controls=true; v.preload='metadata'; v.setAttribute('aria-label',ev.alt||ev.name);
+      v.src=URL.createObjectURL(f.blob.type?f.blob:new Blob([f.blob],{type:ev.type}));
+      v.addEventListener('error',()=>{ slot.insertAdjacentHTML('beforeend','<p class="ev-note">This browser could not play the video here. Use Download instead.</p>'); });
+      slot.replaceChildren(v); v.focus();
+    }
+  }catch(err){
+    if(play){ play.disabled=false; play.textContent='Play video'; }
+    toast('Could not open that file: '+((err&&(err.code||err.message))||'unknown error'),'error');
+  }
+});
+document.getElementById('ev-dialog').addEventListener('close',()=>{
+  _evOpen=null; document.querySelectorAll('#ev-view video').forEach(v=>{ URL.revokeObjectURL(v.src); v.removeAttribute('src'); v.load(); });
+});
 
 /* ── Mutations ──────────────────────────────────────────────── */
 function ensureField(d,status){ const st=SMAP[status]; if(!st||!st.field) return;
@@ -3258,7 +3472,8 @@ function wouldLoop(fromKey,targetKey){ const seen=new Set(); let key=targetKey;
   return false; }
 function renderSameList(){
   const q=document.getElementById('same-q').value.trim().toLowerCase();
-  const defs = activeStream==='contrast' ? (state.contrast||{}) : state.defects;
+  // A category tab (All included) lists contrast findings beside the standard ones, so both are targets there
+  const defs = activeStream==='contrast' ? (state.contrast||{}) : activeCat ? {...state.defects, ...(state.contrast||{})} : state.defects;
   const hits=[]; let total=0;
   const bulk=_sameFrom.pairs.length>1, from=_sameFrom.pairs[0];
   // This rule's own pages first: the usual target is a sibling page. Self is excluded only for a single
@@ -3314,7 +3529,7 @@ function estimateSummary(){
     for(const us of units){ if(!us.some(u=>matchPairs([{fp,url:u}],excl,f))) continue;
       add(effAssignee(fp,us[0])||'Unassigned', us.map(u=>estOf(fp,u)).find(Boolean)||null); } }
   for(const m of manualInTab()){ const st=m.status||'untriaged'; if(!ACTIVE_TODO.has(st)) continue;
-    if(f.status&&f.status!==st) continue;
+    if(f.status&&f.status!==st||f.global==='yes') continue;
     const who=asPeople(m.assignee);
     if(f.assignee&&!(f.assignee==='__any'?who.length:f.assignee==='__none'?!who.length:f.who.some(n=>who.includes(n)))) continue;
     add(who.join(', ')||'Unassigned', m.est>0?{h:m.est,guess:!!m.estGuess}:null); }
@@ -3423,7 +3638,9 @@ document.addEventListener('click', e=>{
     document.getElementById('manual-form').scrollIntoView({behavior:'smooth',block:'center'}); return; }
   const med=e.target.closest('[data-role=medit]'); if(med){ document.getElementById('manual-sec').open=true; openManualForm('', med.dataset.id);
     document.getElementById('manual-form').scrollIntoView({behavior:'smooth',block:'center'}); return; }
-  const rm=e.target.closest('[data-role=mremove]'); if(rm){ state.manualFindings=state.manualFindings.filter(x=>x.id!==rm.dataset.id); persist(); render(); }
+  const rm=e.target.closest('[data-role=mremove]'); if(rm){ const gone=state.manualFindings.find(x=>x.id===rm.dataset.id); if(gone) for(const ev of (gone.evidence||[])) _evTrash.add(ev.id);
+    state.manualFindings=state.manualFindings.filter(x=>x.id!==rm.dataset.id); persist(); render(); return; }
+  const mev=e.target.closest('[data-role=mevid]'); if(mev){ openEvidence(mev.dataset.id); }
 });
 document.addEventListener('submit', e=>{
   const f=e.target.closest('[data-role=followup]'); if(!f) return;
@@ -3436,12 +3653,15 @@ document.getElementById('fix-text').addEventListener('input', updateFixAI);
 document.getElementById('fix-dialog').addEventListener('close', ()=>{ _fixTarget=null; });
 document.getElementById('same-q').addEventListener('input', renderSameList);
 
+function rowsToCSV(rows,cols){
+  const keys=cols || [...new Set(rows.flatMap(Object.keys))];
+  const cell=v=>{ const s=String(v??''); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  return keys.map(cell).join(',')+'\n'+rows.map(r=>keys.map(k=>cell(r[k])).join(',')).join('\n');
+}
 // One download path for every export: the platform helper, or a local Blob in preview.
 function downloadRows(rows, name, cols){
   if(NS() && NS().downloadCSV){ NS().downloadCSV(rows, name); return; }
-  const keys=cols || [...new Set(rows.flatMap(Object.keys))];
-  const cell=v=>{ const s=String(v??''); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
-  const csv='﻿'+keys.map(cell).join(',')+'\n'+rows.map(r=>keys.map(k=>cell(r[k])).join(',')).join('\n');
+  const csv='﻿'+rowsToCSV(rows,cols);
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download=name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
 }
@@ -3468,7 +3688,8 @@ function collectWorkList(){
           const nu=gp.find(u=>effNotes(d.fingerprint,u)), fu=gp.find(u=>fixOf(d.fingerprint,u));
           rows.push({ _s:st, item:d.rule_title, stream, url:`(global fix — ${gp.length} pages)`,            grade: stream==='contrast' ? (d.category||'') : (d.severity||''),
             instances:d.instance_count||'', status:SMAP[st].label, assignee:effAssignee(d.fingerprint,gp[0]),
-            note:(nu?effNotes(d.fingerprint,nu):rd.notes)||'', fix:(fu?fixOf(d.fingerprint,fu):rd.fix)||'', html:sample, cat:effCat(d.fingerprint,gp[0]), est:gp.map(u=>estOf(d.fingerprint,u)).find(Boolean)||null });
+            note:(nu?effNotes(d.fingerprint,nu):rd.notes)||'', fix:(fu?fixOf(d.fingerprint,fu):rd.fix)||'', html:sample, cat:effCat(d.fingerprint,gp[0]), est:gp.map(u=>estOf(d.fingerprint,u)).find(Boolean)||null,
+            _keys:gp.map(u=>`${d.fingerprint}|||${u}`) });
         }
       }
       for(const url of d.affected_pages){ if(gset.has(url)) continue;
@@ -3478,7 +3699,9 @@ function collectWorkList(){
         instances:d.page_instances[url]||'', status:SMAP[rp.status].label, assignee:effAssignee(d.fingerprint,url),
         note:sameAsNote(d.fingerprint,url)+(effNotes(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).notes||''),
         fix:fixOf(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).fix||'',
-        html:(d.page_html[url]||[])[0]||'', cat:effCat(d.fingerprint,url), est:estOf(d.fingerprint,url) }); } }
+        html:(d.page_html[url]||[])[0]||'', cat:effCat(d.fingerprint,url), est:estOf(d.fingerprint,url),
+        _keys:[`${d.fingerprint}|||${url}`], _tgt:linkTarget(state.dispositions,d.fingerprint,url)||'',
+        _own:effNotes(d.fingerprint,url)||(state.dispositions[d.fingerprint]||{}).notes||'' }); } }
   }
   for(const m of (state.manualFindings||[])){ if(!WORKLIST_STATUSES.includes(m.status)) continue;
     rows.push({ _s:m.status, item:m.title, stream:'manual ('+(m.type==='a11y'?'a11y':'obs')+')', url:m.url||'',
@@ -3487,15 +3710,38 @@ function collectWorkList(){
 }
 /* Export options live here, not in the filter bar — picking an assignee to export shouldn't mean
    re-filtering the whole page. Statuses/streams/categories/columns persist for the session. */
-const _exp={people:new Set(), cat:'', sts:new Set(WORKLIST_STATUSES), streams:new Set(['standard','contrast','manual']), cols:new Set(['instances','est','note','fix','html'])};
+const _exp={people:new Set(), cat:'', sts:new Set(WORKLIST_STATUSES), streams:new Set(['standard','contrast','manual']), cols:new Set(['instances','est','note','fix','html']), fold:true};
 const expStream = r => r.stream.startsWith('manual') ? 'manual' : r.stream;
+/* Fold each "Same as" page into the exported row it follows, so one root cause is one row. A page
+   whose target isn't in this export stays as its own row — nothing silently disappears. The target
+   gets a count up front, the followers' URLs in _also, and any note/fix text only the followers carry. */
+function foldSameAs(rows){
+  const at=new Map(); for(const r of rows) for(const k of (r._keys||[])) at.set(k,r);
+  const out=[], kids=new Map();
+  for(const r of rows){ const t=r._tgt&&at.get(r._tgt);
+    if(t&&t!==r){ (kids.get(t)||kids.set(t,[]).get(t)).push(r); continue; }
+    out.push(r); }
+  for(const [t,fs] of kids){
+    const byRule=new Map(); for(const f of fs) byRule.set(f.item,(byRule.get(f.item)||0)+1);
+    const rules=[...byRule].sort((a,b)=>b[1]-a[1]), shown=rules.slice(0,4).map(([k,n])=>`${k} ×${n}`);
+    if(rules.length>4) shown.push(`+${rules.length-4} more`);
+    const extra=(get,have)=>{ const s=[...new Set(fs.map(get).map(x=>(x||'').trim()).filter(x=>x&&!have.includes(x)))];
+      return s.length>5 ? s.slice(0,5).concat(`+${s.length-5} more`) : s; };
+    const notes=extra(f=>f._own,t.note||''), fixes=extra(f=>f.fix,t.fix||'');
+    t.note=`Also covers ${fs.length} page${fs.length===1?'':'s'} marked "Same as" (${shown.join(', ')}). `+(t.note||'')
+      +(notes.length?` Notes on those pages: ${notes.join(' | ')}`:'');
+    if(fixes.length) t.fix=(t.fix?t.fix+' ':'')+`Fix notes on those pages: ${fixes.join(' | ')}`;
+    t._also=fs.map(f=>f.url).filter(Boolean); }
+  return out;
+}
 function expRows(){
-  return collectWorkList().filter(r=>{
+  const rows=collectWorkList().filter(r=>{
     if(!_exp.sts.has(r._s) || !_exp.streams.has(expStream(r))) return false;
     if(_exp.cat && (r.cat||'__none')!==_exp.cat) return false;
     if(!_exp.people.size) return true;   // nothing ticked means everyone
     const who=asPeople(r.assignee);      // a shared item comes along if any of its owners is ticked
     return who.length ? who.some(n=>_exp.people.has(n)) : _exp.people.has('__none'); });
+  return _exp.fold ? foldSameAs(rows) : rows;
 }
 const expHours = rs => rs.reduce((t,r)=>({h:t.h+(r.est?r.est.h:0), g:t.g+(r.est&&r.est.guess?r.est.h:0), u:t.u+(r.est?0:1)}),{h:0,g:0,u:0});
 // Named people only — what a Workfront task can be assigned to; Unassigned rides along in the label
@@ -3503,7 +3749,9 @@ const expNames = () => [..._exp.people].filter(v=>v!=='__none').sort((a,b)=>a.lo
 const expWho = () => expNames().concat(_exp.people.has('__none')?['Unassigned']:[]).join(', ');
 function openExport(){
   if(!state) return;
-  const seed=document.getElementById('filter-assignee').value, people=allAssignees();   // seed from the filter bar, then override here
+  // Only owners of exportable rows — a name with nothing open would just export an empty file
+  const owners=new Set(collectWorkList().flatMap(r=>asPeople(r.assignee)));
+  const seed=document.getElementById('filter-assignee').value, people=allAssignees().filter(n=>owners.has(n));   // seed from the filter bar, then override here
   _exp.people.clear();
   if(seed==='__any') people.forEach(n=>_exp.people.add(n));
   else if(seed==='__none') _exp.people.add(seed);
@@ -3520,6 +3768,7 @@ function openExport(){
     `<label class="chk"><input type="checkbox" data-exp="status" value="${v}" ${_exp.sts.has(v)?'checked':''}> ${esc(SMAP[v].label)}</label>`).join('');
   for(const el of document.querySelectorAll('#exp-dialog [data-exp=stream]')) el.checked=_exp.streams.has(el.value);
   for(const el of document.querySelectorAll('#exp-dialog [data-exp=col]')) el.checked=_exp.cols.has(el.value);
+  document.querySelector('#exp-dialog [data-exp=fold]').checked=_exp.fold;
   expCount();
   const dlg=document.getElementById('exp-dialog');
   if(typeof dlg.showModal==='function') dlg.showModal(); else dlg.setAttribute('open','');
@@ -3539,6 +3788,7 @@ function expCsv(){
   if(_exp.cols.has('instances')) cols.push('Instances');
   cols.push('Status','Assignee','Category');
   if(_exp.cols.has('note')) cols.push('Note');
+  if(rows.some(r=>r._also)) cols.push('Also covers (URLs)');
   if(_exp.cols.has('fix')) cols.push('Fix Instructions');
   if(_exp.cols.has('est')) cols.push('Estimate (hrs)','Estimate type');
   if(_exp.cols.has('html')) cols.push('Sample HTML');
@@ -3546,7 +3796,7 @@ function expCsv(){
       'Rule / Element':r.item, 'Stream':r.stream, 'Page URL':r.url, 'Category / Severity':r.grade,
       'Instances':r.instances, 'Status':r.status, 'Assignee':r.assignee,
       'Category':r.stream==='contrast'?'Color/Visual':(CMAP[r.cat]?CMAP[r.cat].label:''),
-      'Note':r.note, 'Fix Instructions':r.fix, 'Estimate (hrs)':r.est?r.est.h:'',
+      'Note':r.note, 'Also covers (URLs)':(r._also||[]).join('\n'), 'Fix Instructions':r.fix, 'Estimate (hrs)':r.est?r.est.h:'',
       'Estimate type':r.est?(r.est.guess?'Complete guess':'Estimate'):'', 'Sample HTML':r.html };
     const keep={}; for(const c of cols) keep[c]=o[c]; return keep; });
   const who=expWho();
@@ -3570,6 +3820,7 @@ function expText(rows){
     L.push('', `${SMAP[st].label.toUpperCase()} (${rs.length})`);
     for(const r of rs){ let line='- '+r.item+(r.url?` — ${r.url}`:'');
       if(r.est) line+=` — ${fmt(r.est.h)}${r.est.guess?' (guess)':''}`;
+      if(r._also) line+=` (+${r._also.length} "Same as" page${r._also.length===1?'':'s'})`;
       if(names.length>1) line+=` [${r.assignee||'Unassigned'}]`;
       L.push(line); } }
   return L.join('\n');
@@ -3584,6 +3835,7 @@ function expCopy(){
 document.getElementById('exp-dialog').addEventListener('change', e=>{
   const el=e.target, kind=el.dataset.exp;
   if(el.id==='exp-cat') _exp.cat=el.value;
+  else if(kind==='fold') _exp.fold=el.checked;
   else if(kind==='status'||kind==='stream'||kind==='col'||kind==='person'){
     const set = kind==='status' ? _exp.sts : kind==='stream' ? _exp.streams : kind==='person' ? _exp.people : _exp.cols;
     el.checked ? set.add(el.value) : set.delete(el.value); }
@@ -3646,7 +3898,7 @@ document.getElementById('exp-intake').addEventListener('click', expIntake);
    disposition row at all), so the "not an issue because…" reasoning is captured too.
    dkey/mid ride along verbatim — they are the keys a restore writes back to, and the
    work list drops them, which is what makes it unusable as a backup. ── */
-function collectTriage(){
+function collectTriage(evPaths){
   const rows=[];
   for(const [dkey,d] of Object.entries(state.dispositions||{}))
     rows.push({ kind:'disp', source:state.source, dkey, status:d.status||'', reason:d.reason||'',
@@ -3654,7 +3906,8 @@ function collectTriage(){
   for(const m of (state.manualFindings||[]))   // hand-authored, so worth keeping at any status
     rows.push({ kind:'manual', source:state.source, dkey:m.id, status:m.status||'',
       assignee:peopleLabel(m.assignee), notes:m.note||'', fix:m.fix||'', cat:m.cat||'',
-      title:m.title||'', url:m.url||'', type:m.type||'', severity:m.severity||'' });
+      title:m.title||'', url:m.url||'', type:m.type||'', severity:m.severity||'',
+      ...(evPaths && m.evidence && m.evidence.length ? { evidence:JSON.stringify(m.evidence.map(e=>({...e, file:evPaths[e.id]||''}))) } : {}) });
   rows.push({ kind:'config', source:'_site', dkey:'xcats', notes:(state.xcats||[]).join(' | ') });
   return rows;
 }
@@ -3663,8 +3916,82 @@ function exportTriage(){
   const rows=collectTriage();
   const nD=rows.filter(r=>r.kind==='disp').length, nM=rows.filter(r=>r.kind==='manual').length;
   if(!nD&&!nM){ toast('Nothing triaged yet for this source.','error'); return; }
+  const withEv=NS() ? (state.manualFindings||[]).filter(m=>m.evidence&&m.evidence.length) : [];
+  if(withEv.length){ buildEvidenceBackup(withEv); return; }   // screenshots and video can't ride in a CSV
   downloadRows(rows, `${state.source} - triage backup.csv`);
   toast(`Backed up ${nD} decision${nD===1?'':'s'} + ${nM} manual finding${nM===1?'':'s'}.`);
+}
+/* ── ZIP for the triage backup: a store-only writer (photos and video are already compressed) and a
+   reader that also takes a re-zipped file (Windows "Send to > Compressed folder" deflates). ── */
+const _crcT=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=_crcT[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function zipBuild(entries){   // entries: [{name, data:Uint8Array}] -> Blob
+  const enc=new TextEncoder(), parts=[], central=[]; let off=0;
+  for(const e of entries){
+    const nm=enc.encode(e.name), crc=crc32(e.data), sz=e.data.length;
+    const lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true); lh.setUint16(12,0x21,true);   // flag 0x0800 = UTF-8 names; date 1980-01-01
+    lh.setUint32(14,crc,true); lh.setUint32(18,sz,true); lh.setUint32(22,sz,true); lh.setUint16(26,nm.length,true);
+    parts.push(lh.buffer,nm,e.data);
+    const ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true); ch.setUint16(14,0x21,true);
+    ch.setUint32(16,crc,true); ch.setUint32(20,sz,true); ch.setUint32(24,sz,true); ch.setUint16(28,nm.length,true); ch.setUint32(42,off,true);
+    central.push(ch.buffer,nm);
+    off+=30+nm.length+sz;
+  }
+  let csz=0; for(const p of central) csz+=p.byteLength;
+  const end=new DataView(new ArrayBuffer(22));
+  end.setUint32(0,0x06054b50,true); end.setUint16(8,entries.length,true); end.setUint16(10,entries.length,true); end.setUint32(12,csz,true); end.setUint32(16,off,true);
+  return new Blob([...parts,...central,end.buffer],{type:'application/zip'});
+}
+async function zipRead(buf){   // ArrayBuffer -> [{name, data:Uint8Array}]; stored and deflated entries
+  const u8=new Uint8Array(buf), dv=new DataView(buf); let e=-1;
+  for(let i=u8.length-22;i>=Math.max(0,u8.length-22-65535);i--) if(dv.getUint32(i,true)===0x06054b50){ e=i; break; }
+  if(e<0) throw new Error('That is not a zip file.');
+  const n=dv.getUint16(e+10,true), dec=new TextDecoder(), out=[]; let p=dv.getUint32(e+16,true);
+  for(let k=0;k<n;k++){
+    if(dv.getUint32(p,true)!==0x02014b50) throw new Error('That zip file is damaged.');
+    const method=dv.getUint16(p+10,true), csz=dv.getUint32(p+20,true), nl=dv.getUint16(p+28,true), xl=dv.getUint16(p+30,true), cl=dv.getUint16(p+32,true), lo=dv.getUint32(p+42,true);
+    const name=dec.decode(u8.subarray(p+46,p+46+nl)); p+=46+nl+xl+cl;
+    if(name.endsWith('/')) continue;
+    const ds=lo+30+dv.getUint16(lo+26,true)+dv.getUint16(lo+28,true), raw=u8.subarray(ds,ds+csz);
+    let data;
+    if(method===0) data=raw;
+    else if(method===8) data=new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+    else throw new Error('That zip uses a compression this page cannot read.');
+    out.push({name,data});
+  }
+  return out;
+}
+const zipSafeName=s=>String(s||'file').replace(/[\/:*?"<>|\u0000-\u001f]/g,'_').slice(-80);
+function saveBlob(blob,name){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),10000);
+}
+// Back up with files: the CSV plus every evidence file, read one at a time to stay inside the site's request limit
+let _readyBackup=null;
+async function buildEvidenceBackup(withEv){
+  const btn=document.getElementById('btn-backup'), label=btn.textContent;
+  btn.disabled=true; btn.textContent='Building backup…';
+  try{
+    const entries=[], paths={}; let i=0, missing=0;
+    for(const m of withEv) for(const ev of m.evidence){
+      toast(`Reading evidence ${++i}…`);
+      try{
+        const f=await NS().getFileBytes(ev.id), path=`evidence/${String(i).padStart(3,'0')}-${zipSafeName(ev.name)}`;
+        entries.push({name:path,data:new Uint8Array(await f.blob.arrayBuffer())}); paths[ev.id]=path;
+      }catch(e){ if(e && (e.code==='not_found'||e.code==='forbidden')) missing++; else throw e; }   // a file already gone must not sink the backup
+    }
+    const csv='\uFEFF'+rowsToCSV(collectTriage(paths));
+    entries.unshift({name:'triage backup.csv',data:new TextEncoder().encode(csv)});
+    const blob=zipBuild(entries), name=`${state.source} - triage backup.zip`;
+    toast(`Backed up ${withEv.length} finding${withEv.length===1?'':'s'} with evidence${missing?` (${missing} file${missing===1?' was':'s were'} already missing)`:''}.`);
+    // Building can outlast the click that started it, and a browser refuses a download without one
+    if(navigator.userActivation && !navigator.userActivation.isActive){
+      _readyBackup={blob,name}; btn.textContent='⬇ Download backup ZIP (ready)'; btn.disabled=false; return;
+    }
+    saveBlob(blob,name); btn.textContent=label; btn.disabled=false;
+  }catch(e){ btn.textContent=label; btn.disabled=false; toast('Backup failed: '+((e&&(e.code||e.message))||'unknown error'),'error'); }
 }
 /* Minimal RFC4180 CSV parser — handles quoted fields, doubled-quote escapes, and commas/
    newlines inside quotes (a multi-line fix-instructions field roundtrips through exactly
@@ -3696,10 +4023,16 @@ function parseCSV(text){
 async function restoreTriageFromCsv(file){
   if(!isAdmin()){ toast('Restoring a triage backup is admin-only.','error'); return; }
   if(!state) return;
-  const src=state.source;
+  const src=state.source, uploaded=[];
   try{
-    const parsed=parseCSV(await file.text());
-    const dispRows=[], manualRows=[];
+    let text, zipFiles=null;
+    if(/\.zip$/i.test(file.name)){
+      const entries=await zipRead(await file.arrayBuffer()), csvE=entries.find(e=>/\.csv$/i.test(e.name));
+      if(!csvE){ toast('That zip has no triage backup CSV in it.','error'); return; }
+      text=new TextDecoder().decode(csvE.data); zipFiles=new Map(entries.map(e=>[e.name,e.data]));
+    } else text=await file.text();
+    const parsed=parseCSV(text);
+    const dispRows=[], manualRows=[], evJobs=[];
     for(const r of parsed){
       if(r.kind==='disp'){
         const d={kind:'disp',source:src,dkey:r.dkey};
@@ -3721,11 +4054,33 @@ async function restoreTriageFromCsv(file){
         if(r.url) m.url=r.url;
         if(r.type) m.type=r.type;
         if(r.severity) m.severity=r.severity;
+        if(r.evidence){ let list=[]; try{ list=JSON.parse(r.evidence); }catch(e){}
+          list=(Array.isArray(list)?list:[]).filter(e=>e&&e.id&&e.alt!==undefined).map(e=>({id:e.id,name:e.name||'file',type:e.type||'',size:e.size||0,alt:e.alt||'',file:e.file||''}));
+          if(list.length){ m.evidence=list; evJobs.push(m); } }
         manualRows.push(m);
       }
     }
     if(!dispRows.length && !manualRows.length){ toast('No disposition or manual rows found in that file.','error'); return; }
     showLoading(`Restoring ${src} triage…`);
+    let evNote='';
+    if(evJobs.length){
+      // A zip carries the files, so they are uploaded again under new ids; a bare CSV keeps the ids and
+      // hopes the files are still in storage (they are, on the site the backup came from)
+      let lost=0;
+      for(const m of evJobs){
+        const kept=[];
+        for(const e of m.evidence){
+          const {file,...ev}=e;
+          if(zipFiles){
+            const bytes=file&&zipFiles.get(file); if(!bytes){ lost++; continue; }
+            const r=await NS().putFile(new File([bytes],ev.name,{type:ev.type})); ev.id=(r&&(r.id||r.fileId))||r; uploaded.push(ev.id);
+          }
+          kept.push(ev);
+        }
+        if(kept.length) m.evidence=kept; else delete m.evidence;
+      }
+      if(lost) evNote=` ${lost} evidence file${lost===1?'':'s'} could not be restored.`;
+    }
     const CH=120;
     if(dispRows.length){
       await NS().putRecords(dispRows.slice(0,CH), {replaceWhere:{kind:'disp',source:src}});   // 1st chunk replaces every existing disposition
@@ -3740,8 +4095,8 @@ async function restoreTriageFromCsv(file){
     const st=await sourceStats(src).catch(()=>null);
     if(st){ statsCache[src]=st; await writeSummary(src, st); }
     hideLoading();
-    toast(`Restored ${dispRows.length} decision${dispRows.length===1?'':'s'} + ${manualRows.length} manual finding${manualRows.length===1?'':'s'} for ${src}.`);
-  }catch(e){ hideLoading(); toast('Restore failed: '+(e.code||e.message),'error'); }
+    toast(`Restored ${dispRows.length} decision${dispRows.length===1?'':'s'} + ${manualRows.length} manual finding${manualRows.length===1?'':'s'} for ${src}.${evNote}`);
+  }catch(e){ hideLoading(); for(const id of uploaded) NS().removeFile(id).catch(()=>{}); toast('Restore failed: '+(e.code||e.message),'error'); }
 }
 
 /* ── Sorting ────────────────────────────────────────────────── */
@@ -3761,12 +4116,14 @@ document.getElementById('head-row').addEventListener('keydown', e=>{
 
 document.addEventListener('DOMContentLoaded', init);
 async function init(){
-  ['filter-search','filter-sev','filter-status','filter-assignee','filter-xcat'].forEach(id=>document.getElementById(id).addEventListener('input',render));
+  ['filter-search','filter-sev','filter-status','filter-assignee','filter-xcat','filter-global'].forEach(id=>document.getElementById(id).addEventListener('input',render));
   document.querySelectorAll('.tab[data-stream]').forEach(t=>t.addEventListener('click',()=>{ if(!t.disabled) switchStream(t.dataset.stream); }));
   document.querySelectorAll('#contrast-groupby [data-groupby]').forEach(b=>b.addEventListener('click',()=>setGroupBy(b.dataset.groupby)));
   document.getElementById('btn-add-manual').addEventListener('click',()=>openManualForm(''));
   document.getElementById('btn-worklist').addEventListener('click',openExport);
-  document.getElementById('btn-backup').addEventListener('click',exportTriage);
+  document.getElementById('btn-backup').addEventListener('click',()=>{
+    if(_readyBackup){ saveBlob(_readyBackup.blob,_readyBackup.name); _readyBackup=null; document.getElementById('btn-backup').textContent='⬇ Back up triage (CSV/ZIP)'; return; }
+    exportTriage(); });
   { const ri=document.getElementById('triage-restore-input');
     ri.addEventListener('change',e=>{ if(e.target.files[0]) restoreTriageFromCsv(e.target.files[0]); e.target.value=''; });
     document.querySelector('label[for=triage-restore-input]').addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();ri.click();}}); }

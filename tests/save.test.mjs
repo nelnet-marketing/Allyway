@@ -24,7 +24,7 @@ function harness(putRecords) {
     document: { getElementById: () => null },
     window: { NelnetStorage: { putRecords: async (rows, opts) => { calls.push({ rows, opts }); return putRecords(calls.length, rows, opts); } } },
     state: null, statsCache: {},
-    setSave() {}, invalidateRows() {}, writeSummary() {}, computeSummary: () => ({}),
+    setSave() {}, invalidateRows() {}, writeSummary() {}, computeSummary: () => ({}), flushEvTrash() {},
   };
   ctx.NS = () => ctx.window.NelnetStorage;
   vm.createContext(ctx);

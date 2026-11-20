@@ -35,6 +35,13 @@ Samuel's from Aug 31.
 It writes `<Source> - triage backup.csv`: every disposition that has been **set** (untriaged
 items have no row to export), plus manual findings at any status, plus the `xcats` list.
 
+When any manual finding has screenshots or video attached, the button writes
+`<Source> - triage backup.zip` instead: the same CSV (with an `evidence` column of ids, names,
+descriptions and zip paths) plus every file under `evidence/`. **Restore** takes either file; from a
+zip it uploads the files again under new ids. A plain CSV restore keeps the old ids, which only
+resolve while those files are still in the site's file storage. Restore never deletes files, so the
+files of findings it replaces stay behind in storage.
+
 The column that matters is **`dkey`**. It is the key a restore writes back to, and it is why
 the work-list CSV can't serve as a backup — that export identifies a finding by rule title,
 which for contrast drops the `textWithBackgroundImage|` prefix off the front of the real key.
